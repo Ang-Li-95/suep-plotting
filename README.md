@@ -79,19 +79,22 @@ conda activate mds
 | `scipy` | Clopper–Pearson intervals for efficiency plots |
 | `pyyaml` | YAML config parsing |
 
-Install as a package (optional — the console scripts `suep-run` / `suep-plot` /
-`suep-submit` become available):
+Install once into the env (editable), which puts the console scripts
+`suep-run` / `suep-plot` / `suep-submit` on your `PATH`:
 
 ```bash
+conda activate mds
+cd suep-plotting
 pip install -e .
 ```
 
-Or run without installing, straight from the repo:
+The `-e` (editable) install points at this source tree, so code and config
+edits take effect immediately, and `custom/columns.py` stays discoverable.
+Uninstall anytime with `pip uninstall suep-plot`.
 
-```bash
-cd suep-plotting
-PYTHONPATH=src python -m suep_plot.cli run -c configs -o output
-```
+Without installing, the same commands work as
+`PYTHONPATH=src python -m suep_plot.cli {run,plot,submit} …` from the repo
+root.
 
 > **Note on corrections:** coffea's `lookup_tools` package (which contains
 > `correctionlib_wrapper`) eagerly imports Rochester/double-Crystal-Ball modules
@@ -109,7 +112,7 @@ PYTHONPATH=src python -m suep_plot.cli run -c configs -o output
 ```bash
 conda activate mds
 cd suep-plotting
-PYTHONPATH=src python -m suep_plot.cli run -c configs -o output
+suep-run -c configs -o output
 ```
 
 This reads every sample in `configs/samples.yaml`, fills every histogram in
@@ -126,7 +129,7 @@ output/
 ### 2. Plot
 
 ```bash
-PYTHONPATH=src python -m suep_plot.cli plot output/ -o plots -c configs
+suep-plot output/ -o plots -c configs
 ```
 
 The plotter loads all `.pkl` files, merges histograms across samples, and writes
@@ -134,9 +137,9 @@ one PNG + PDF per histogram (plus any `derived_plots.yaml` outputs). It never
 touches the ROOT files, so re-run it freely with different styles:
 
 ```bash
-PYTHONPATH=src python -m suep_plot.cli plot output/ -o plots --log --lumi 38.5
-PYTHONPATH=src python -m suep_plot.cli plot output/ -o plots --normalize
-PYTHONPATH=src python -m suep_plot.cli plot output/suep_mMed125_mDark2.pkl -o plots_signal_only
+suep-plot output/ -o plots --log --lumi 38.5
+suep-plot output/ -o plots --normalize
+suep-plot output/suep_mMed125_mDark2.pkl -o plots_signal_only
 ```
 
 `--lumi` does two things: it puts the luminosity in the CMS label **and**
@@ -147,9 +150,9 @@ counts.
 ### 3. Scale up with Slurm
 
 ```bash
-PYTHONPATH=src python -m suep_plot.cli submit -c configs -o output --dry-run   # inspect
-PYTHONPATH=src python -m suep_plot.cli submit -c configs -o output             # submit
-bash output/slurm/merge_and_plot.sh                                           # after jobs finish
+suep-submit -c configs -o output --dry-run   # inspect
+suep-submit -c configs -o output             # submit
+bash output/slurm/merge_and_plot.sh          # after jobs finish
 ```
 
 ---
@@ -311,20 +314,20 @@ automatically during filling, with event weights kept aligned.
 
 ```bash
 # all samples
-PYTHONPATH=src python -m suep_plot.cli run -c configs -o output --chunk-size 200000
+suep-run -c configs -o output --chunk-size 200000
 
 # one sample
-PYTHONPATH=src python -m suep_plot.cli run -c configs -o output -s suep_mMed125_mDark2
+suep-run -c configs -o output -s suep_mMed125_mDark2
 
 # multi-core (coffea FuturesExecutor)
-PYTHONPATH=src python -m suep_plot.cli run -c configs -o output --workers 4
+suep-run -c configs -o output --workers 4
 ```
 
 Plotting is cheap and re-runnable:
 
 ```bash
-PYTHONPATH=src python -m suep_plot.cli plot output/ -o plots_log --log --lumi 38.5
-PYTHONPATH=src python -m suep_plot.cli plot output/sig.pkl output/bkg.pkl -o cmp --log
+suep-plot output/ -o plots_log --log --lumi 38.5
+suep-plot output/sig.pkl output/bkg.pkl -o cmp --log
 ```
 
 ---
@@ -335,7 +338,7 @@ One array task per sample; each writes a per-sample pickle. The generated script
 export `PYTHONPATH=<repo>/src`, so no install is needed inside the job.
 
 ```bash
-PYTHONPATH=src python -m suep_plot.cli submit \
+suep-submit \
     -c configs -o output --conda-env mds \
     --time 08:00:00 --mem 8000 --partition c --max-concurrent 50
 # after jobs finish:
@@ -457,7 +460,7 @@ and pass `--lumi` (fb⁻¹) at plot time; each MC sample is scaled by
 `xs × lumi × 1000 / sumw`:
 
 ```bash
-PYTHONPATH=src python -m suep_plot.cli plot output/ -o plots --lumi 38.5
+suep-plot output/ -o plots --lumi 38.5
 ```
 
 **Custom derived columns** — edit `custom/columns.py`; `derive(events)` returns the
