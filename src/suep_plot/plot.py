@@ -53,6 +53,10 @@ def merge_results(paths: list[str]) -> dict:
             else:
                 merged["histograms"][name] = h
         merged["samples"].update(data.get("samples", {}))
+        for key in ("sumw", "nevents"):
+            merged.setdefault(key, {}).update(data.get(key, {}))
+        for name, cfg in data.get("hist_defs", {}).items():
+            merged.setdefault("hist_defs", {}).setdefault(name, cfg)
     return merged
 
 
@@ -65,6 +69,46 @@ def load_derived_plot_defs(path: str) -> dict:
 
 def _is_2d_hist(h: hist.Hist) -> bool:
     return len([a for a in h.axes if a.name != "dataset"]) == 2
+
+
+def _cms_label(ax, *, lumi: float | None = None, has_data: bool = False):
+    """CMS label: "Simulation Preliminary" for MC-only, "Preliminary" (+ lumi) for data."""
+    # MDSNano samples are Run 3 -> 13.6 TeV (mplhep defaults to 13).
+    hep.cms.label("Preliminary", data=has_data, lumi=lumi, com=13.6, ax=ax)
+
+
+def apply_xs_scaling(histograms: dict, sample_defs: dict, sumw: dict, lumi: float) -> None:
+    """Scale each MC sample to xs [pb] x lumi [/fb] using its summed genWeight.
+
+    weight = xs * lumi * 1000 / sumw.  Data samples and MC samples without
+    ``xs`` or a recorded ``sumw`` are left untouched (a warning is printed).
+    """
+    factors = {}
+    for s, cfg in sample_defs.items():
+        if cfg.get("is_data", False):
+            continue
+        xs = cfg.get("xs")
+        sw = sumw.get(s, 0.0)
+        if xs is None or not sw:
+            missing = "xs" if xs is None else "sumw"
+            print(f"  WARNING: MC sample '{s}' has no {missing}; left unscaled")
+            continue
+        factors[s] = float(xs) * lumi * 1000.0 / sw
+    if not factors:
+        return
+
+    print("Normalizing MC to xs x lumi (weight = xs * lumi * 1000 / sumw):")
+    for s, f in factors.items():
+        print(f"  {s}: x {f:.4g}")
+
+    for h in histograms.values():
+        cats = list(h.axes["dataset"])
+        view = h.view(flow=True)
+        for s, f in factors.items():
+            if s in cats:
+                idx = cats.index(s)
+                view["value"][idx] *= f
+                view["variance"][idx] *= f * f
 
 
 # ── 1D histogram plotting ────────────────────────────────────────
@@ -116,19 +160,23 @@ def plot_histogram(
             linewidth=0.5,
         )
 
-    has_bkg_or_data = bool(bkg_samples) or bool(data_samples)
+    # Fill style only for a lone signal; overlaid signals read better as steps.
+    solo_signal = not (bkg_samples or data_samples) and len(signal_samples) == 1
 
     for s in signal_samples:
         cfg = sample_defs.get(s, {})
         sh = h[{"dataset": s}]
         if normalize and sh.sum().value > 0:
             sh = sh * (1.0 / sh.sum().value)
-        if has_bkg_or_data:
-            hep.histplot(sh, ax=ax, histtype="step", label=cfg.get("label", s),
-                         color=cfg.get("color", "red"), linewidth=2)
-        else:
+        if solo_signal:
             hep.histplot(sh, ax=ax, histtype="fill", label=cfg.get("label", s),
                          color=cfg.get("color", "tab:blue"), alpha=0.7, edgecolor="black", linewidth=0.5)
+        else:
+            # sqrt(sum w^2) MC-stat errors; mplhep's default Poisson intervals
+            # draw large upper limits on every empty bin of a weighted hist.
+            hep.histplot(sh, ax=ax, histtype="step", label=cfg.get("label", s),
+                         color=cfg.get("color", "red"), linewidth=2,
+                         yerr=np.sqrt(sh.variances()))
 
     for s in data_samples:
         cfg = sample_defs.get(s, {})
@@ -147,13 +195,11 @@ def plot_histogram(
     ax.set_ylabel("Events" if not normalize else "Normalized")
     if log_y:
         ax.set_yscale("log")
-        ax.set_ylim(bottom=0.1)
+        if not normalize:
+            ax.set_ylim(bottom=0.1)
     ax.legend(fontsize=12, loc="best")
 
-    if lumi is not None:
-        hep.cms.label("Preliminary", data=bool(data_samples), lumi=lumi, year="2024", ax=ax)
-    else:
-        hep.cms.label("Preliminary", data=False, ax=ax)
+    _cms_label(ax, lumi=lumi, has_data=bool(data_samples))
 
     os.makedirs(output_dir, exist_ok=True)
     for ext in ("png", "pdf"):
@@ -194,10 +240,7 @@ def plot_histogram_2d(
         ax.set_ylabel(hist_cfg.get("label_y", ""))
         ax.set_title(label)
 
-        if lumi is not None:
-            hep.cms.label("Preliminary", data=False, lumi=lumi, year="2024", ax=ax)
-        else:
-            hep.cms.label("Preliminary", data=False, ax=ax)
+        _cms_label(ax, lumi=lumi)
 
         tag = f"{name}_{s}" if len(samples) > 1 else name
         for ext in ("png", "pdf"):
@@ -213,34 +256,33 @@ def _profile(h2: hist.Hist, axis: str) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
     Returns (bin_centers, mean, mean_err, edges) of the profiled axis.
     """
-    w = h2.view().value
+    view = h2.view()
+    w, w2 = view.value, view.variance
 
+    if axis == "x":
+        other_centers = h2.axes["y"].centers[np.newaxis, :]
+        bin_centers = h2.axes["x"].centers
+        edges = h2.axes["x"].edges
+        sum_axis = 1
+    else:
+        other_centers = h2.axes["x"].centers[:, np.newaxis]
+        bin_centers = h2.axes["y"].centers
+        edges = h2.axes["y"].edges
+        sum_axis = 0
+
+    sumw = w.sum(axis=sum_axis)
+    sumw2 = w2.sum(axis=sum_axis)
     with np.errstate(divide="ignore", invalid="ignore"):
-        if axis == "x":
-            other_centers = h2.axes["y"].centers
-            bin_centers = h2.axes["x"].centers
-            edges = h2.axes["x"].edges
-            sumw = w.sum(axis=1)
-            mean = np.where(sumw > 0,
-                            (w * other_centers[np.newaxis, :]).sum(axis=1) / sumw,
-                            np.nan)
-            spread = np.where(sumw > 0,
-                              (w * other_centers[np.newaxis, :] ** 2).sum(axis=1) / sumw - mean ** 2,
-                              np.nan)
-        else:
-            other_centers = h2.axes["x"].centers
-            bin_centers = h2.axes["y"].centers
-            edges = h2.axes["y"].edges
-            sumw = w.sum(axis=0)
-            mean = np.where(sumw > 0,
-                            (w * other_centers[:, np.newaxis]).sum(axis=0) / sumw,
-                            np.nan)
-            spread = np.where(sumw > 0,
-                              (w * other_centers[:, np.newaxis] ** 2).sum(axis=0) / sumw - mean ** 2,
-                              np.nan)
+        mean = np.where(sumw > 0,
+                        (w * other_centers).sum(axis=sum_axis) / sumw,
+                        np.nan)
+        spread = np.where(sumw > 0,
+                          (w * other_centers ** 2).sum(axis=sum_axis) / sumw - mean ** 2,
+                          np.nan)
 
     spread = np.maximum(spread, 0)
-    n_eff = np.where(sumw > 0, sumw, 1)
+    # Effective entries for weighted fills: (sum w)^2 / sum w^2.
+    n_eff = np.where(sumw2 > 0, sumw ** 2 / np.where(sumw2 > 0, sumw2, 1.0), 1.0)
     mean_err = np.sqrt(spread / n_eff)
     return bin_centers, mean, mean_err, edges
 
@@ -319,10 +361,7 @@ def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *, lumi=None):
     ax.set_ylabel(cfg.get("label_y", f"Mean {h.axes[profiled_axis].label}"))
     ax.legend(fontsize=12, loc="best")
 
-    if lumi is not None:
-        hep.cms.label("Preliminary", data=False, lumi=lumi, year="2024", ax=ax)
-    else:
-        hep.cms.label("Preliminary", data=False, ax=ax)
+    _cms_label(ax, lumi=lumi)
 
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
@@ -339,31 +378,12 @@ def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *, log_y=Fa
 
     h = histograms[source]
     proj_axis = "x" if cfg["type"] == "projection_x" else "y"
-    samples = list(h.axes["dataset"])
-
-    projected = {}
-    for s in samples:
-        h2 = h[{"dataset": s}]
-        h1 = h2.project(proj_axis)
-        ds_axis = hist.axis.StrCategory([s], name="dataset", growth=True)
-        combined = hist.Hist(ds_axis, *h1.axes, storage=hist.storage.Weight())
-        combined.view()[0, :] = h1.view()
-        if s not in projected:
-            projected[s] = combined
-        else:
-            projected[s] += combined
-
-    merged_h = None
-    for s, hh in projected.items():
-        if merged_h is None:
-            merged_h = hh
-        else:
-            merged_h += hh
+    projected = h.project("dataset", proj_axis)
 
     hist_cfg = {
         "label": cfg.get("label_x", h.axes[proj_axis].label),
     }
-    plot_histogram(merged_h, hist_cfg, sample_defs, output_dir, name,
+    plot_histogram(projected, hist_cfg, sample_defs, output_dir, name,
                    log_y=log_y, lumi=lumi)
     print(f"  {name} (projection)")
     return 1
@@ -408,10 +428,7 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *, lumi=Non
     ax.set_ylim(-0.05, 1.15)
     ax.legend(fontsize=12, loc="best")
 
-    if lumi is not None:
-        hep.cms.label("Preliminary", data=False, lumi=lumi, year="2024", ax=ax)
-    else:
-        hep.cms.label("Preliminary", data=False, ax=ax)
+    _cms_label(ax, lumi=lumi)
 
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
@@ -458,10 +475,7 @@ def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *, lumi=None):
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8)
     ax.legend(fontsize=12, loc="best")
 
-    if lumi is not None:
-        hep.cms.label("Preliminary", data=False, lumi=lumi, year="2024", ax=ax)
-    else:
-        hep.cms.label("Preliminary", data=False, ax=ax)
+    _cms_label(ax, lumi=lumi)
 
     for ext in ("png", "pdf"):
         fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
@@ -485,7 +499,8 @@ def plot_all(
 
     results_path can be a single .pkl file, a list of .pkl files,
     a directory containing .pkl files, or a mix of files and directories.
-    Per-sample histograms are merged before plotting.
+    Per-sample histograms are merged before plotting.  When *lumi* is given,
+    MC samples are normalized to xs * lumi * 1000 / sumw.
     """
     pkl_files = _resolve_inputs(results_path)
     if not pkl_files:
@@ -499,6 +514,9 @@ def plot_all(
     histograms = data["histograms"]
     sample_defs = data.get("samples", {})
     hist_defs = data.get("hist_defs", {})
+
+    if lumi is not None:
+        apply_xs_scaling(histograms, sample_defs, data.get("sumw", {}), lumi)
 
     n_1d = sum(1 for name in histograms if not _is_2d_hist(histograms[name]))
     n_2d = sum(1 for name in histograms if _is_2d_hist(histograms[name]))

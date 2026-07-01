@@ -139,6 +139,11 @@ PYTHONPATH=src python -m suep_plot.cli plot output/ -o plots --normalize
 PYTHONPATH=src python -m suep_plot.cli plot output/suep_mMed125_mDark2.pkl -o plots_signal_only
 ```
 
+`--lumi` does two things: it puts the luminosity in the CMS label **and**
+normalizes every MC sample to `xs × lumi × 1000 / sumw` (so set real `xs`
+values in `samples.yaml`). Without `--lumi`, plots show raw weighted event
+counts.
+
 ### 3. Scale up with Slurm
 
 ```bash
@@ -161,7 +166,7 @@ suep_mMed125_mDark2:
     - "/path/to/NanoAOD/*.root"
   tree: Events                              # TTree name (default: Events)
   is_data: false                            # true for collision data
-  xs: 1.0                                   # cross section in pb (MC; stored for future scaling)
+  xs: 1.0                                   # cross section in pb (MC; used by --lumi scaling)
   label: "SUEP $m_{Med}$=125"               # legend label (LaTeX ok)
   color: "tab:blue"                         # matplotlib color
   group: signal                             # signal / background (data via is_data)
@@ -170,8 +175,10 @@ suep_mMed125_mDark2:
 xrootd URLs (`root://…`) are passed through; paths with `*`/`?` are glob-expanded;
 plain paths are used directly. `group` drives plot styling: `background` → stacked
 fill, `signal` → step overlay (or fill if alone), `is_data: true` → error bars.
-`sumw` (Σ genWeight) and `nevents` are recorded per sample in the pickle for
-future cross-section × luminosity scaling.
+`sumw` (Σ genWeight) and `nevents` are recorded per sample in the pickle; when
+`--lumi` is passed to the plotter, each MC sample is normalized by
+`xs × lumi × 1000 / sumw` (data is never scaled; MC without `xs`/`sumw` is left
+raw with a warning).
 
 ### histograms.yaml
 
@@ -291,7 +298,12 @@ events.Jet.nearest(events.Muon).delta_r(events.Jet)   # ΔR to nearest muon
 Collections in the MDSNano file include `Jet`, `Muon`, `Electron`, `PuppiMET`,
 `GenMET`, `Pileup`, `PFCand`, `SUEPGenPart`, `cscMDSHLTCluster`, `dtMDSHLTCluster`.
 A typo (e.g. `events.Jet.ptX`) is caught: the processor runs a one-time expression
-check on a small slice and prints a warning listing any expressions that fail.
+check on a small slice (with `custom/columns.py` derived fields attached) and
+prints a warning listing any expressions that fail.
+
+Expressions that produce missing values are safe: `None` entries (from
+`ak.firsts` on empty events, `nearest` with no partner, …) are dropped
+automatically during filling, with event weights kept aligned.
 
 ---
 
@@ -336,6 +348,7 @@ bash output/slurm/merge_and_plot.sh
 | `--time` / `--mem` | `04:00:00` / `8000` | Wall time / memory (MB) per job. |
 | `--partition` / `--account` | — | Slurm partition / account. |
 | `--chunk-size` | `100000` | Events per chunk. |
+| `--workers` | `1` | Worker processes per job (also sets `--cpus-per-task`). |
 | `--max-concurrent` | — | Cap on simultaneous array tasks (`%N`). |
 | `--dry-run` | off | Generate scripts without submitting. |
 
@@ -363,7 +376,8 @@ configs/*.yaml
    5. Save output/<sample>.pkl  {histograms, samples, hist_defs, sumw, nevents}
       │
       ▼
-  plot.plot_all()  → merge per-sample pickles → CMS-style PNG/PDF (+ derived plots)
+  plot.plot_all()  → merge per-sample pickles → xs×lumi scaling (if --lumi)
+                   → CMS-style PNG/PDF (+ derived plots)
 ```
 
 - **Reading:** `processor.Runner` + `NanoAODSchema` handle file opening, chunking
@@ -437,6 +451,14 @@ large_csc_cluster:
 **Enable pileup reweighting / muon SFs** — uncomment the examples in
 `corrections.yaml`. `object_sf` evaluates per object and multiplies the per-event
 product into the weight.
+
+**Normalize MC to a luminosity** — set real `xs` values (pb) in `samples.yaml`
+and pass `--lumi` (fb⁻¹) at plot time; each MC sample is scaled by
+`xs × lumi × 1000 / sumw`:
+
+```bash
+PYTHONPATH=src python -m suep_plot.cli plot output/ -o plots --lumi 38.5
+```
 
 **Custom derived columns** — edit `custom/columns.py`; `derive(events)` returns the
 (augmented) events array. Attach fields with `ak.with_field(events, value, "name")`

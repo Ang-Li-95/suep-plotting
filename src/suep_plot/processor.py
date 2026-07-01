@@ -43,7 +43,7 @@ NanoAODSchema.warn_missing_crossrefs = False
 
 def load_samples(path: str) -> dict:
     with open(path) as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
 
 
 def _resolve_files(file_specs: list[str]) -> list[str]:
@@ -97,7 +97,7 @@ class SuepProcessor(processor.ProcessorABC):
             events = self.derive_fn(events)
 
         n = len(events)
-        weights = Weights(n, storeIndividual=True)
+        weights = Weights(n, storeIndividual=False)
         if is_data:
             weights.add("genWeight", np.ones(n, dtype=np.float64))
         else:
@@ -120,7 +120,7 @@ class SuepProcessor(processor.ProcessorABC):
         return accumulator
 
 
-def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs):
+def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None):
     """Best-effort check: evaluate each expression on a small slice and warn.
 
     Restores clear feedback for typo'd fields, which otherwise silently produce
@@ -140,6 +140,12 @@ def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs):
     except Exception as e:  # noqa: BLE001
         print(f"  (skipped expression validation: {e})")
         return
+
+    if derive_fn is not None:
+        try:
+            events = derive_fn(events)
+        except Exception as e:  # noqa: BLE001
+            print(f"  (custom derive() failed during validation: {e})")
 
     bad = []
     for section, defs in (("histogram", hist_defs), ("selection", sel_defs)):
@@ -178,6 +184,19 @@ def run_all(
     sel_defs = load_selection_defs(config_dir / "selections.yaml")
     corr_defs = load_correction_defs(config_dir / "corrections.yaml")
 
+    unknown_sels = sorted(
+        (hname, sname)
+        for hname, hcfg in hist_defs.items()
+        for sname in hcfg.get("selections", [])
+        if sname not in sel_defs
+    )
+    if unknown_sels:
+        lines = "\n".join(f"  histogram '{h}': unknown selection '{s}'"
+                          for h, s in unknown_sels)
+        raise SystemExit(
+            f"ERROR: histograms.yaml references selections not defined in selections.yaml:\n{lines}"
+        )
+
     if samples_filter:
         unknown = [s for s in samples_filter if s not in sample_defs]
         if unknown:
@@ -213,14 +232,18 @@ def run_all(
 
     validated = False
     for name, cfg in sample_defs.items():
-        files = _resolve_files(cfg["files"])
+        file_specs = cfg.get("files") or []
+        if not file_specs:
+            print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
+            continue
+        files = _resolve_files(file_specs)
         tree = cfg.get("tree", "Events")
         if not files:
             print(f"  WARNING: no files resolved for '{name}', skipping")
             continue
 
         if not validated:
-            _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs)
+            _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn)
             validated = True
 
         t0 = time.time()

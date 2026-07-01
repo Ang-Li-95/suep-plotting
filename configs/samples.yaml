@@ -2,7 +2,8 @@
 # Each top-level key is a sample name used throughout the framework.
 # Fields:
 #   files:      list of file paths / glob patterns / xrootd URLs
-#   xs:         cross section in pb  (MC only; stored for future xs*lumi scaling)
+#   xs:         cross section in pb  (MC only; used to scale by xs*lumi*1000/sumw
+#               when --lumi is passed at plot time)
 #   is_data:    true for data samples
 #   label:      display label for legends
 #   color:      matplotlib color

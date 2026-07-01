@@ -20,8 +20,9 @@ def submit_jobs(
     mem: str,
     conda_env: str,
     chunk_size: int,
-    max_concurrent: int | None,
-    dry_run: bool,
+    workers: int = 1,
+    max_concurrent: int | None = None,
+    dry_run: bool = False,
 ):
     """Submit one Slurm job per sample for parallel processing."""
     config_dir = Path(config_dir).resolve()
@@ -54,12 +55,12 @@ def submit_jobs(
         array_spec += f"%{max_concurrent}"
 
     directives = [
-        f"#SBATCH --job-name=suep_plot",
+        "#SBATCH --job-name=suep_plot",
         f"#SBATCH --output={log_dir}/%x_%A_%a.out",
         f"#SBATCH --error={log_dir}/%x_%A_%a.err",
         f"#SBATCH --time={time_limit}",
         f"#SBATCH --mem={mem}",
-        f"#SBATCH --cpus-per-task=1",
+        f"#SBATCH --cpus-per-task={max(workers, 1)}",
         f"#SBATCH --array={array_spec}",
     ]
     if partition:
@@ -94,7 +95,8 @@ python -m suep_plot.cli_worker \\
     --config-dir "{config_dir}" \\
     --output-dir "{output_dir}" \\
     --sample "$SAMPLE" \\
-    --chunk-size {chunk_size}
+    --chunk-size {chunk_size} \\
+    --workers {max(workers, 1)}
 
 echo "==> task $TASK done at $(date)"
 """

@@ -14,6 +14,8 @@ Examples:  ``events.Jet.pt``,  ``ak.sum(events.Jet.pt, axis=1)``,
 
 from __future__ import annotations
 
+import functools
+
 import awkward as ak
 import hist
 import numpy as np
@@ -22,7 +24,7 @@ import yaml
 
 def load_histogram_defs(path: str) -> dict:
     with open(path) as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
 
 
 def load_selection_defs(path: str) -> dict:
@@ -61,9 +63,10 @@ def build_histograms(hist_defs: dict, sample_names: list[str]) -> dict[str, hist
 _SAFE_BUILTINS = {"abs": abs, "len": len, "min": min, "max": max}
 
 
+@functools.lru_cache(maxsize=None)
 def _compile_expr(expr: str):
     """Compile an expression string into a callable(events) -> array."""
-    code = compile(expr, "<histogram>", "eval")
+    code = compile(expr, "<config expression>", "eval")
 
     def _eval(events):
         return eval(  # noqa: S307 - trusted config expressions
@@ -73,6 +76,21 @@ def _compile_expr(expr: str):
         )
 
     return _eval
+
+
+def _fill_none_safe(arr):
+    """Make an expression result safe against missing values.
+
+    Expressions like ``ak.firsts(...)`` or ``.nearest(...)`` yield ``None``
+    entries.  ``None`` events become empty lists (jagged case) and ``None``
+    values become NaN, which the finite-value filter in the fill functions
+    drops while keeping weights aligned.
+    """
+    if not isinstance(arr, ak.Array):
+        return arr
+    if arr.ndim > 1:
+        arr = ak.fill_none(arr, [], axis=0)
+    return ak.fill_none(arr, np.nan)
 
 
 def fill_histograms(
@@ -103,7 +121,10 @@ def fill_histograms(
             level = sel_cfg.get("level", "event")
 
             if sel_name not in sel_cache:
-                sel_cache[sel_name] = _compile_expr(sel_cfg["expression"])(events)
+                sel = _compile_expr(sel_cfg["expression"])(events)
+                if isinstance(sel, ak.Array):
+                    sel = ak.fill_none(sel, False)
+                sel_cache[sel_name] = sel
 
             if level == "object":
                 obj_masks.append(sel_cache[sel_name])
@@ -121,7 +142,7 @@ def fill_histograms(
 
         w = weight.copy()
         if "weight" in cfg and cfg["weight"]:
-            extra_w = _compile_expr(cfg["weight"])(events)
+            extra_w = _fill_none_safe(_compile_expr(cfg["weight"])(events))
             w = w * np.asarray(extra_w)
 
         if is_2d(cfg):
@@ -139,12 +160,12 @@ def _fill_1d(h, cfg, events, sample, mask, w, obj_mask=None):
     if cfg.get("per_object", False):
         if obj_mask is not None:
             values = values[obj_mask]
-        selected = values[mask]
+        selected = _fill_none_safe(values[mask])
         flat_vals = np.asarray(ak.flatten(selected, axis=None))
         counts = np.asarray(ak.num(selected))
         flat_w = np.repeat(w[mask], counts)
     else:
-        flat_vals = np.asarray(values[mask])
+        flat_vals = np.asarray(_fill_none_safe(values[mask]))
         flat_w = w[mask]
 
     flat_vals = np.asarray(flat_vals, dtype=np.float64)
@@ -165,15 +186,15 @@ def _fill_2d(h, cfg, events, sample, mask, w, obj_mask=None):
         if obj_mask is not None:
             vals_x = vals_x[obj_mask]
             vals_y = vals_y[obj_mask]
-        sel_x = vals_x[mask]
-        sel_y = vals_y[mask]
+        sel_x = _fill_none_safe(vals_x[mask])
+        sel_y = _fill_none_safe(vals_y[mask])
         flat_x = np.asarray(ak.flatten(sel_x, axis=None))
         flat_y = np.asarray(ak.flatten(sel_y, axis=None))
         counts = np.asarray(ak.num(sel_x))
         flat_w = np.repeat(w[mask], counts)
     else:
-        flat_x = np.asarray(vals_x[mask])
-        flat_y = np.asarray(vals_y[mask])
+        flat_x = np.asarray(_fill_none_safe(vals_x[mask]))
+        flat_y = np.asarray(_fill_none_safe(vals_y[mask]))
         flat_w = w[mask]
 
     flat_x = np.asarray(flat_x, dtype=np.float64)

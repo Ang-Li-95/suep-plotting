@@ -50,11 +50,28 @@ The processing layer was rebased on **coffea** (NanoEvents + `ProcessorABC` +
 - Slurm `--dry-run` emits `job.sh`/`merge_and_plot.sh` with the `PYTHONPATH`
   export; build backend and `pyproject` parse cleanly.
 
+## Post-migration review pass (2026-07)
+
+- **xs × lumi normalization implemented** — `suep-plot --lumi X` now scales each
+  MC sample by `xs * lumi * 1000 / sumw` at plot time (data untouched);
+  `merge_results` carries `sumw`/`nevents` through multi-sample merges.
+- **None-safe fills** — expressions yielding missing values (`ak.firsts`,
+  `nearest`, …) previously crashed `_fill_1d`/`_fill_2d`; `None` objects/events
+  are now dropped with weights kept aligned.
+- **Validation sees derived columns** — the expression check applies
+  `custom/columns.py` `derive()` first, so derived fields no longer warn.
+- **Config robustness** — empty YAML files load as `{}`; unknown selection names
+  fail fast with a clear message; samples without `files` are skipped with a
+  warning.
+- **Plot fixes** — CMS label no longer says "Simulation" when data is plotted
+  without `--lumi`; log-scale plots no longer clip `--normalize`d histograms;
+  ≥2 signals without background render as steps instead of overlapping fills;
+  profile errors use effective entries (Σw)²/Σw².
+- **Slurm** — `suep-submit --workers N` forwards to the worker and
+  `--cpus-per-task`.
+
 ## Not yet done (optional follow-ups)
 
-- **xs × lumi normalization** — `sumw` (Σ genWeight) and `nevents` are now stored
-  per sample in the pickle, so scaling each MC sample by
-  `xs * lumi * 1000 / sumw` at plot time is a small `plot.py` addition.
 - **Systematic variations** — `Weights` supports `add(name, nominal, up, down)`;
   the config schema could grow an optional up/down input set.
 - **JEC/JER** — `coffea.jetmet_tools` now imports (via the shim) if you later want

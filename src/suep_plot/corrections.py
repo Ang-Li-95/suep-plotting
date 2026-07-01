@@ -23,6 +23,7 @@ import yaml
 
 # Ensure the scipy/_lazywhere shim is applied before coffea.lookup_tools loads.
 from . import _compat  # noqa: F401
+from .histograms import _compile_expr
 
 
 def load_correction_defs(path: str) -> dict:
@@ -56,21 +57,6 @@ def _resolve_file(file_spec: str) -> str:
     return os.path.expandvars(os.path.expanduser(file_spec))
 
 
-def _compile_input(expr: str):
-    """Compile a correction-input expression evaluated in the events namespace."""
-    code = compile(expr, "<correction-input>", "eval")
-    safe_builtins = {"abs": abs, "len": len, "min": min, "max": max}
-
-    def _eval(events):
-        return eval(  # noqa: S307 - trusted config expressions
-            code,
-            {"__builtins__": safe_builtins},
-            {"events": events, "ev": events, "ak": ak, "np": np},
-        )
-
-    return _eval
-
-
 def build_correctors(corr_defs: dict) -> dict:
     """Load and wrap each correction with ``correctionlib_wrapper``.
 
@@ -87,7 +73,7 @@ def build_correctors(corr_defs: dict) -> dict:
 
 
 def _eval_inputs(cfg, events):
-    return [_compile_input(inp)(events) for inp in cfg["inputs"]]
+    return [_compile_expr(inp)(events) for inp in cfg["inputs"]]
 
 
 def _object_product(wrapper, input_arrays):

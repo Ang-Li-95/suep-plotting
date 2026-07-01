@@ -44,7 +44,9 @@ def plot(argv=None):
                         help="Config directory (needed for derived_plots.yaml)")
     parser.add_argument("--normalize", action="store_true", help="Normalize signal histograms to unit area")
     parser.add_argument("--log", action="store_true", help="Logarithmic y-axis")
-    parser.add_argument("--lumi", type=float, default=None, help="Integrated luminosity [/fb] for CMS label")
+    parser.add_argument("--lumi", type=float, default=None,
+                        help="Integrated luminosity [/fb]: shown in the CMS label and "
+                             "used to normalize MC samples by xs * lumi * 1000 / sumw")
     args = parser.parse_args(argv)
 
     from .plot import plot_all
@@ -64,6 +66,8 @@ def submit(argv=None):
     parser.add_argument("--mem", default="8000", help="Memory in MB per job")
     parser.add_argument("--conda-env", default="mds", help="Conda environment to activate in jobs")
     parser.add_argument("--chunk-size", type=int, default=100_000, help="Events per chunk")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Worker processes per job (also sets --cpus-per-task)")
     parser.add_argument("--max-concurrent", type=int, default=None, help="Max simultaneous array tasks")
     parser.add_argument("--dry-run", action="store_true", help="Generate scripts without submitting")
     args = parser.parse_args(argv)
@@ -78,6 +82,7 @@ def submit(argv=None):
         mem=args.mem,
         conda_env=args.conda_env,
         chunk_size=args.chunk_size,
+        workers=args.workers,
         max_concurrent=args.max_concurrent,
         dry_run=args.dry_run,
     )
