@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "suep-plot"
+version = "0.2.0"
+requires-python = ">=3.9"
+dependencies = [
+    "coffea>=2024.0.0",
+    "hist>=2.7",
+    "mplhep>=0.3",
+    "uproot>=5.0",
+    "awkward>=2.0",
+    "correctionlib>=2.3",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+suep-run = "suep_plot.cli:run"
+suep-plot = "suep_plot.cli:plot"
+suep-submit = "suep_plot.cli:submit"
+
+[tool.setuptools.packages.find]
+where = ["src"]
