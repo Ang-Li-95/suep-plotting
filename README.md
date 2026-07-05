@@ -96,8 +96,16 @@ edits take effect immediately, and `custom/columns.py` stays discoverable.
 Uninstall anytime with `pip uninstall suep-plot`.
 
 Without installing, the same commands work as
-`PYTHONPATH=src python -m suep_plot.cli {run,plot,submit} …` from the repo
-root.
+`PYTHONPATH=src python -m suep_plot.cli {run,plot,submit,reweight} …` from the
+repo root.
+
+Run the unit tests (fill logic, reweighting, plot helpers — no ROOT files
+needed) with:
+
+```bash
+pip install -e ".[dev]"
+pytest tests/
+```
 
 > **Note on corrections:** coffea's `lookup_tools` package (which contains
 > `correctionlib_wrapper`) eagerly imports Rochester/double-Crystal-Ball modules
@@ -149,8 +157,9 @@ suep-plot output/ -o plots
 ```
 
 The plotter loads all `.pkl` files, merges histograms across samples, and
-writes one PNG + PDF per histogram (plus any `derived_plots.yaml` outputs and
-`cutflow.txt`/`cutflow.csv`). Figures render in parallel processes (`-j`,
+writes one PNG + PDF per histogram (plus any `derived_plots.yaml` outputs,
+`cutflow.txt`/`cutflow.csv`, and an **`index.html` gallery** for browsing
+every figure from a single page). Figures render in parallel processes (`-j`,
 auto by default). `-c` defaults to `./configs` when present, and **plot-time
 styling keys** (`label`, `blind`, `rebin`, `flow`, `log_*`, …) are re-read
 from `configs/histograms.yaml` on every invocation — so styling iterations

@@ -652,6 +652,53 @@ def export_root(histograms: dict[str, hist.Hist], path: str):
     print(f"Wrote {n} histogram(s) to {path}")
 
 
+# ── HTML gallery ─────────────────────────────────────────────────
+
+
+def write_gallery(output_dir: str) -> str | None:
+    """Write an index.html thumbnail gallery of every PNG in *output_dir*.
+
+    Each thumbnail links to the PDF when one exists (else the PNG), so the
+    whole plot set can be browsed from a single page over ssh/web.
+    """
+    out = Path(output_dir)
+    pngs = sorted(out.glob("*.png"))
+    if not pngs:
+        return None
+
+    cards = []
+    for png in pngs:
+        pdf = png.with_suffix(".pdf")
+        href = pdf.name if pdf.exists() else png.name
+        cards.append(
+            f'<figure><a href="{href}"><img src="{png.name}" loading="lazy" '
+            f'alt="{png.stem}"></a><figcaption>{png.stem}</figcaption></figure>'
+        )
+    cutflow_link = ('<p><a href="cutflow.txt">cutflow.txt</a> · '
+                    '<a href="cutflow.csv">cutflow.csv</a></p>'
+                    if (out / "cutflow.txt").exists() else "")
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>suep-plot: {out.name}</title>
+<style>
+ body {{ font-family: sans-serif; margin: 1.5em; }}
+ .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1em; }}
+ figure {{ margin: 0; border: 1px solid #ddd; border-radius: 6px; padding: 6px; }}
+ img {{ width: 100%; height: auto; }}
+ figcaption {{ text-align: center; font-size: 0.85em; padding-top: 4px;
+               font-family: monospace; word-break: break-all; }}
+</style></head><body>
+<h1>{out.name} ({len(pngs)} plots)</h1>
+{cutflow_link}
+<div class="grid">
+{chr(10).join(cards)}
+</div></body></html>
+"""
+    path = out / "index.html"
+    path.write_text(html)
+    return str(path)
+
+
 # ── Parallel rendering ───────────────────────────────────────────
 
 
@@ -797,6 +844,10 @@ def plot_all(
             print(f"  WARNING: '{name}' failed: {err}")
         else:
             print(f"  {name}")
+
+    gallery = write_gallery(output_dir)
+    if gallery:
+        print(f"Gallery: {gallery}")
 
     if failed:
         print(f"Done ({failed} plot(s) failed).")
