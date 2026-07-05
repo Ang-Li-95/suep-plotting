@@ -30,11 +30,13 @@ from coffea.nanoevents import NanoAODSchema
 
 from .corrections import apply_corrections, build_correctors, load_correction_defs
 from .histograms import (
+    _compile_expr,
     build_histograms,
     fill_histograms,
     load_histogram_defs,
     load_selection_defs,
 )
+from .reweights import apply_reweights, build_reweighters, load_reweight_defs
 
 # MDSNano is a custom NanoAOD flavour; suppress cross-reference warnings for
 # collections without the standard NanoAOD index branches.
@@ -80,12 +82,14 @@ def _load_custom_columns():
 class SuepProcessor(processor.ProcessorABC):
     """Fill YAML-defined histograms for one sample chunk."""
 
-    def __init__(self, hist_defs, sel_defs, correctors, sample_defs, derive_fn=None):
+    def __init__(self, hist_defs, sel_defs, correctors, sample_defs, derive_fn=None,
+                 reweighters=None):
         self.hist_defs = hist_defs
         self.sel_defs = sel_defs
         self.correctors = correctors
         self.sample_defs = sample_defs
         self.derive_fn = derive_fn
+        self.reweighters = reweighters or {}
 
     def process(self, events):
         dataset = events.metadata["dataset"]
@@ -104,23 +108,53 @@ class SuepProcessor(processor.ProcessorABC):
             weights.add("genWeight", np.asarray(events.genWeight, dtype=np.float64))
             if self.correctors:
                 apply_corrections(self.correctors, events, group, weights)
+        if self.reweighters:
+            apply_reweights(self.reweighters, events, dataset, group, is_data, weights)
 
         histograms = build_histograms(self.hist_defs, [dataset])
-        fill_histograms(histograms, self.hist_defs, self.sel_defs,
-                        events, dataset, weights.weight())
+        wvec = weights.weight()
+        sel_cache = fill_histograms(histograms, self.hist_defs, self.sel_defs,
+                                    events, dataset, wvec,
+                                    reweighters=self.reweighters)
+
+        cutflow = self._cutflow(events, sel_cache, wvec, n)
 
         sumw = 0.0 if is_data else float(ak.sum(events.genWeight))
         return {
             "histograms": histograms,
             "sumw": {dataset: sumw},
             "nevents": {dataset: n},
+            "cutflow": {dataset: cutflow},
         }
+
+    def _cutflow(self, events, sel_cache, wvec, n):
+        """Raw and weighted event counts passing each named selection.
+
+        Counts are independent per selection (not sequential).  Object-level
+        selections count events with >= 1 passing object.
+        """
+        cutflow = {"total": {"raw": int(n), "wtd": float(wvec.sum())}}
+        for sname, scfg in self.sel_defs.items():
+            sel = sel_cache.get(sname)
+            if sel is None:
+                try:
+                    sel = _compile_expr(scfg["expression"])(events)
+                except Exception:  # noqa: BLE001 - typos already warned at validation
+                    continue
+                if isinstance(sel, ak.Array):
+                    sel = ak.fill_none(sel, False)
+            if isinstance(sel, ak.Array) and sel.ndim > 1:
+                sel = ak.any(sel, axis=1)
+            mask = np.asarray(sel, dtype=bool)
+            cutflow[sname] = {"raw": int(mask.sum()), "wtd": float(wvec[mask].sum())}
+        return cutflow
 
     def postprocess(self, accumulator):
         return accumulator
 
 
-def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None):
+def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
+                          reweighters=None):
     """Best-effort check: evaluate each expression on a small slice and warn.
 
     Restores clear feedback for typo'd fields, which otherwise silently produce
@@ -132,11 +166,23 @@ def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn
 
     if not files:
         return
+    # "virtual" mode reads branches lazily, so validation only touches the
+    # branches the expressions actually use (an eager open materializes every
+    # branch — seconds of wasted I/O on files with PFCand etc.).
     try:
         events = NanoEventsFactory.from_root(
-            {files[0]: tree}, mode="eager", schemaclass=NanoAODSchema,
+            {files[0]: tree}, mode="virtual", schemaclass=NanoAODSchema,
             entry_stop=200,
         ).events()
+    except TypeError:
+        try:
+            events = NanoEventsFactory.from_root(
+                {files[0]: tree}, mode="eager", schemaclass=NanoAODSchema,
+                entry_stop=200,
+            ).events()
+        except Exception as e:  # noqa: BLE001
+            print(f"  (skipped expression validation: {e})")
+            return
     except Exception as e:  # noqa: BLE001
         print(f"  (skipped expression validation: {e})")
         return
@@ -152,7 +198,7 @@ def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn
         for name, cfg in defs.items():
             for key in ("expression", "expression_x", "expression_y", "weight"):
                 expr = cfg.get(key)
-                if not expr:
+                if not expr or expr.startswith("@"):
                     continue
                 try:
                     _compile_expr(expr)(events)
@@ -164,9 +210,45 @@ def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn
                 _compile_expr(expr)(events)
             except Exception as e:  # noqa: BLE001
                 bad.append(f"    correction '{name}' input '{expr}': {type(e).__name__}: {str(e)[:60]}")
+    for name, rw in (reweighters or {}).items():
+        for expr in rw.exprs:
+            try:
+                _compile_expr(expr)(events)
+            except Exception as e:  # noqa: BLE001
+                bad.append(f"    reweight '{name}' expression '{expr}': {type(e).__name__}: {str(e)[:60]}")
     if bad:
         print("WARNING: some config expressions failed to evaluate:")
         print("\n".join(bad))
+
+
+def _inputs_mtime(files: list[str], config_dir: Path,
+                  extra_paths: tuple = ()) -> float | None:
+    """Newest mtime among configs, custom columns, and local input files.
+
+    Returns ``None`` when freshness can't be established (remote/missing
+    inputs), in which case the sample is always processed.
+    """
+    import os
+
+    paths = [config_dir / f for f in
+             ("samples.yaml", "histograms.yaml", "selections.yaml",
+              "corrections.yaml", "reweights.yaml")]
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    paths.append(repo_root / "custom" / "columns.py")
+    paths.extend(Path(p) for p in extra_paths)
+
+    newest = 0.0
+    for p in paths:
+        if p.exists():
+            newest = max(newest, p.stat().st_mtime)
+    for f in files:
+        if "://" in f:
+            return None
+        try:
+            newest = max(newest, os.path.getmtime(f))
+        except OSError:
+            return None
+    return newest
 
 
 def run_all(
@@ -175,6 +257,7 @@ def run_all(
     samples_filter: list[str] | None = None,
     chunk_size: int = 100_000,
     workers: int = 1,
+    force: bool = False,
 ):
     """Load configs, process each sample through coffea, save per-sample pickles."""
     config_dir = Path(config_dir)
@@ -183,6 +266,33 @@ def run_all(
     hist_defs = load_histogram_defs(config_dir / "histograms.yaml")
     sel_defs = load_selection_defs(config_dir / "selections.yaml")
     corr_defs = load_correction_defs(config_dir / "corrections.yaml")
+    rw_defs = load_reweight_defs(config_dir / "reweights.yaml")
+
+    # Reweighting changes physics results: config errors are fatal, not warnings.
+    try:
+        reweighters = build_reweighters(rw_defs, config_dir)
+    except (ValueError, FileNotFoundError, KeyError) as e:
+        raise SystemExit(f"ERROR in reweights.yaml: {e}")
+    if reweighters:
+        print(f"Loaded {len(reweighters)} reweight(s): {list(reweighters)}")
+
+    unknown_maps = sorted(
+        (hname, hcfg["weight"])
+        for hname, hcfg in hist_defs.items()
+        if str(hcfg.get("weight", "")).startswith("@")
+        and hcfg["weight"][1:] not in reweighters
+    )
+    if unknown_maps:
+        lines = "\n".join(f"  histogram '{h}': unknown reweight map '{m}'"
+                          for h, m in unknown_maps)
+        raise SystemExit(
+            f"ERROR: histograms.yaml references reweight maps not defined in reweights.yaml:\n{lines}"
+        )
+    for hname, hcfg in hist_defs.items():
+        wspec = str(hcfg.get("weight", ""))
+        if wspec.startswith("@") and not reweighters[wspec[1:]].fill_only:
+            print(f"WARNING: histogram '{hname}' uses '{wspec}' which is also applied "
+                  f"globally; add 'fill_only: true' to the map to avoid double counting")
 
     unknown_sels = sorted(
         (hname, sname)
@@ -220,7 +330,10 @@ def run_all(
     if derive_fn is not None:
         print("Custom columns: loaded derive()")
 
-    proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn)
+    proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
+                         reweighters)
+    rw_files = tuple(str(rw.include_path) for rw in reweighters.values()
+                     if rw.include_path is not None)
     if workers and workers > 1:
         executor = processor.FuturesExecutor(workers=workers)
     else:
@@ -242,8 +355,16 @@ def run_all(
             print(f"  WARNING: no files resolved for '{name}', skipping")
             continue
 
+        out_path = output_dir / f"{name}.pkl"
+        if not force and out_path.exists():
+            newest = _inputs_mtime(files, config_dir, rw_files)
+            if newest is not None and out_path.stat().st_mtime >= newest:
+                print(f"  {name}: up to date, skipping (--force to reprocess)")
+                continue
+
         if not validated:
-            _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn)
+            _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs,
+                                  derive_fn, reweighters)
             validated = True
 
         t0 = time.time()
@@ -259,8 +380,8 @@ def run_all(
             "hist_defs": hist_defs,
             "sumw": out.get("sumw", {}),
             "nevents": out.get("nevents", {}),
+            "cutflow": out.get("cutflow", {}),
         }
-        out_path = output_dir / f"{name}.pkl"
         with open(out_path, "wb") as f:
             pickle.dump(payload, f)
         print(f"    -> {out_path}")

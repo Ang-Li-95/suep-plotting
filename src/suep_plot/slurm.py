@@ -96,7 +96,8 @@ python -m suep_plot.cli_worker \\
     --output-dir "{output_dir}" \\
     --sample "$SAMPLE" \\
     --chunk-size {chunk_size} \\
-    --workers {max(workers, 1)}
+    --workers {max(workers, 1)} \\
+    --force
 
 echo "==> task $TASK done at $(date)"
 """
@@ -112,10 +113,8 @@ eval "$(conda shell.bash hook)"
 conda activate {conda_env}
 cd "{repo_root}"
 export PYTHONPATH="{repo_root}/src:$PYTHONPATH"
-python -c "
-from suep_plot.plot import plot_all
-plot_all('{output_dir}', '{output_dir}/plots', config_dir='{config_dir}')
-"
+export MPLBACKEND=Agg
+python -m suep_plot.cli plot "{output_dir}" -o "{output_dir}/plots" -c "{config_dir}" "$@"
 """
     merge_sh = work_dir / "merge_and_plot.sh"
     with open(merge_sh, "w") as f:

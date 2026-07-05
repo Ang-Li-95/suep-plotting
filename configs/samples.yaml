@@ -9,6 +9,8 @@
 #   color:      matplotlib color
 #   tree:       TTree name (default: Events)
 #   group:      signal / background / (data via is_data) for plot styling
+#   scale:      plot-time multiplier for signal overlays (legend shows "x N");
+#               ignored when --normalize is used
 
 suep_mMed125_mDark2:
   files:

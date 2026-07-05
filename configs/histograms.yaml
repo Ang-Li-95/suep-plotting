@@ -10,22 +10,35 @@
 #
 # 1D fields:
 #   expression:  expression -> array (flat or jagged).
-#   bins / lo / hi:  axis binning.
+#   bins / lo / hi:  uniform axis binning,  OR
+#   edges:       explicit bin edges, e.g. [0, 20, 40, 80, 160, 320, 640].
 #   label:       x-axis label (LaTeX ok).
 #
 # 2D fields (use instead of expression/bins/lo/hi):
 #   expression_x / expression_y:  two expressions.
-#   bins_x / lo_x / hi_x / bins_y / lo_y / hi_y:  per-axis binning.
+#   bins_x / lo_x / hi_x / bins_y / lo_y / hi_y:  per-axis binning
+#   (or edges_x / edges_y for variable binning).
 #   label_x / label_y:  axis labels.
 #
-# Common fields:
+# Common fields (fill time — changing them requires re-running suep-run):
 #   selections:  list of selection names (selections.yaml).
 #                Event-level selections are AND-ed as a per-event mask.
 #                Object-level selections filter which objects are filled
 #                (per_object histograms) or require >=1 passing object
 #                (event-level histograms).
 #   per_object:  fill per-object (jagged -> flat).  Default: false.
-#   weight:      extra weight expression (x genWeight x corrections).
+#   weight:      extra weight (x genWeight x corrections x reweights):
+#                - expression -> one weight per event, or
+#                - jagged expression / "@<map>" from reweights.yaml ->
+#                  per-object weights (per_object histograms weight each
+#                  object; event-level histograms take the product).
+#
+# Plot-time fields (take effect on the next suep-plot, no reprocessing):
+#   blind:       true -> data is not drawn for this histogram (signal regions).
+#   rebin:       merge N adjacent bins at plot time (1D only).
+#   flow:        "sum" -> fold under/overflow into the first/last bin.
+#   log_x / log_y:  logarithmic axes for this histogram.
+#   log_z:       log color scale (2D histograms).
 #
 # Derived columns from custom/columns.py (which returns an augmented `events`)
 # are available as new fields, e.g. events.my_new_field.

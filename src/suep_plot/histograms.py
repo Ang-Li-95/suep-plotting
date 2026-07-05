@@ -36,6 +36,17 @@ def is_2d(cfg: dict) -> bool:
     return "expression_x" in cfg and "expression_y" in cfg
 
 
+def _make_axis(cfg: dict, suffix: str, axis_name: str, default_label: str) -> hist.axis:
+    """Regular axis from bins/lo/hi, or Variable axis from an ``edges`` list."""
+    label_key = "label" + suffix
+    edges = cfg.get("edges" + suffix)
+    if edges is not None:
+        return hist.axis.Variable([float(e) for e in edges],
+                                  name=axis_name, label=cfg.get(label_key, default_label))
+    return hist.axis.Regular(cfg["bins" + suffix], cfg["lo" + suffix], cfg["hi" + suffix],
+                             name=axis_name, label=cfg.get(label_key, default_label))
+
+
 def build_histograms(hist_defs: dict, sample_names: list[str]) -> dict[str, hist.Hist]:
     """Create empty hist.Hist objects for every histogram × sample."""
     histograms = {}
@@ -43,17 +54,14 @@ def build_histograms(hist_defs: dict, sample_names: list[str]) -> dict[str, hist
         if is_2d(cfg):
             h = hist.Hist(
                 hist.axis.StrCategory(sample_names, name="dataset", growth=True),
-                hist.axis.Regular(cfg["bins_x"], cfg["lo_x"], cfg["hi_x"],
-                                  name="x", label=cfg.get("label_x", name)),
-                hist.axis.Regular(cfg["bins_y"], cfg["lo_y"], cfg["hi_y"],
-                                  name="y", label=cfg.get("label_y", "")),
+                _make_axis(cfg, "_x", "x", name),
+                _make_axis(cfg, "_y", "y", ""),
                 storage=hist.storage.Weight(),
             )
         else:
             h = hist.Hist(
                 hist.axis.StrCategory(sample_names, name="dataset", growth=True),
-                hist.axis.Regular(cfg["bins"], cfg["lo"], cfg["hi"],
-                                  name="x", label=cfg.get("label", name)),
+                _make_axis(cfg, "", "x", name),
                 storage=hist.storage.Weight(),
             )
         histograms[name] = h
@@ -100,11 +108,38 @@ def fill_histograms(
     events,
     sample: str,
     weight: np.ndarray | None = None,
-):
-    """Fill all histograms from a chunk of NanoEvents."""
+    reweighters: dict | None = None,
+) -> dict:
+    """Fill all histograms from a chunk of NanoEvents.
+
+    Histogram ``weight`` entries may be NanoEvents expressions or ``"@name"``
+    references to a reweight map (*reweighters*).  Either may evaluate to a
+    jagged (per-object) array: for ``per_object`` histograms each object is
+    then weighted individually; for event-level histograms the per-object
+    weights are multiplied into one weight per event.
+
+    Returns the selection cache (name -> evaluated mask) so callers (e.g. the
+    cutflow) can reuse the results without re-evaluating.
+    """
     n_events = len(events)
     if weight is None:
         weight = np.ones(n_events, dtype=np.float64)
+
+    # Expression results are cached for the lifetime of the chunk, so an
+    # expression shared by several histograms/selections/weights (e.g.
+    # ``events.Jet.pt``) is evaluated once.
+    expr_cache: dict = {}
+
+    def eval_expr(expr: str):
+        if expr not in expr_cache:
+            if expr.startswith("@"):
+                rw = (reweighters or {}).get(expr[1:])
+                if rw is None:
+                    raise KeyError(f"unknown reweight map '{expr}'")
+                expr_cache[expr] = rw.evaluate(events)
+            else:
+                expr_cache[expr] = _compile_expr(expr)(events)
+        return expr_cache[expr]
 
     sel_cache: dict = {}
 
@@ -121,7 +156,7 @@ def fill_histograms(
             level = sel_cfg.get("level", "event")
 
             if sel_name not in sel_cache:
-                sel = _compile_expr(sel_cfg["expression"])(events)
+                sel = eval_expr(sel_cfg["expression"])
                 if isinstance(sel, ak.Array):
                     sel = ak.fill_none(sel, False)
                 sel_cache[sel_name] = sel
@@ -140,20 +175,45 @@ def fill_histograms(
                 event_mask = event_mask & np.asarray(ak.any(obj_mask, axis=1))
                 obj_mask = None
 
-        w = weight.copy()
-        if "weight" in cfg and cfg["weight"]:
-            extra_w = _fill_none_safe(_compile_expr(cfg["weight"])(events))
-            w = w * np.asarray(extra_w)
+        w = weight
+        obj_w = None
+        if cfg.get("weight"):
+            extra_w = eval_expr(cfg["weight"])
+            if isinstance(extra_w, ak.Array) and extra_w.ndim > 1:
+                if is_per_object:
+                    obj_w = extra_w  # combined per object inside the fill
+                else:
+                    w = weight * np.asarray(
+                        ak.prod(ak.fill_none(extra_w, 1.0), axis=1), dtype=np.float64)
+            else:
+                w = weight * np.asarray(_fill_none_safe(extra_w), dtype=np.float64)
 
         if is_2d(cfg):
-            _fill_2d(histograms[name], cfg, events, sample, event_mask, w, obj_mask)
+            _fill_2d(histograms[name], cfg, eval_expr, sample, event_mask, w,
+                     obj_mask, obj_w)
         else:
-            _fill_1d(histograms[name], cfg, events, sample, event_mask, w, obj_mask)
+            _fill_1d(histograms[name], cfg, eval_expr, sample, event_mask, w,
+                     obj_mask, obj_w)
+
+    return sel_cache
 
 
-def _fill_1d(h, cfg, events, sample, mask, w, obj_mask=None):
+def _flat_obj_weight(obj_w, obj_mask, mask, counts, wname: str) -> np.ndarray:
+    """Flatten a jagged per-object weight, aligned with the flattened values."""
+    if obj_mask is not None:
+        obj_w = obj_w[obj_mask]
+    ow = ak.fill_none(ak.fill_none(obj_w[mask], [], axis=0), 1.0)
+    ocounts = np.asarray(ak.num(ow))
+    if not np.array_equal(ocounts, counts):
+        raise ValueError(
+            f"object-level weight '{wname}' does not match the object structure of "
+            "this histogram's expression (both must use the same collection)")
+    return np.asarray(ak.flatten(ow, axis=None), dtype=np.float64)
+
+
+def _fill_1d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None):
     try:
-        values = _compile_expr(cfg["expression"])(events)
+        values = eval_expr(cfg["expression"])
     except (KeyError, ValueError, AttributeError):
         return
 
@@ -164,6 +224,9 @@ def _fill_1d(h, cfg, events, sample, mask, w, obj_mask=None):
         flat_vals = np.asarray(ak.flatten(selected, axis=None))
         counts = np.asarray(ak.num(selected))
         flat_w = np.repeat(w[mask], counts)
+        if obj_w is not None:
+            flat_w = flat_w * _flat_obj_weight(obj_w, obj_mask, mask, counts,
+                                               cfg.get("weight", ""))
     else:
         flat_vals = np.asarray(_fill_none_safe(values[mask]))
         flat_w = w[mask]
@@ -175,10 +238,10 @@ def _fill_1d(h, cfg, events, sample, mask, w, obj_mask=None):
     h.fill(dataset=sample, x=flat_vals[valid], weight=flat_w[valid])
 
 
-def _fill_2d(h, cfg, events, sample, mask, w, obj_mask=None):
+def _fill_2d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None):
     try:
-        vals_x = _compile_expr(cfg["expression_x"])(events)
-        vals_y = _compile_expr(cfg["expression_y"])(events)
+        vals_x = eval_expr(cfg["expression_x"])
+        vals_y = eval_expr(cfg["expression_y"])
     except (KeyError, ValueError, AttributeError):
         return
 
@@ -192,6 +255,9 @@ def _fill_2d(h, cfg, events, sample, mask, w, obj_mask=None):
         flat_y = np.asarray(ak.flatten(sel_y, axis=None))
         counts = np.asarray(ak.num(sel_x))
         flat_w = np.repeat(w[mask], counts)
+        if obj_w is not None:
+            flat_w = flat_w * _flat_obj_weight(obj_w, obj_mask, mask, counts,
+                                               cfg.get("weight", ""))
     else:
         flat_x = np.asarray(_fill_none_safe(vals_x[mask]))
         flat_y = np.asarray(_fill_none_safe(vals_y[mask]))

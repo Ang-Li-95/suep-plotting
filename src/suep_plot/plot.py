@@ -12,9 +12,11 @@ import mplhep as hep
 import numpy as np
 import yaml
 
-from .histograms import is_2d as _hist_is_2d
+from .histograms import is_2d as _hist_is_2d  # noqa: F401  (re-exported)
 
 hep.style.use("CMS")
+
+DEFAULT_FORMATS = ("png", "pdf")
 
 
 # ── I/O helpers ───────────────────────────────────────────────────
@@ -53,7 +55,7 @@ def merge_results(paths: list[str]) -> dict:
             else:
                 merged["histograms"][name] = h
         merged["samples"].update(data.get("samples", {}))
-        for key in ("sumw", "nevents"):
+        for key in ("sumw", "nevents", "cutflow"):
             merged.setdefault(key, {}).update(data.get(key, {}))
         for name, cfg in data.get("hist_defs", {}).items():
             merged.setdefault("hist_defs", {}).setdefault(name, cfg)
@@ -111,6 +113,44 @@ def apply_xs_scaling(histograms: dict, sample_defs: dict, sumw: dict, lumi: floa
                 view["variance"][idx] *= f * f
 
 
+# ── Histogram styling helpers ─────────────────────────────────────
+
+
+def _fold_flow(sh: hist.Hist) -> hist.Hist:
+    """Fold under/overflow into the first/last visible bin of a 1D histogram."""
+    sh = sh.copy()
+    v = sh.view(flow=True)
+    for field in ("value", "variance"):
+        v[field][1] += v[field][0]
+        v[field][0] = 0.0
+        v[field][-2] += v[field][-1]
+        v[field][-1] = 0.0
+    return sh
+
+
+def _prep_1d(sh: hist.Hist, hist_cfg: dict) -> hist.Hist:
+    """Apply plot-time transforms (rebin, overflow folding) to a 1D slice."""
+    rebin = int(hist_cfg.get("rebin") or 0)
+    if rebin > 1:
+        sh = sh[:: hist.rebin(rebin)]
+    if hist_cfg.get("flow") == "sum":
+        sh = _fold_flow(sh)
+    return sh
+
+
+def _split_samples(samples, sample_defs):
+    signal, background, data = [], [], []
+    for s in samples:
+        cfg = sample_defs.get(s, {})
+        if cfg.get("is_data", False):
+            data.append(s)
+        elif cfg.get("group") == "signal":
+            signal.append(s)
+        else:
+            background.append(s)
+    return signal, background, data
+
+
 # ── 1D histogram plotting ────────────────────────────────────────
 
 
@@ -125,28 +165,38 @@ def plot_histogram(
     log_y: bool = False,
     lumi: float | None = None,
     data_label: str = "Data",
+    formats: tuple[str, ...] = DEFAULT_FORMATS,
+    ratio: bool = True,
 ):
-    """Plot a single 1D histogram with CMS styling."""
+    """Plot a single 1D histogram with CMS styling.
+
+    When both data and stacked backgrounds are present (and *ratio* is true),
+    a Data/MC ratio panel with an MC-stat band is drawn underneath.
+    Per-histogram config keys honoured at plot time: ``blind``, ``rebin``,
+    ``flow: sum``, ``log_x``, ``log_y``.
+    """
     samples = list(h.axes["dataset"])
     if not samples:
         return
 
-    signal_samples = []
-    bkg_samples = []
-    data_samples = []
-    for s in samples:
-        cfg = sample_defs.get(s, {})
-        if cfg.get("is_data", False):
-            data_samples.append(s)
-        elif cfg.get("group") == "signal":
-            signal_samples.append(s)
-        else:
-            bkg_samples.append(s)
+    signal_samples, bkg_samples, data_samples = _split_samples(samples, sample_defs)
+    if hist_cfg.get("blind"):
+        data_samples = []
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    bkg_hists = [_prep_1d(h[{"dataset": s}], hist_cfg) for s in bkg_samples]
+    data_hists = [_prep_1d(h[{"dataset": s}], hist_cfg) for s in data_samples]
 
-    if bkg_samples:
-        bkg_hists = [h[{"dataset": s}] for s in bkg_samples]
+    want_ratio = bool(ratio and data_hists and bkg_hists)
+    if want_ratio:
+        fig, (ax, rax) = plt.subplots(
+            2, 1, figsize=(10, 10), sharex=True,
+            gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06},
+        )
+    else:
+        fig, ax = plt.subplots(figsize=(10, 8))
+        rax = None
+
+    if bkg_hists:
         bkg_labels = [sample_defs.get(s, {}).get("label", s) for s in bkg_samples]
         bkg_colors = [sample_defs.get(s, {}).get("color", None) for s in bkg_samples]
         hep.histplot(
@@ -165,22 +215,28 @@ def plot_histogram(
 
     for s in signal_samples:
         cfg = sample_defs.get(s, {})
-        sh = h[{"dataset": s}]
-        if normalize and sh.sum().value > 0:
-            sh = sh * (1.0 / sh.sum().value)
+        sh = _prep_1d(h[{"dataset": s}], hist_cfg)
+        label = cfg.get("label", s)
+        if normalize:
+            if sh.sum().value > 0:
+                sh = sh * (1.0 / sh.sum().value)
+        else:
+            scale = float(cfg.get("scale", 1.0) or 1.0)
+            if scale != 1.0:
+                sh = sh * scale
+                label = f"{label} $\\times${scale:g}"
         if solo_signal:
-            hep.histplot(sh, ax=ax, histtype="fill", label=cfg.get("label", s),
+            hep.histplot(sh, ax=ax, histtype="fill", label=label,
                          color=cfg.get("color", "tab:blue"), alpha=0.7, edgecolor="black", linewidth=0.5)
         else:
             # sqrt(sum w^2) MC-stat errors; mplhep's default Poisson intervals
             # draw large upper limits on every empty bin of a weighted hist.
-            hep.histplot(sh, ax=ax, histtype="step", label=cfg.get("label", s),
+            hep.histplot(sh, ax=ax, histtype="step", label=label,
                          color=cfg.get("color", "red"), linewidth=2,
                          yerr=np.sqrt(sh.variances()))
 
-    for s in data_samples:
+    for s, dh in zip(data_samples, data_hists):
         cfg = sample_defs.get(s, {})
-        dh = h[{"dataset": s}]
         hep.histplot(
             dh,
             ax=ax,
@@ -191,20 +247,50 @@ def plot_histogram(
             markersize=5,
         )
 
-    ax.set_xlabel(hist_cfg.get("label", name))
+    xlabel_ax = rax if rax is not None else ax
+    xlabel_ax.set_xlabel(hist_cfg.get("label", name))
+    if rax is not None:
+        ax.set_xlabel("")
     ax.set_ylabel("Events" if not normalize else "Normalized")
-    if log_y:
+    if log_y or hist_cfg.get("log_y"):
         ax.set_yscale("log")
         if not normalize:
             ax.set_ylim(bottom=0.1)
+    if hist_cfg.get("log_x"):
+        ax.set_xscale("log")
     ax.legend(fontsize=12, loc="best")
 
     _cms_label(ax, lumi=lumi, has_data=bool(data_samples))
 
+    if want_ratio:
+        _draw_ratio_panel(rax, data_hists, bkg_hists)
+
     os.makedirs(output_dir, exist_ok=True)
-    for ext in ("png", "pdf"):
+    for ext in formats:
         fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+
+def _draw_ratio_panel(rax, data_hists: list[hist.Hist], bkg_hists: list[hist.Hist]):
+    """Data / total-background ratio with an MC-stat band around 1."""
+    tot_val = np.sum([bh.view().value for bh in bkg_hists], axis=0)
+    tot_var = np.sum([bh.view().variance for bh in bkg_hists], axis=0)
+    dat_val = np.sum([dh.view().value for dh in data_hists], axis=0)
+    dat_var = np.sum([dh.view().variance for dh in data_hists], axis=0)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = np.where(tot_val > 0, dat_val / tot_val, np.nan)
+        rerr = np.where(tot_val > 0, np.sqrt(dat_var) / tot_val, np.nan)
+        band = np.where(tot_val > 0, np.sqrt(tot_var) / tot_val, 0.0)
+
+    edges = bkg_hists[0].axes[0].edges
+    centers = bkg_hists[0].axes[0].centers
+    rax.fill_between(edges, np.r_[1 - band, (1 - band)[-1]], np.r_[1 + band, (1 + band)[-1]],
+                     step="post", color="gray", alpha=0.35, linewidth=0)
+    rax.errorbar(centers, r, yerr=rerr, fmt="o", color="black", markersize=5)
+    rax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8)
+    rax.set_ylabel("Data / MC")
+    rax.set_ylim(0.5, 1.5)
 
 
 # ── 2D histogram plotting ────────────────────────────────────────
@@ -218,8 +304,12 @@ def plot_histogram_2d(
     name: str,
     *,
     lumi: float | None = None,
+    formats: tuple[str, ...] = DEFAULT_FORMATS,
 ):
-    """Plot a 2D histogram as colz (one figure per sample)."""
+    """Plot a 2D histogram as colz (one figure per sample).
+
+    ``log_z: true`` in the histogram config switches to a log color scale.
+    """
     samples = list(h.axes["dataset"])
     if not samples:
         return
@@ -232,18 +322,24 @@ def plot_histogram_2d(
         w = h2.view().value
         x_edges = h2.axes["x"].edges
         y_edges = h2.axes["y"].edges
-        mesh = ax.pcolormesh(x_edges, y_edges, w.T, cmap="viridis")
+        norm = None
+        if hist_cfg.get("log_z") and (w > 0).any():
+            from matplotlib.colors import LogNorm
+            norm = LogNorm(vmin=w[w > 0].min(), vmax=w.max())
+        mesh = ax.pcolormesh(x_edges, y_edges, w.T, cmap="viridis", norm=norm)
         fig.colorbar(mesh, ax=ax, label="Events")
 
         label = sample_defs.get(s, {}).get("label", s)
         ax.set_xlabel(hist_cfg.get("label_x", name))
         ax.set_ylabel(hist_cfg.get("label_y", ""))
-        ax.set_title(label)
+        # Sample tag inside the axes; a centered title collides with the CMS label.
+        ax.text(0.97, 0.97, label, transform=ax.transAxes, ha="right", va="top",
+                fontsize=16)
 
         _cms_label(ax, lumi=lumi)
 
         tag = f"{name}_{s}" if len(samples) > 1 else name
-        for ext in ("png", "pdf"):
+        for ext in formats:
             fig.savefig(os.path.join(output_dir, f"{tag}.{ext}"), dpi=150, bbox_inches="tight")
         plt.close(fig)
 
@@ -300,6 +396,26 @@ def _clopper_pearson(passed, total, level=0.6827):
     return lo, hi
 
 
+def _plot_derived_one(name, cfg, histograms, sample_defs, output_dir, *,
+                      log_y=False, lumi=None, formats=DEFAULT_FORMATS) -> int:
+    """Dispatch a single derived-plot definition to its renderer."""
+    dtype = cfg["type"]
+    if dtype in ("profile_x", "profile_y"):
+        return _plot_profile(name, cfg, histograms, sample_defs, output_dir,
+                             lumi=lumi, formats=formats)
+    if dtype in ("projection_x", "projection_y"):
+        return _plot_projection(name, cfg, histograms, sample_defs, output_dir,
+                                log_y=log_y, lumi=lumi, formats=formats)
+    if dtype == "efficiency":
+        return _plot_efficiency(name, cfg, histograms, sample_defs, output_dir,
+                                lumi=lumi, formats=formats)
+    if dtype == "ratio":
+        return _plot_ratio(name, cfg, histograms, sample_defs, output_dir,
+                           lumi=lumi, formats=formats)
+    print(f"  WARNING: unknown derived type '{dtype}' for '{name}'")
+    return 0
+
+
 def plot_derived(
     derived_defs: dict,
     histograms: dict[str, hist.Hist],
@@ -308,6 +424,7 @@ def plot_derived(
     *,
     log_y: bool = False,
     lumi: float | None = None,
+    formats: tuple[str, ...] = DEFAULT_FORMATS,
 ):
     """Produce profile, projection, efficiency, and ratio plots."""
     if not derived_defs:
@@ -315,27 +432,15 @@ def plot_derived(
 
     os.makedirs(output_dir, exist_ok=True)
     count = 0
-
     for name, cfg in derived_defs.items():
-        dtype = cfg["type"]
-
-        if dtype in ("profile_x", "profile_y"):
-            count += _plot_profile(name, cfg, histograms, sample_defs, output_dir, lumi=lumi)
-        elif dtype in ("projection_x", "projection_y"):
-            count += _plot_projection(name, cfg, histograms, sample_defs, output_dir,
-                                       log_y=log_y, lumi=lumi)
-        elif dtype == "efficiency":
-            count += _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, lumi=lumi)
-        elif dtype == "ratio":
-            count += _plot_ratio(name, cfg, histograms, sample_defs, output_dir, lumi=lumi)
-        else:
-            print(f"  WARNING: unknown derived type '{dtype}' for '{name}'")
-
+        count += _plot_derived_one(name, cfg, histograms, sample_defs, output_dir,
+                                   log_y=log_y, lumi=lumi, formats=formats)
     if count:
         print(f"Plotted {count} derived plot(s) to {output_dir}/")
 
 
-def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *, lumi=None):
+def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *,
+                  lumi=None, formats=DEFAULT_FORMATS):
     source = cfg["source"]
     if source not in histograms:
         print(f"  WARNING: source '{source}' not found for derived plot '{name}'")
@@ -363,14 +468,14 @@ def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *, lumi=None):
 
     _cms_label(ax, lumi=lumi)
 
-    for ext in ("png", "pdf"):
+    for ext in formats:
         fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  {name} (profile)")
     return 1
 
 
-def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *, log_y=False, lumi=None):
+def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *,
+                     log_y=False, lumi=None, formats=DEFAULT_FORMATS):
     source = cfg["source"]
     if source not in histograms:
         print(f"  WARNING: source '{source}' not found for derived plot '{name}'")
@@ -384,12 +489,12 @@ def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *, log_y=Fa
         "label": cfg.get("label_x", h.axes[proj_axis].label),
     }
     plot_histogram(projected, hist_cfg, sample_defs, output_dir, name,
-                   log_y=log_y, lumi=lumi)
-    print(f"  {name} (projection)")
+                   log_y=log_y, lumi=lumi, formats=formats)
     return 1
 
 
-def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *, lumi=None):
+def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
+                     lumi=None, formats=DEFAULT_FORMATS):
     num_name = cfg["numerator"]
     den_name = cfg["denominator"]
     for src in (num_name, den_name):
@@ -430,14 +535,14 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *, lumi=Non
 
     _cms_label(ax, lumi=lumi)
 
-    for ext in ("png", "pdf"):
+    for ext in formats:
         fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  {name} (efficiency)")
     return 1
 
 
-def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *, lumi=None):
+def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
+                lumi=None, formats=DEFAULT_FORMATS):
     num_name = cfg["numerator"]
     den_name = cfg["denominator"]
     for src in (num_name, den_name):
@@ -477,11 +582,116 @@ def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *, lumi=None):
 
     _cms_label(ax, lumi=lumi)
 
-    for ext in ("png", "pdf"):
+    for ext in formats:
         fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  {name} (ratio)")
     return 1
+
+
+# ── Cutflow table ────────────────────────────────────────────────
+
+
+def write_cutflow(cutflow: dict, output_dir: str):
+    """Write per-sample cutflow tables (raw and weighted counts) as txt + csv.
+
+    ``cutflow`` maps sample -> selection -> {"raw": int, "wtd": float}.
+    Counts are independent per selection, not sequential.
+    """
+    if not cutflow:
+        return
+    os.makedirs(output_dir, exist_ok=True)
+
+    sel_names: list[str] = []
+    for flows in cutflow.values():
+        for sel in flows:
+            if sel not in sel_names:
+                sel_names.append(sel)
+
+    txt_path = os.path.join(output_dir, "cutflow.txt")
+    csv_path = os.path.join(output_dir, "cutflow.csv")
+
+    with open(txt_path, "w") as f:
+        f.write("Cutflow (independent counts per selection; 'total' = all processed events)\n")
+        for sample, flows in cutflow.items():
+            f.write(f"\n{sample}\n")
+            f.write(f"  {'selection':<28}{'raw':>12}{'weighted':>16}\n")
+            for sel in sel_names:
+                if sel not in flows:
+                    continue
+                c = flows[sel]
+                f.write(f"  {sel:<28}{c['raw']:>12,}{c['wtd']:>16.4g}\n")
+
+    with open(csv_path, "w") as f:
+        f.write("sample,selection,raw,weighted\n")
+        for sample, flows in cutflow.items():
+            for sel in sel_names:
+                if sel in flows:
+                    c = flows[sel]
+                    f.write(f"{sample},{sel},{c['raw']},{c['wtd']:.6g}\n")
+
+    print(f"Wrote cutflow tables: {txt_path}, {csv_path}")
+
+
+# ── ROOT export (for combine / further processing) ───────────────
+
+
+def export_root(histograms: dict[str, hist.Hist], path: str):
+    """Write every histogram x dataset slice to a ROOT file (TH1D/TH2D).
+
+    Layout: one directory per histogram, one key per sample
+    (``<hist>/<sample>``), ready for combine datacards or ROOT-based tooling.
+    """
+    import uproot
+
+    n = 0
+    with uproot.recreate(path) as f:
+        for name, h in histograms.items():
+            for s in h.axes["dataset"]:
+                f[f"{name}/{s}"] = h[{"dataset": s}]
+                n += 1
+    print(f"Wrote {n} histogram(s) to {path}")
+
+
+# ── Parallel rendering ───────────────────────────────────────────
+
+
+def _render_task(args) -> tuple[str, str | None]:
+    """Render one plotting task; returns (name, error-or-None)."""
+    task, common = args
+    kind, name = task[0], task[1]
+    try:
+        if kind == "1d":
+            _, _, h, cfg = task
+            plot_histogram(h, cfg, common["sample_defs"], common["output_dir"], name,
+                           normalize=common["normalize"], log_y=common["log_y"],
+                           lumi=common["lumi"], formats=common["formats"],
+                           ratio=common["ratio"])
+        elif kind == "2d":
+            _, _, h, cfg = task
+            plot_histogram_2d(h, cfg, common["sample_defs"], common["output_dir"], name,
+                              lumi=common["lumi"], formats=common["formats"])
+        else:  # derived
+            _, _, cfg, hists = task
+            _plot_derived_one(name, cfg, hists, common["sample_defs"], common["output_dir"],
+                              log_y=common["log_y"], lumi=common["lumi"],
+                              formats=common["formats"])
+        return name, None
+    except Exception as e:  # noqa: BLE001 - reported per plot, run continues
+        return name, f"{type(e).__name__}: {e}"
+
+
+def _run_tasks(tasks: list, common: dict, jobs: int) -> list[tuple[str, str | None]]:
+    args = [(t, common) for t in tasks]
+    if jobs > 1 and len(args) > 1:
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor
+        try:
+            ctx = mp.get_context("fork")
+            with ProcessPoolExecutor(max_workers=min(jobs, len(args)), mp_context=ctx) as ex:
+                return list(ex.map(_render_task, args))
+        except (ValueError, OSError) as e:
+            print(f"  (parallel rendering unavailable: {e}; falling back to serial)")
+    return [_render_task(a) for a in args]
 
 
 # ── Top-level entry point ────────────────────────────────────────
@@ -494,13 +704,23 @@ def plot_all(
     log_y: bool = False,
     lumi: float | None = None,
     config_dir: str | None = None,
+    jobs: int = 1,
+    formats: tuple[str, ...] = DEFAULT_FORMATS,
+    ratio: bool = True,
+    save_root: str | None = None,
 ):
     """Plot all histograms from per-sample pickle files.
 
     results_path can be a single .pkl file, a list of .pkl files,
     a directory containing .pkl files, or a mix of files and directories.
     Per-sample histograms are merged before plotting.  When *lumi* is given,
-    MC samples are normalized to xs * lumi * 1000 / sumw.
+    MC samples are normalized to xs * lumi * 1000 / sumw.  With *jobs* > 1
+    figures render in parallel processes.  *save_root* additionally exports
+    every histogram to a ROOT file (after any lumi scaling).
+
+    If *config_dir* is given, plot-time keys from its histograms.yaml (label,
+    blind, rebin, flow, log_x, log_y, log_z ...) override the ones stored in
+    the pickles, so styling can be iterated without reprocessing.
     """
     pkl_files = _resolve_inputs(results_path)
     if not pkl_files:
@@ -515,28 +735,70 @@ def plot_all(
     sample_defs = data.get("samples", {})
     hist_defs = data.get("hist_defs", {})
 
+    if config_dir:
+        fresh_path = Path(config_dir) / "histograms.yaml"
+        if fresh_path.exists():
+            with open(fresh_path) as f:
+                for name, cfg in (yaml.safe_load(f) or {}).items():
+                    hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
+
     if lumi is not None:
         apply_xs_scaling(histograms, sample_defs, data.get("sumw", {}), lumi)
 
-    n_1d = sum(1 for name in histograms if not _is_2d_hist(histograms[name]))
-    n_2d = sum(1 for name in histograms if _is_2d_hist(histograms[name]))
-    print(f"Plotting {n_1d} 1D + {n_2d} 2D histogram(s) to {output_dir}/")
+    os.makedirs(output_dir, exist_ok=True)
+    write_cutflow(data.get("cutflow", {}), output_dir)
+    if save_root:
+        export_root(histograms, save_root)
 
+    common = {
+        "sample_defs": sample_defs,
+        "output_dir": output_dir,
+        "normalize": normalize,
+        "log_y": log_y,
+        "lumi": lumi,
+        "formats": tuple(formats),
+        "ratio": ratio,
+    }
+
+    tasks = []
     for name, h in histograms.items():
-        cfg = hist_defs.get(name, {})
-        if _is_2d_hist(h):
-            plot_histogram_2d(h, cfg, sample_defs, output_dir, name, lumi=lumi)
-        else:
-            plot_histogram(h, cfg, sample_defs, output_dir, name,
-                           normalize=normalize, log_y=log_y, lumi=lumi)
-        print(f"  {name}")
+        kind = "2d" if _is_2d_hist(h) else "1d"
+        tasks.append((kind, name, h, hist_defs.get(name, {})))
+    n_1d = sum(1 for t in tasks if t[0] == "1d")
+    n_2d = sum(1 for t in tasks if t[0] == "2d")
 
     derived_defs = {}
     if config_dir:
         derived_defs = load_derived_plot_defs(os.path.join(config_dir, "derived_plots.yaml"))
-    if derived_defs:
-        print(f"Computing {len(derived_defs)} derived plot(s)...")
-        plot_derived(derived_defs, histograms, sample_defs, output_dir,
-                     log_y=log_y, lumi=lumi)
+    for name, cfg in derived_defs.items():
+        dtype = cfg.get("type", "")
+        if dtype in ("profile_x", "profile_y", "projection_x", "projection_y"):
+            needed = [cfg.get("source")]
+        elif dtype in ("efficiency", "ratio"):
+            needed = [cfg.get("numerator"), cfg.get("denominator")]
+        else:
+            print(f"  WARNING: unknown derived type '{dtype}' for '{name}'")
+            continue
+        missing = [s for s in needed if s not in histograms]
+        if missing:
+            print(f"  WARNING: source histogram(s) {missing} not found for derived plot '{name}'")
+            continue
+        tasks.append(("derived", name, cfg, {s: histograms[s] for s in needed}))
 
-    print("Done.")
+    n_derived = len(tasks) - n_1d - n_2d
+    mode = f"{jobs} process(es)" if jobs > 1 else "serial"
+    print(f"Plotting {n_1d} 1D + {n_2d} 2D + {n_derived} derived plot(s) "
+          f"to {output_dir}/ [{mode}]")
+
+    failed = 0
+    for name, err in _run_tasks(tasks, common, jobs):
+        if err:
+            failed += 1
+            print(f"  WARNING: '{name}' failed: {err}")
+        else:
+            print(f"  {name}")
+
+    if failed:
+        print(f"Done ({failed} plot(s) failed).")
+    else:
+        print("Done.")
