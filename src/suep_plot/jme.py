@@ -23,9 +23,12 @@ What it does, following the JME prescription:
    jets with a valid ``genJetIdx`` within ``dR < 0.2`` and ``|pt - pt_gen| <
    3 sigma``, deterministic stochastic smearing otherwise (seeded from the
    event number, so results are reproducible);
-4. re-sort jets by the new pT.
+4. propagate the jet-momentum change to the MET (Type-1 delta: the vector sum
+   of ``p_new - p_stored`` over jets with corrected pT > 15 GeV and EM
+   fraction < 0.9 is subtracted from the stored PuppiMET);
+5. re-sort jets by the new pT.
 
-``pt`` and ``mass`` are replaced in place; MET is *not* propagated.
+``pt`` and ``mass`` (and the MET's ``pt``/``phi``) are replaced in place.
 Correction files resolve like ``corrections.yaml`` (``$CORRECTIONLIB_DATA``,
 then cvmfs jsonpog-integration).
 """
@@ -90,6 +93,28 @@ def _matched_gen_pt(jets, genjets, pt_corr_flat, resolution_flat, counts):
     return np.where(dr_ok_flat & close, gen_pt_flat, -1.0)
 
 
+def _propagate_met(events, met_name: str, phi_flat, pt_old_flat, pt_new_flat,
+                   emf_ok_flat, counts):
+    """Type-1 delta propagation: subtract the jet-momentum change from the MET.
+
+    The stored NanoAOD MET is already Type-1 corrected with the production
+    JECs and unsmeared jets, so only the *difference* to the new calibration
+    is propagated, over jets with corrected pT > 15 GeV and EM fraction < 0.9
+    (the standard simplified recipe; muon subtraction is not re-done).
+    """
+    met = events[met_name]
+    use = (pt_new_flat > 15.0) & emf_ok_flat
+    delta = np.where(use, pt_new_flat - pt_old_flat, 0.0)
+    dx = ak.sum(ak.unflatten(delta * np.cos(phi_flat), counts), axis=1)
+    dy = ak.sum(ak.unflatten(delta * np.sin(phi_flat), counts), axis=1)
+
+    mex = met.pt * np.cos(met.phi) - dx
+    mey = met.pt * np.sin(met.phi) - dy
+    new_met = ak.with_field(met, np.hypot(mex, mey), "pt")
+    new_met = ak.with_field(new_met, np.arctan2(mey, mex), "phi")
+    return ak.with_field(events, new_met, met_name)
+
+
 def correct_jets(
     events,
     era: str = "2024_Summer24",
@@ -98,6 +123,7 @@ def correct_jets(
     jer_tag: str | None = None,
     variation: str = "nominal",
     smear: bool = True,
+    met: str | None = "PuppiMET",
 ):
     """Return *events* with JEC-corrected (and, for MC, JER-smeared) jets.
 
@@ -112,6 +138,8 @@ def correct_jets(
         or ``jer_up``/``jer_down`` (resolution SF variation).
     smear     : apply JER smearing (automatically off when the events carry
         no ``GenJet`` collection, i.e. data).
+    met       : MET collection to Type-1-propagate the jet change into
+        (skipped when absent from the events); ``None`` disables.
     """
     if variation not in _VARIATIONS:
         raise ValueError(f"variation must be one of {_VARIATIONS}")
@@ -165,6 +193,14 @@ def correct_jets(
         # Guard against negative smears for extreme stochastic draws.
         factor = np.maximum(factor, 0.0)
         pt_corr, mass_corr = pt_corr * factor, mass_corr * factor
+
+    # ── Type-1 MET propagation ────────────────────────────────────
+    if met is not None and met in events.fields:
+        if "chEmEF" in jets.fields and "neEmEF" in jets.fields:
+            emf_ok = flat(jets.chEmEF) + flat(jets.neEmEF) < 0.9
+        else:
+            emf_ok = np.ones(len(pt_corr), dtype=bool)
+        events = _propagate_met(events, met, phi, pt, pt_corr, emf_ok, counts)
 
     # ── write back and re-sort by the new pT ──────────────────────
     new_jets = ak.with_field(jets, ak.unflatten(pt_corr, counts), "pt")

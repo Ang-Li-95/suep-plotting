@@ -658,13 +658,18 @@ new pT. Systematics are one argument away:
 events = correct_jets(events, variation="jec_up")    # jec_down / jer_up / jer_down
 ```
 
+The jet-momentum change is also **Type-1 propagated to the MET**: the vector
+sum of `p_new − p_stored` over jets with corrected pT > 15 GeV and EM
+fraction < 0.9 is subtracted from `PuppiMET` (`met="PFMET"` to target another
+collection, `met=None` to disable), so `events.PuppiMET.pt` selections and
+histograms respond consistently to JEC/JER variations.
+
 For data pass the run-specific tag and disable smearing:
 `correct_jets(events, jec_tag="Summer24Prompt24_RunX_V1_DATA", smear=False)`.
 Payload files resolve from `$CORRECTIONLIB_DATA`, then cvmfs
-jsonpog-integration. Note: MET is not propagated, and `pt`/`mass` are
-replaced in place (re-run with the example removed to get uncorrected jets —
-processing is incremental, but `custom/columns.py` edits are tracked, so
-affected samples re-run automatically).
+jsonpog-integration. `pt`/`mass`/MET are replaced in place (re-run with the
+example removed to get uncorrected values — `custom/columns.py` edits are
+tracked, so affected samples re-run automatically).
 
 **Custom derived columns** — edit `custom/columns.py`; `derive(events)` returns the
 (augmented) events array. Attach fields with `ak.with_field(events, value, "name")`

@@ -38,8 +38,8 @@ def derive(events):
         # systematics:  correct_jets(events, variation="jec_up")
         #               (jec_down / jer_up / jer_down)
         # data:         correct_jets(events, jec_tag="<era>_DATA", smear=False)
-        # afterwards every events.Jet expression uses corrected jets
-        # (MET is not propagated)
+        # afterwards every events.Jet expression uses corrected jets, and
+        # PuppiMET is Type-1 propagated (met="..." to change, met=None to skip)
 
     Scalar HT as an event-level field::
 
