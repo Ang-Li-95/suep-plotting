@@ -55,6 +55,7 @@ suep-plotting/
     ├── histograms.py                # build hist.Hist from YAML, per-event & per-object fill
     ├── corrections.py               # correctionlib_wrapper + coffea Weights
     ├── reweights.py                 # expression/binned reweighting + suep-reweight maps
+    ├── jme.py                       # jet energy corrections (JEC) + JER smearing
     ├── plot.py                      # mplhep CMS-style plotting (stack, overlay, data)
     ├── slurm.py                     # generates Slurm array job scripts
     ├── cli.py                       # entry points (run/plot/submit/reweight)
@@ -632,6 +633,38 @@ weighted counts).
 suep-plot output/ -o plots --lumi 38.5 --save-root merged.root
 # layout: <histogram>/<sample>, e.g. met_pt/qcd_ht300to500 (TH1D with Sumw2)
 ```
+
+**Jet energy corrections + resolution smearing (JEC/JER)** — these rescale the
+jet four-momentum, so they run in `custom/columns.py` (before selections and
+fills), *not* as a weight in `corrections.yaml`:
+
+```python
+from suep_plot.jme import correct_jets
+
+def derive(events):
+    events = correct_jets(events)        # 2024 Summer24 MC defaults
+    return events
+```
+
+Afterwards every `events.Jet` expression (HT, jet pT, `good_jets`, …) uses
+corrected jets. `suep_plot/jme.py` follows the JME prescription: undo
+`rawFactor`, apply the compound `L1L2L3Res` JEC from jsonpog
+`jet_jerc.json.gz`, then (MC) smear with the official `JERSmear` helper —
+gen-matched scaling within `dR < 0.2` and `3σ`, deterministic stochastic
+smearing (seeded from the event number) otherwise — and re-sort jets by the
+new pT. Systematics are one argument away:
+
+```python
+events = correct_jets(events, variation="jec_up")    # jec_down / jer_up / jer_down
+```
+
+For data pass the run-specific tag and disable smearing:
+`correct_jets(events, jec_tag="Summer24Prompt24_RunX_V1_DATA", smear=False)`.
+Payload files resolve from `$CORRECTIONLIB_DATA`, then cvmfs
+jsonpog-integration. Note: MET is not propagated, and `pt`/`mass` are
+replaced in place (re-run with the example removed to get uncorrected jets —
+processing is incremental, but `custom/columns.py` edits are tracked, so
+affected samples re-run automatically).
 
 **Custom derived columns** — edit `custom/columns.py`; `derive(events)` returns the
 (augmented) events array. Attach fields with `ak.with_field(events, value, "name")`

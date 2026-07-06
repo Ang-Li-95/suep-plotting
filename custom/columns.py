@@ -28,6 +28,19 @@ def derive(events):
 
     Examples
     --------
+    Jet energy corrections + resolution smearing (JEC/JER).  These rescale
+    the jet four-momentum, so they belong here (before selections and fills),
+    not in corrections.yaml.  Needs cvmfs jsonpog-integration or
+    $CORRECTIONLIB_DATA; see suep_plot/jme.py for the full prescription::
+
+        from suep_plot.jme import correct_jets
+        events = correct_jets(events)              # 2024 Summer24 MC defaults
+        # systematics:  correct_jets(events, variation="jec_up")
+        #               (jec_down / jer_up / jer_down)
+        # data:         correct_jets(events, jec_tag="<era>_DATA", smear=False)
+        # afterwards every events.Jet expression uses corrected jets
+        # (MET is not propagated)
+
     Scalar HT as an event-level field::
 
         events = ak.with_field(events, ak.sum(events.Jet.pt, axis=1), "HT")
