@@ -493,6 +493,21 @@ def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *,
     return 1
 
 
+def _draw_spans(ax, spans):
+    """Shade labelled x-axis regions (e.g. detector station positions).
+
+    Each entry is ``{lo, hi, label}`` with an optional ``color``.
+    """
+    for span in spans:
+        color = span.get("color", "gray")
+        ax.axvspan(span["lo"], span["hi"], color=color, alpha=0.15, zorder=0,
+                   linewidth=0)
+        if span.get("label"):
+            ax.text((span["lo"] + span["hi"]) / 2, 0.98, span["label"],
+                    transform=ax.get_xaxis_transform(), rotation=90,
+                    ha="center", va="top", fontsize=11, color="dimgray")
+
+
 def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
                      lumi=None, formats=DEFAULT_FORMATS):
     num_name = cfg["numerator"]
@@ -515,8 +530,9 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
         passed = h_num[{"dataset": s}].view().value
         total = h_den[{"dataset": s}].view().value
 
+        filled = total > 0
         with np.errstate(divide="ignore", invalid="ignore"):
-            eff = np.where(total > 0, passed / total, 0.0)
+            eff = np.where(filled, passed / total, 0.0)
 
         lo, hi = _clopper_pearson(passed, total)
         err_lo = eff - lo
@@ -525,8 +541,12 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
         centers = h_num.axes["x"].centers
         label = sample_defs.get(s, {}).get("label", s)
         color = sample_defs.get(s, {}).get("color", colors[i % len(colors)])
-        ax.errorbar(centers, eff, yerr=[err_lo, err_hi], fmt="o", label=label,
+        ax.errorbar(centers[filled], eff[filled],
+                    yerr=[err_lo[filled], err_hi[filled]], fmt="o", label=label,
                     color=color, markersize=4, capsize=2)
+
+    if cfg.get("spans"):
+        _draw_spans(ax, cfg["spans"])
 
     ax.set_xlabel(cfg.get("label_x", h_num.axes["x"].label))
     ax.set_ylabel(cfg.get("label_y", "Efficiency"))

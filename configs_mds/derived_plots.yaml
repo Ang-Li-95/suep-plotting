@@ -1,0 +1,291 @@
+# ── Derived plots for the MDS LLP cluster study ───────────────────
+# Efficiencies: Clopper-Pearson intervals computed at plot time from the
+# numerator/denominator histogram pairs in histograms.yaml.
+# NOTE: do not pass --lumi to suep-plot; xs*lumi scaling would distort
+# the binomial intervals (xs is a placeholder anyway).
+
+# In-volume reconstruction efficiency vs LLP pT
+eff_csc_vs_pt:
+  type: efficiency
+  numerator: llp_pt_num_csc
+  denominator: llp_pt_den_csc
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'CSC cluster efficiency (decay in CSC)'
+eff_dt_vs_pt:
+  type: efficiency
+  numerator: llp_pt_num_dt
+  denominator: llp_pt_den_dt
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'DT cluster efficiency (decay in DT)'
+eff_rpc_vs_pt:
+  type: efficiency
+  numerator: llp_pt_num_rpc
+  denominator: llp_pt_den_rpc
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'RPC cluster efficiency (decay in RPC)'
+eff_any_vs_pt:
+  type: efficiency
+  numerator: llp_pt_num_any
+  denominator: llp_pt_den_any
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'MDS efficiency (decay in muon system)'
+
+# In-volume reconstruction efficiency vs LLP |eta|
+eff_csc_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_num_csc
+  denominator: llp_abseta_den_csc
+  label_x: 'LLP $|\eta|$'
+  label_y: 'CSC cluster efficiency (decay in CSC)'
+eff_dt_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_num_dt
+  denominator: llp_abseta_den_dt
+  label_x: 'LLP $|\eta|$'
+  label_y: 'DT cluster efficiency (decay in DT)'
+eff_rpc_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_num_rpc
+  denominator: llp_abseta_den_rpc
+  label_x: 'LLP $|\eta|$'
+  label_y: 'RPC cluster efficiency (decay in RPC)'
+eff_any_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_num_any
+  denominator: llp_abseta_den_any
+  label_x: 'LLP $|\eta|$'
+  label_y: 'MDS efficiency (decay in muon system)'
+
+# In-volume efficiency vs decay position (denominator inside volume)
+eff_csc_vs_decayr:
+  type: efficiency
+  numerator: llp_decayr_num_csc
+  denominator: llp_decayr_den_csc
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'CSC cluster efficiency (decay in CSC)'
+# DT station r extents measured from dtRecHits (hypot(X,Y) vs Station, 0.5-99.5 pct)
+eff_dt_vs_decayr:
+  type: efficiency
+  numerator: llp_decayr_num_dt
+  denominator: llp_decayr_den_dt
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'DT cluster efficiency (decay in DT)'
+  spans: &dt_stations
+    - {lo: 418, hi: 465, label: 'MB1'}
+    - {lo: 499, hi: 544, label: 'MB2'}
+    - {lo: 606, hi: 653, label: 'MB3'}
+    - {lo: 708, hi: 792, label: 'MB4'}
+eff_rpc_vs_decayr:
+  type: efficiency
+  numerator: llp_decayr_num_rpc
+  denominator: llp_decayr_den_rpc
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'RPC cluster efficiency (decay in RPC)'
+
+# CSC station |z| extents measured from cscRechits (Z vs Station, 0.5-99.5 pct)
+eff_csc_vs_absdecayz:
+  type: efficiency
+  numerator: llp_absdecayz_num_csc
+  denominator: llp_absdecayz_den_csc
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'CSC cluster efficiency (decay in CSC)'
+  spans: &csc_stations
+    - {lo: 582, hi: 623, label: 'ME1/1'}
+    - {lo: 678, hi: 719, label: 'ME1/2,3'}
+    - {lo: 810, hi: 847, label: 'ME2'}
+    - {lo: 917, hi: 954, label: 'ME3'}
+    - {lo: 1006, hi: 1044, label: 'ME4'}
+eff_dt_vs_absdecayz:
+  type: efficiency
+  numerator: llp_absdecayz_num_dt
+  denominator: llp_absdecayz_den_dt
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'DT cluster efficiency (decay in DT)'
+eff_rpc_vs_absdecayz:
+  type: efficiency
+  numerator: llp_absdecayz_num_rpc
+  denominator: llp_absdecayz_den_rpc
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'RPC cluster efficiency (decay in RPC)'
+
+# Acceptance x efficiency vs decay position (no region cut in denominator)
+eff_csc_vs_decayr_all:
+  type: efficiency
+  numerator: llp_decayr_all_num_csc
+  denominator: llp_decayr_all_den
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'CSC acc. $\times$ eff. (all LLPs)'
+eff_dt_vs_decayr_all:
+  type: efficiency
+  numerator: llp_decayr_all_num_dt
+  denominator: llp_decayr_all_den
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'DT acc. $\times$ eff. (all LLPs)'
+  spans: *dt_stations
+eff_rpc_vs_decayr_all:
+  type: efficiency
+  numerator: llp_decayr_all_num_rpc
+  denominator: llp_decayr_all_den
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'RPC acc. $\times$ eff. (all LLPs)'
+eff_any_vs_decayr_all:
+  type: efficiency
+  numerator: llp_decayr_all_num_any
+  denominator: llp_decayr_all_den
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'MDS acc. $\times$ eff. (all LLPs)'
+
+eff_csc_vs_absdecayz_all:
+  type: efficiency
+  numerator: llp_absdecayz_all_num_csc
+  denominator: llp_absdecayz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'CSC acc. $\times$ eff. (all LLPs)'
+  spans: *csc_stations
+
+# ── Factorized efficiency chain ────────────────────────────────────
+#   fiducial:        decay in system volume            / all LLPs
+#   reconstructable: >= 10 truth hits in system        / fiducial
+#   reconstructed:   >= 1 matched cluster in system    / reconstructable
+# (a matched cluster requires >= 10 shared hits, so each step is a
+#  subset of the previous one)
+
+# CSC chain
+eff_csc_fid_vs_pt:
+  type: efficiency
+  numerator: llp_pt_den_csc
+  denominator: llp_pt_all_den
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'Fiducial: decay in CSC / all LLPs'
+eff_csc_hits_vs_pt:
+  type: efficiency
+  numerator: llp_pt_hits_csc
+  denominator: llp_pt_den_csc
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'Reconstructable: $\geq$10 CSC hits / fiducial'
+eff_csc_reco_vs_pt:
+  type: efficiency
+  numerator: llp_pt_num_csc
+  denominator: llp_pt_hits_csc
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'Reconstructed: matched cluster / reconstructable'
+
+eff_csc_fid_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_den_csc
+  denominator: llp_abseta_all_den
+  label_x: 'LLP $|\eta|$'
+  label_y: 'Fiducial: decay in CSC / all LLPs'
+eff_csc_hits_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_hits_csc
+  denominator: llp_abseta_den_csc
+  label_x: 'LLP $|\eta|$'
+  label_y: 'Reconstructable: $\geq$10 CSC hits / fiducial'
+eff_csc_reco_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_num_csc
+  denominator: llp_abseta_hits_csc
+  label_x: 'LLP $|\eta|$'
+  label_y: 'Reconstructed: matched cluster / reconstructable'
+
+eff_csc_fid_vs_absdecayz:
+  type: efficiency
+  numerator: llp_absdecayz_den_csc
+  denominator: llp_absdecayz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'Fiducial: decay in CSC / all LLPs'
+  spans: *csc_stations
+eff_csc_hits_vs_absdecayz:
+  type: efficiency
+  numerator: llp_absdecayz_hits_csc
+  denominator: llp_absdecayz_den_csc
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'Reconstructable: $\geq$10 CSC hits / fiducial'
+  spans: *csc_stations
+eff_csc_reco_vs_absdecayz:
+  type: efficiency
+  numerator: llp_absdecayz_num_csc
+  denominator: llp_absdecayz_hits_csc
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'Reconstructed: matched cluster / reconstructable'
+  spans: *csc_stations
+
+# DT chain
+eff_dt_fid_vs_pt:
+  type: efficiency
+  numerator: llp_pt_den_dt
+  denominator: llp_pt_all_den
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'Fiducial: decay in DT / all LLPs'
+eff_dt_hits_vs_pt:
+  type: efficiency
+  numerator: llp_pt_hits_dt
+  denominator: llp_pt_den_dt
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'Reconstructable: $\geq$10 DT hits / fiducial'
+eff_dt_reco_vs_pt:
+  type: efficiency
+  numerator: llp_pt_num_dt
+  denominator: llp_pt_hits_dt
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'Reconstructed: matched cluster / reconstructable'
+
+eff_dt_fid_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_den_dt
+  denominator: llp_abseta_all_den
+  label_x: 'LLP $|\eta|$'
+  label_y: 'Fiducial: decay in DT / all LLPs'
+eff_dt_hits_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_hits_dt
+  denominator: llp_abseta_den_dt
+  label_x: 'LLP $|\eta|$'
+  label_y: 'Reconstructable: $\geq$10 DT hits / fiducial'
+eff_dt_reco_vs_abseta:
+  type: efficiency
+  numerator: llp_abseta_num_dt
+  denominator: llp_abseta_hits_dt
+  label_x: 'LLP $|\eta|$'
+  label_y: 'Reconstructed: matched cluster / reconstructable'
+
+eff_dt_fid_vs_decayr:
+  type: efficiency
+  numerator: llp_decayr_den_dt
+  denominator: llp_decayr_all_den
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'Fiducial: decay in DT / all LLPs'
+  spans: *dt_stations
+eff_dt_hits_vs_decayr:
+  type: efficiency
+  numerator: llp_decayr_hits_dt
+  denominator: llp_decayr_den_dt
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'Reconstructable: $\geq$10 DT hits / fiducial'
+  spans: *dt_stations
+eff_dt_reco_vs_decayr:
+  type: efficiency
+  numerator: llp_decayr_num_dt
+  denominator: llp_decayr_hits_dt
+  label_x: 'LLP decay $r$ [cm]'
+  label_y: 'Reconstructed: matched cluster / reconstructable'
+  spans: *dt_stations
+eff_dt_vs_absdecayz_all:
+  type: efficiency
+  numerator: llp_absdecayz_all_num_dt
+  denominator: llp_absdecayz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'DT acc. $\times$ eff. (all LLPs)'
+eff_rpc_vs_absdecayz_all:
+  type: efficiency
+  numerator: llp_absdecayz_all_num_rpc
+  denominator: llp_absdecayz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'RPC acc. $\times$ eff. (all LLPs)'
+eff_any_vs_absdecayz_all:
+  type: efficiency
+  numerator: llp_absdecayz_all_num_any
+  denominator: llp_absdecayz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'MDS acc. $\times$ eff. (all LLPs)'
