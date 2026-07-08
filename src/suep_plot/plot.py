@@ -42,7 +42,12 @@ def _resolve_inputs(inputs: str | list[str]) -> list[str]:
 
 
 def merge_results(paths: list[str]) -> dict:
-    """Merge multiple per-sample pickle files into one combined result."""
+    """Merge multiple pickle files into one combined result.
+
+    Histograms are summed, so the same sample may be spread over several
+    pickles (e.g. ``<sample>.part<k>.pkl`` from a file-split Slurm run);
+    its ``sumw``/``nevents``/cutflow counts are summed accordingly.
+    """
     merged = None
     for p in paths:
         data = load_results(p)
@@ -55,8 +60,21 @@ def merge_results(paths: list[str]) -> dict:
             else:
                 merged["histograms"][name] = h
         merged["samples"].update(data.get("samples", {}))
-        for key in ("sumw", "nevents", "cutflow"):
-            merged.setdefault(key, {}).update(data.get(key, {}))
+        for key in ("sumw", "nevents"):
+            tgt = merged.setdefault(key, {})
+            for s, v in data.get(key, {}).items():
+                tgt[s] = tgt.get(s, 0) + v
+        cf = merged.setdefault("cutflow", {})
+        for s, flows in data.get("cutflow", {}).items():
+            if s not in cf:
+                cf[s] = flows
+                continue
+            for sel, counts in flows.items():
+                if sel in cf[s]:
+                    cf[s][sel] = {"raw": cf[s][sel]["raw"] + counts["raw"],
+                                  "wtd": cf[s][sel]["wtd"] + counts["wtd"]}
+                else:
+                    cf[s][sel] = counts
         for name, cfg in data.get("hist_defs", {}).items():
             merged.setdefault("hist_defs", {}).setdefault(name, cfg)
     return merged

@@ -258,8 +258,17 @@ def run_all(
     chunk_size: int = 100_000,
     workers: int = 1,
     force: bool = False,
+    file_range: tuple[int, int] | None = None,
+    part: str | int | None = None,
 ):
-    """Load configs, process each sample through coffea, save per-sample pickles."""
+    """Load configs, process each sample through coffea, save per-sample pickles.
+
+    *file_range* restricts processing to a ``[start, end)`` slice of each
+    sample's resolved file list and *part* tags the output pickle as
+    ``<sample>.part<part>.pkl`` — together they let Slurm array tasks split a
+    sample by files (one shard per task).  ``suep-plot`` sums the part pickles
+    back into one sample at load time.
+    """
     config_dir = Path(config_dir)
     output_dir = Path(output_dir)
     sample_defs = load_samples(config_dir / "samples.yaml")
@@ -354,8 +363,16 @@ def run_all(
         if not files:
             print(f"  WARNING: no files resolved for '{name}', skipping")
             continue
+        if file_range is not None:
+            start, end = file_range
+            files = files[start:end]
+            if not files:
+                print(f"  WARNING: file range {start}:{end} selects no files "
+                      f"for '{name}', skipping")
+                continue
 
-        out_path = output_dir / f"{name}.pkl"
+        suffix = f".part{part}" if part is not None else ""
+        out_path = output_dir / f"{name}{suffix}.pkl"
         if not force and out_path.exists():
             newest = _inputs_mtime(files, config_dir, rw_files)
             if newest is not None and out_path.stat().st_mtime >= newest:

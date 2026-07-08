@@ -57,6 +57,31 @@ def test_merge_results(tmp_path):
     assert set(merged["cutflow"]) == {"a", "b"}
 
 
+def test_merge_results_sums_parts(tmp_path):
+    """File-split runs produce several pickles for the *same* sample
+    (<sample>.part<k>.pkl); everything keyed by sample must sum, not
+    overwrite."""
+    for k, vals in ((0, [25]), (1, [75, 75])):
+        payload = {"histograms": {"met": make_hist("s", vals)},
+                   "samples": {"s": {"label": "s"}},
+                   "hist_defs": {"met": {"bins": 2}},
+                   "sumw": {"s": float(len(vals))},
+                   "nevents": {"s": len(vals)},
+                   "cutflow": {"s": {"total": {"raw": len(vals), "wtd": float(len(vals))},
+                                     f"only_part{k}": {"raw": 1, "wtd": 1.0}}}}
+        with open(tmp_path / f"s.part{k}.pkl", "wb") as f:
+            pickle.dump(payload, f)
+
+    merged = merge_results([str(tmp_path / "s.part0.pkl"), str(tmp_path / "s.part1.pkl")])
+    assert merged["histograms"]["met"].sum(flow=True).value == 3.0
+    assert merged["sumw"] == {"s": 3.0}
+    assert merged["nevents"] == {"s": 3}
+    assert merged["cutflow"]["s"]["total"] == {"raw": 3, "wtd": 3.0}
+    # selections present in only one part are kept as-is
+    assert merged["cutflow"]["s"]["only_part0"] == {"raw": 1, "wtd": 1.0}
+    assert merged["cutflow"]["s"]["only_part1"] == {"raw": 1, "wtd": 1.0}
+
+
 def test_write_cutflow(tmp_path):
     cutflow = {"sig": {"total": {"raw": 100, "wtd": 99.5},
                        "baseline": {"raw": 40, "wtd": 39.0}}}

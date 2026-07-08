@@ -149,6 +149,9 @@ def submit(argv=None):
     parser.add_argument("--workers", type=int, default=1,
                         help="Worker processes per job (also sets --cpus-per-task)")
     parser.add_argument("--max-concurrent", type=int, default=None, help="Max simultaneous array tasks")
+    parser.add_argument("--files-per-job", type=int, default=None,
+                        help="Split each sample into array tasks of this many files "
+                             "(default: one task per sample); parts are summed by suep-plot")
     parser.add_argument("--dry-run", action="store_true", help="Generate scripts without submitting")
     args = parser.parse_args(argv)
 
@@ -164,6 +167,7 @@ def submit(argv=None):
         chunk_size=args.chunk_size,
         workers=args.workers,
         max_concurrent=args.max_concurrent,
+        files_per_job=args.files_per_job,
         dry_run=args.dry_run,
     )
 
