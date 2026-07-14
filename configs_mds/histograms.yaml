@@ -77,6 +77,36 @@ llp_decay_rz:
   label_y: 'LLP decay $r$ [cm]'
   log_z: true
 
+# ── (2b) LLP lifetime / boost ─────────────────────────────────────
+# Proper decay length ctau = L_lab / (beta*gamma): exponential with mean
+# = nominal sample lifetime (5 m = 500 cm here).
+llp_ctau:
+  expression: "events.llp.ctau"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 3000
+  label: 'LLP $c\tau$ (proper) [cm]'
+  log_y: true
+
+llp_llab:
+  expression: "events.llp.Llab"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 6000
+  label: 'LLP lab decay length [cm]'
+  log_y: true
+
+llp_betagamma:
+  expression: "events.llp.betagamma"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 30
+  label: 'LLP $\beta\gamma$'
+  log_y: true
+
 # ── (3) DBSCAN cluster properties: CSC ─────────────────────────────
 csc_cluster_n:
   expression: "ak.num(events.cscCluster)"
@@ -364,6 +394,26 @@ rpc_cluster_eta_matched:
   label: 'matched RPC cluster $\eta$'
 
 # ── (4b) Per-LLP matched rechit counts ────────────────────────────
+llpcsc_nhits_csc:
+  expression: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_in_csc]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
+  log_y: true
+
+llpdt_nhits_dt:
+  expression: "events.llp.nHitsDT"
+  per_object: true
+  selections: [llp_in_dt]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
+  log_y: true
+
 llp_nhits_csc:
   expression: "events.llp.nHitsCSC"
   per_object: true
@@ -470,6 +520,47 @@ llp_pt_num_any:
   selections: [llp_in_ms, llp_reco_any]
   edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
   label: 'LLP $p_T$ [GeV]'
+
+# ── (5) Efficiency histograms: vs nhits ────────────────────────────
+llpcsc_nhits_csc_den:
+  expression: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_in_csc]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
+  log_y: true
+
+llpdt_nhits_dt_den:
+  expression: "events.llp.nHitsDT"
+  per_object: true
+  selections: [llp_in_dt]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
+  log_y: true
+
+llpcsc_nhits_csc_num:
+  expression: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_in_csc, llp_reco_csc]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
+  log_y: true
+
+llpdt_nhits_dt_num:
+  expression: "events.llp.nHitsDT"
+  per_object: true
+  selections: [llp_in_dt, llp_reco_dt]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
+  log_y: true
 
 # ── (5) Efficiency histograms: vs |eta| ────────────────────────────
 llp_abseta_all_den:
@@ -765,6 +856,138 @@ llp_absdecayz_all_num_any:
   lo: 0
   hi: 1500
   label: 'LLP decay $|z|$ [cm]'
+
+# ── (5) Efficiency histograms: 2D decay r vs |z| maps ──────────────
+# Same 20 cm binning as the 1D efficiency histograms (|z|: 75 bins 0..1500,
+# r: 60 bins 0..1200).  Empty-denominator bins are left blank at plot time.
+llp_rz_all_den:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+
+llp_rz_den_csc:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_csc]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_hits_csc:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_csc, llp_hits10_csc]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_num_csc:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_csc, llp_reco_csc]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+
+llp_rz_den_dt:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_hits_dt:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt, llp_hits10_dt]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_num_dt:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt, llp_reco_dt]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+
+llp_rz_all_num_csc:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_reco_csc]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_all_num_dt:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_reco_dt]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
 
 # ── (6) Matched-LLP properties ─────────────────────────────────────
 llp_matched_pt:

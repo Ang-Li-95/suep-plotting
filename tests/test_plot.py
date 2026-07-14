@@ -8,6 +8,7 @@ import pytest
 
 from suep_plot.plot import (
     _fold_flow,
+    _plot_efficiency,
     apply_xs_scaling,
     merge_results,
     write_cutflow,
@@ -21,6 +22,17 @@ def make_hist(sample, vals, weights=None):
         storage=hist.storage.Weight(),
     )
     h.fill(dataset=sample, x=vals, weight=weights)
+    return h
+
+
+def make_hist_2d(sample, xs, ys):
+    h = hist.Hist(
+        hist.axis.StrCategory([], name="dataset", growth=True),
+        hist.axis.Regular(2, 0, 100, name="x"),
+        hist.axis.Regular(2, 0, 100, name="y"),
+        storage=hist.storage.Weight(),
+    )
+    h.fill(dataset=sample, x=xs, y=ys)
     return h
 
 
@@ -80,6 +92,19 @@ def test_merge_results_sums_parts(tmp_path):
     # selections present in only one part are kept as-is
     assert merged["cutflow"]["s"]["only_part0"] == {"raw": 1, "wtd": 1.0}
     assert merged["cutflow"]["s"]["only_part1"] == {"raw": 1, "wtd": 1.0}
+
+
+def test_plot_efficiency_2d(tmp_path):
+    """A 2D num/den pair renders one efficiency map per sample."""
+    h_den = make_hist_2d("sig", [25, 25, 75, 75], [25, 75, 25, 75])
+    h_num = make_hist_2d("sig", [25, 75], [25, 75])
+    cfg = {"type": "efficiency", "numerator": "num", "denominator": "den",
+           "label_z": "eff"}
+    n = _plot_efficiency("eff_map", cfg, {"num": h_num, "den": h_den},
+                         {"sig": {"label": "sig"}}, str(tmp_path),
+                         formats=("png",))
+    assert n == 1
+    assert (tmp_path / "eff_map.png").exists()
 
 
 def test_write_cutflow(tmp_path):

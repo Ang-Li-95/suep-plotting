@@ -276,7 +276,7 @@ def plot_histogram(
             ax.set_ylim(bottom=0.1)
     if hist_cfg.get("log_x"):
         ax.set_xscale("log")
-    ax.legend(fontsize=12, loc="best")
+    ax.legend(fontsize=18, loc="best")
 
     _cms_label(ax, lumi=lumi, has_data=bool(data_samples))
 
@@ -482,7 +482,7 @@ def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *,
     profiled_axis = "y" if axis == "x" else "x"
     ax.set_xlabel(cfg.get("label_x", h.axes[axis].label))
     ax.set_ylabel(cfg.get("label_y", f"Mean {h.axes[profiled_axis].label}"))
-    ax.legend(fontsize=12, loc="best")
+    ax.legend(fontsize=18, loc="best")
 
     _cms_label(ax, lumi=lumi)
 
@@ -537,6 +537,9 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
 
     h_num = histograms[num_name]
     h_den = histograms[den_name]
+    if _is_2d_hist(h_num):
+        return _plot_efficiency_2d(name, cfg, h_num, h_den, sample_defs,
+                                   output_dir, lumi=lumi, formats=formats)
     samples = list(h_num.axes["dataset"])
 
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -569,7 +572,7 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
     ax.set_xlabel(cfg.get("label_x", h_num.axes["x"].label))
     ax.set_ylabel(cfg.get("label_y", "Efficiency"))
     ax.set_ylim(-0.05, 1.15)
-    ax.legend(fontsize=12, loc="best")
+    ax.legend(fontsize=18, loc="best")
 
     _cms_label(ax, lumi=lumi)
 
@@ -577,6 +580,46 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
         fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return 1
+
+
+def _plot_efficiency_2d(name, cfg, h_num, h_den, sample_defs, output_dir, *,
+                        lumi=None, formats=DEFAULT_FORMATS):
+    """Efficiency map from a 2D numerator/denominator pair (one figure per
+    sample).  Bins with an empty denominator are left blank; the color scale
+    is fixed to [0, 1].  ``label_z`` sets the colorbar label."""
+    samples = list(h_num.axes["dataset"])
+    x_edges = h_num.axes["x"].edges
+    y_edges = h_num.axes["y"].edges
+
+    os.makedirs(output_dir, exist_ok=True)
+    plotted = 0
+    for s in samples:
+        if s not in h_den.axes["dataset"]:
+            continue
+        passed = h_num[{"dataset": s}].view().value
+        total = h_den[{"dataset": s}].view().value
+        with np.errstate(divide="ignore", invalid="ignore"):
+            eff = np.where(total > 0, passed / total, np.nan)
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        mesh = ax.pcolormesh(x_edges, y_edges, eff.T, cmap="viridis",
+                             vmin=0.0, vmax=1.0)
+        fig.colorbar(mesh, ax=ax, label=cfg.get("label_z", "Efficiency"))
+
+        ax.set_xlabel(cfg.get("label_x", h_num.axes["x"].label))
+        ax.set_ylabel(cfg.get("label_y", h_num.axes["y"].label))
+        label = sample_defs.get(s, {}).get("label", s)
+        ax.text(0.97, 0.97, label, transform=ax.transAxes, ha="right", va="top",
+                fontsize=16)
+
+        _cms_label(ax, lumi=lumi)
+
+        tag = f"{name}_{s}" if len(samples) > 1 else name
+        for ext in formats:
+            fig.savefig(os.path.join(output_dir, f"{tag}.{ext}"), dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        plotted += 1
+    return 1 if plotted else 0
 
 
 def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
@@ -616,7 +659,7 @@ def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
     ax.set_xlabel(cfg.get("label_x", h_num.axes["x"].label))
     ax.set_ylabel(cfg.get("label_y", "Ratio"))
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8)
-    ax.legend(fontsize=12, loc="best")
+    ax.legend(fontsize=18, loc="best")
 
     _cms_label(ax, lumi=lumi)
 

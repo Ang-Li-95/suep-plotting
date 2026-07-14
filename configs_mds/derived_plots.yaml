@@ -4,6 +4,19 @@
 # NOTE: do not pass --lumi to suep-plot; xs*lumi scaling would distort
 # the binomial intervals (xs is a placeholder anyway).
 
+eff_csc_vs_nhits:
+  type: efficiency
+  numerator: llpcsc_nhits_csc_num
+  denominator: llpcsc_nhits_csc_den
+  label_x: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
+  label_y: 'CSC cluster efficiency (decay in CSC)'
+eff_dt_vs_nhits:
+  type: efficiency
+  numerator: llpdt_nhits_dt_num
+  denominator: llpdt_nhits_dt_den
+  label_x: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
+  label_y: 'DT cluster efficiency (decay in DT)'
+
 # In-volume reconstruction efficiency vs LLP pT
 eff_csc_vs_pt:
   type: efficiency
@@ -142,6 +155,70 @@ eff_csc_vs_absdecayz_all:
   label_x: 'LLP decay $|z|$ [cm]'
   label_y: 'CSC acc. $\times$ eff. (all LLPs)'
   spans: *csc_stations
+
+# ── 2D (r vs |z|) reconstruction efficiency maps ───────────────────
+# One colz figure per sample; empty-denominator bins are blank.
+# In-volume efficiency (denominator restricted to the system volume):
+eff_csc_vs_decay_rz:
+  type: efficiency
+  numerator: llp_rz_num_csc
+  denominator: llp_rz_den_csc
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  label_z: 'CSC cluster efficiency (decay in CSC)'
+eff_dt_vs_decay_rz:
+  type: efficiency
+  numerator: llp_rz_num_dt
+  denominator: llp_rz_den_dt
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  label_z: 'DT cluster efficiency (decay in DT)'
+
+# Factorized chain steps in the (|z|, r) plane (cf. the 1D chain below):
+eff_csc_fid_vs_decay_rz:
+  type: efficiency
+  numerator: llp_rz_den_csc
+  denominator: llp_rz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  label_z: 'Fiducial: decay in CSC / all LLPs'
+eff_csc_hits_vs_decay_rz:
+  type: efficiency
+  numerator: llp_rz_hits_csc
+  denominator: llp_rz_den_csc
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  label_z: 'Reconstructable: $\geq$10 CSC hits / fiducial'
+eff_dt_fid_vs_decay_rz:
+  type: efficiency
+  numerator: llp_rz_den_dt
+  denominator: llp_rz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  label_z: 'Fiducial: decay in DT / all LLPs'
+eff_dt_hits_vs_decay_rz:
+  type: efficiency
+  numerator: llp_rz_hits_dt
+  denominator: llp_rz_den_dt
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  label_z: 'Reconstructable: $\geq$10 DT hits / fiducial'
+
+# Acceptance x efficiency (all LLPs in the denominator):
+eff_csc_vs_decay_rz_all:
+  type: efficiency
+  numerator: llp_rz_all_num_csc
+  denominator: llp_rz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  label_z: 'CSC acc. $\times$ eff. (all LLPs)'
+eff_dt_vs_decay_rz_all:
+  type: efficiency
+  numerator: llp_rz_all_num_dt
+  denominator: llp_rz_all_den
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  label_z: 'DT acc. $\times$ eff. (all LLPs)'
 
 # ── Factorized efficiency chain ────────────────────────────────────
 #   fiducial:        decay in system volume            / all LLPs
