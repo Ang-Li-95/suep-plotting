@@ -366,3 +366,734 @@ eff_any_vs_absdecayz_all:
   denominator: llp_absdecayz_all_den
   label_x: 'LLP decay $|z|$ [cm]'
   label_y: 'MDS acc. $\times$ eff. (all LLPs)'
+
+# ── Fraction of clusters truth-matched to an LLP, per variable ────
+# numerator = matched clusters, denominator = all clusters (identical
+# binning), so the Clopper-Pearson bands are the usual binomial ones.
+
+matchfrac_csc_size:
+  type: efficiency
+  numerator: csc_cluster_size_matched
+  denominator: csc_cluster_size
+  label_x: 'CSC cluster $N_{\mathrm{hits}}$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_eta:
+  type: efficiency
+  numerator: csc_cluster_eta_matched
+  denominator: csc_cluster_eta
+  label_x: 'CSC cluster $\eta$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_phi:
+  type: efficiency
+  numerator: csc_cluster_phi_matched
+  denominator: csc_cluster_phi
+  label_x: 'CSC cluster $\phi$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_eta_spread:
+  type: efficiency
+  numerator: csc_cluster_eta_spread_matched
+  denominator: csc_cluster_eta_spread
+  label_x: 'CSC cluster $\eta$ spread'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_phi_spread:
+  type: efficiency
+  numerator: csc_cluster_phi_spread_matched
+  denominator: csc_cluster_phi_spread
+  label_x: 'CSC cluster $\phi$ spread'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_nstation:
+  type: efficiency
+  numerator: csc_cluster_nstation_matched
+  denominator: csc_cluster_nstation
+  label_x: 'CSC cluster $N_{\mathrm{stations}}$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_nlayer:
+  type: efficiency
+  numerator: csc_cluster_nlayer_matched
+  denominator: csc_cluster_nlayer
+  label_x: 'CSC cluster $N_{\mathrm{layers}}$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_time:
+  type: efficiency
+  numerator: csc_cluster_time_matched
+  denominator: csc_cluster_time
+  label_x: 'CSC cluster mean $t_{\mathrm{peak}}$ [ns]'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_dt_size:
+  type: efficiency
+  numerator: dt_cluster_size_matched
+  denominator: dt_cluster_size
+  label_x: 'DT cluster $N_{\mathrm{hits}}$'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_eta:
+  type: efficiency
+  numerator: dt_cluster_eta_matched
+  denominator: dt_cluster_eta
+  label_x: 'DT cluster $\eta$'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_phi:
+  type: efficiency
+  numerator: dt_cluster_phi_matched
+  denominator: dt_cluster_phi
+  label_x: 'DT cluster $\phi$'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_eta_spread:
+  type: efficiency
+  numerator: dt_cluster_eta_spread_matched
+  denominator: dt_cluster_eta_spread
+  label_x: 'DT cluster $\eta$ spread'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_phi_spread:
+  type: efficiency
+  numerator: dt_cluster_phi_spread_matched
+  denominator: dt_cluster_phi_spread
+  label_x: 'DT cluster $\phi$ spread'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_nstation:
+  type: efficiency
+  numerator: dt_cluster_nstation_matched
+  denominator: dt_cluster_nstation
+  label_x: 'DT cluster $N_{\mathrm{stations}}$'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_nlayer:
+  type: efficiency
+  numerator: dt_cluster_nlayer_matched
+  denominator: dt_cluster_nlayer
+  label_x: 'DT cluster $N_{\mathrm{layers}}$'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_rpc_size:
+  type: efficiency
+  numerator: rpc_cluster_size_matched
+  denominator: rpc_cluster_size
+  label_x: 'RPC cluster $N_{\mathrm{hits}}$'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_eta:
+  type: efficiency
+  numerator: rpc_cluster_eta_matched
+  denominator: rpc_cluster_eta
+  label_x: 'RPC cluster $\eta$'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_phi:
+  type: efficiency
+  numerator: rpc_cluster_phi_matched
+  denominator: rpc_cluster_phi
+  label_x: 'RPC cluster $\phi$'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_eta_spread:
+  type: efficiency
+  numerator: rpc_cluster_eta_spread_matched
+  denominator: rpc_cluster_eta_spread
+  label_x: 'RPC cluster $\eta$ spread'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_phi_spread:
+  type: efficiency
+  numerator: rpc_cluster_phi_spread_matched
+  denominator: rpc_cluster_phi_spread
+  label_x: 'RPC cluster $\phi$ spread'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_nstation:
+  type: efficiency
+  numerator: rpc_cluster_nstation_matched
+  denominator: rpc_cluster_nstation
+  label_x: 'RPC cluster $N_{\mathrm{stations}}$'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_nlayer:
+  type: efficiency
+  numerator: rpc_cluster_nlayer_matched
+  denominator: rpc_cluster_nlayer
+  label_x: 'RPC cluster $N_{\mathrm{layers}}$'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_time:
+  type: efficiency
+  numerator: rpc_cluster_time_matched
+  denominator: rpc_cluster_time
+  label_x: 'RPC cluster mean $t_{\mathrm{peak}}$ [ns]'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+# ── Matched fraction vs the shower-shape discriminants ────────────
+
+matchfrac_csc_station_span:
+  type: efficiency
+  numerator: csc_cluster_station_span_matched
+  denominator: csc_cluster_station_span
+  label_x: 'CSC cluster station span (max-min)'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_avg_station:
+  type: efficiency
+  numerator: csc_cluster_avg_station_matched
+  denominator: csc_cluster_avg_station
+  label_x: 'CSC cluster $\langle$station$\rangle$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_max_station_frac:
+  type: efficiency
+  numerator: csc_cluster_max_station_frac_matched
+  denominator: csc_cluster_max_station_frac
+  label_x: 'CSC cluster max station hit fraction'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_layer_hits_mean:
+  type: efficiency
+  numerator: csc_cluster_layer_hits_mean_matched
+  denominator: csc_cluster_layer_hits_mean
+  label_x: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{chamber}\rangle$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_layer_hits_rms:
+  type: efficiency
+  numerator: csc_cluster_layer_hits_rms_matched
+  denominator: csc_cluster_layer_hits_rms
+  label_x: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_layer_hits_relrms:
+  type: efficiency
+  numerator: csc_cluster_layer_hits_relrms_matched
+  denominator: csc_cluster_layer_hits_relrms
+  label_x: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{chamber}$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_max_layer_frac:
+  type: efficiency
+  numerator: csc_cluster_max_layer_frac_matched
+  denominator: csc_cluster_max_layer_frac
+  label_x: 'CSC cluster max chamber hit fraction'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_nzlayer:
+  type: efficiency
+  numerator: csc_cluster_nzlayer_matched
+  denominator: csc_cluster_nzlayer
+  label_x: 'CSC cluster $N_{\mathrm{z-layers}}$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_zlayer_hits_mean:
+  type: efficiency
+  numerator: csc_cluster_zlayer_hits_mean_matched
+  denominator: csc_cluster_zlayer_hits_mean
+  label_x: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{z-layer}\rangle$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_zlayer_hits_rms:
+  type: efficiency
+  numerator: csc_cluster_zlayer_hits_rms_matched
+  denominator: csc_cluster_zlayer_hits_rms
+  label_x: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{z-layer}$)'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_zlayer_hits_relrms:
+  type: efficiency
+  numerator: csc_cluster_zlayer_hits_relrms_matched
+  denominator: csc_cluster_zlayer_hits_relrms
+  label_x: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{z-layer}$'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_max_zlayer_frac:
+  type: efficiency
+  numerator: csc_cluster_max_zlayer_frac_matched
+  denominator: csc_cluster_max_zlayer_frac
+  label_x: 'CSC cluster max z-layer hit fraction'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_r_spread:
+  type: efficiency
+  numerator: csc_cluster_r_spread_matched
+  denominator: csc_cluster_r_spread
+  label_x: 'CSC cluster $r$ spread [cm]'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_csc_z_spread:
+  type: efficiency
+  numerator: csc_cluster_z_spread_matched
+  denominator: csc_cluster_z_spread
+  label_x: 'CSC cluster $z$ spread [cm]'
+  label_y: 'fraction of CSC clusters LLP-matched'
+
+matchfrac_dt_station_span:
+  type: efficiency
+  numerator: dt_cluster_station_span_matched
+  denominator: dt_cluster_station_span
+  label_x: 'DT cluster station span (max-min)'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_avg_station:
+  type: efficiency
+  numerator: dt_cluster_avg_station_matched
+  denominator: dt_cluster_avg_station
+  label_x: 'DT cluster $\langle$station$\rangle$'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_max_station_frac:
+  type: efficiency
+  numerator: dt_cluster_max_station_frac_matched
+  denominator: dt_cluster_max_station_frac
+  label_x: 'DT cluster max station hit fraction'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_layer_hits_mean:
+  type: efficiency
+  numerator: dt_cluster_layer_hits_mean_matched
+  denominator: dt_cluster_layer_hits_mean
+  label_x: 'DT cluster $\langle N_{\mathrm{hits}}/\mathrm{layer}\rangle$'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_layer_hits_rms:
+  type: efficiency
+  numerator: dt_cluster_layer_hits_rms_matched
+  denominator: dt_cluster_layer_hits_rms
+  label_x: 'DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_layer_hits_relrms:
+  type: efficiency
+  numerator: dt_cluster_layer_hits_relrms_matched
+  denominator: dt_cluster_layer_hits_relrms
+  label_x: 'DT cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_max_layer_frac:
+  type: efficiency
+  numerator: dt_cluster_max_layer_frac_matched
+  denominator: dt_cluster_max_layer_frac
+  label_x: 'DT cluster max layer hit fraction'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_r_spread:
+  type: efficiency
+  numerator: dt_cluster_r_spread_matched
+  denominator: dt_cluster_r_spread
+  label_x: 'DT cluster $r$ spread [cm]'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_dt_z_spread:
+  type: efficiency
+  numerator: dt_cluster_z_spread_matched
+  denominator: dt_cluster_z_spread
+  label_x: 'DT cluster $z$ spread [cm]'
+  label_y: 'fraction of DT clusters LLP-matched'
+
+matchfrac_rpc_station_span:
+  type: efficiency
+  numerator: rpc_cluster_station_span_matched
+  denominator: rpc_cluster_station_span
+  label_x: 'RPC cluster station span (max-min)'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_max_station_frac:
+  type: efficiency
+  numerator: rpc_cluster_max_station_frac_matched
+  denominator: rpc_cluster_max_station_frac
+  label_x: 'RPC cluster max station hit fraction'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_layer_hits_relrms:
+  type: efficiency
+  numerator: rpc_cluster_layer_hits_relrms_matched
+  denominator: rpc_cluster_layer_hits_relrms
+  label_x: 'RPC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+matchfrac_rpc_max_layer_frac:
+  type: efficiency
+  numerator: rpc_cluster_max_layer_frac_matched
+  denominator: rpc_cluster_max_layer_frac
+  label_x: 'RPC cluster max layer hit fraction'
+  label_y: 'fraction of RPC clusters LLP-matched'
+
+# ── Signal gen-matched clusters vs background all clusters ───────
+# type: sig_vs_bkg draws the 'signal' histogram for signal samples and
+# the 'background' one for background samples, on a single canvas.
+# Background has no truth branches, so its '_unmatched' histogram holds
+# every cluster it has - exactly the population to compare against the
+# signal's gen-matched clusters.  Unit-area by default; no refill needed.
+
+sigbkg_csc_cluster_avg_station:
+  type: sig_vs_bkg
+  signal: csc_cluster_avg_station_matched
+  background: csc_cluster_avg_station
+  label_x: 'CSC cluster $\langle$station$\rangle$'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_eta:
+  type: sig_vs_bkg
+  signal: csc_cluster_eta_matched
+  background: csc_cluster_eta
+  label_x: 'CSC cluster $\eta$'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_eta_spread:
+  type: sig_vs_bkg
+  signal: csc_cluster_eta_spread_matched
+  background: csc_cluster_eta_spread
+  label_x: 'CSC cluster $\eta$ spread'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_layer_hits_mean:
+  type: sig_vs_bkg
+  signal: csc_cluster_layer_hits_mean_matched
+  background: csc_cluster_layer_hits_mean
+  label_x: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{chamber}\rangle$'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_csc_cluster_layer_hits_relrms:
+  type: sig_vs_bkg
+  signal: csc_cluster_layer_hits_relrms_matched
+  background: csc_cluster_layer_hits_relrms
+  label_x: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{chamber}$'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_layer_hits_rms:
+  type: sig_vs_bkg
+  signal: csc_cluster_layer_hits_rms_matched
+  background: csc_cluster_layer_hits_rms
+  label_x: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_csc_cluster_max_layer_frac:
+  type: sig_vs_bkg
+  signal: csc_cluster_max_layer_frac_matched
+  background: csc_cluster_max_layer_frac
+  label_x: 'CSC cluster max chamber hit fraction'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_max_station_frac:
+  type: sig_vs_bkg
+  signal: csc_cluster_max_station_frac_matched
+  background: csc_cluster_max_station_frac
+  label_x: 'CSC cluster max station hit fraction'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_max_zlayer_frac:
+  type: sig_vs_bkg
+  signal: csc_cluster_max_zlayer_frac_matched
+  background: csc_cluster_max_zlayer_frac
+  label_x: 'CSC cluster max z-layer hit fraction'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_nlayer:
+  type: sig_vs_bkg
+  signal: csc_cluster_nlayer_matched
+  background: csc_cluster_nlayer
+  label_x: 'CSC cluster $N_{\mathrm{layers}}$'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_nstation:
+  type: sig_vs_bkg
+  signal: csc_cluster_nstation_matched
+  background: csc_cluster_nstation
+  label_x: 'CSC cluster $N_{\mathrm{stations}}$'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_nzlayer:
+  type: sig_vs_bkg
+  signal: csc_cluster_nzlayer_matched
+  background: csc_cluster_nzlayer
+  label_x: 'CSC cluster $N_{\mathrm{z-layers}}$'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_phi:
+  type: sig_vs_bkg
+  signal: csc_cluster_phi_matched
+  background: csc_cluster_phi
+  label_x: 'CSC cluster $\phi$'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_phi_spread:
+  type: sig_vs_bkg
+  signal: csc_cluster_phi_spread_matched
+  background: csc_cluster_phi_spread
+  label_x: 'CSC cluster $\phi$ spread'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_r_spread:
+  type: sig_vs_bkg
+  signal: csc_cluster_r_spread_matched
+  background: csc_cluster_r_spread
+  label_x: 'CSC cluster $r$ spread [cm]'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_size:
+  type: sig_vs_bkg
+  signal: csc_cluster_size_matched
+  background: csc_cluster_size
+  label_x: 'CSC cluster $N_{\mathrm{hits}}$'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_csc_cluster_station_span:
+  type: sig_vs_bkg
+  signal: csc_cluster_station_span_matched
+  background: csc_cluster_station_span
+  label_x: 'CSC cluster station span (max-min)'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_time:
+  type: sig_vs_bkg
+  signal: csc_cluster_time_matched
+  background: csc_cluster_time
+  label_x: 'CSC cluster mean $t_{\mathrm{peak}}$ [ns]'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_csc_cluster_z_spread:
+  type: sig_vs_bkg
+  signal: csc_cluster_z_spread_matched
+  background: csc_cluster_z_spread
+  label_x: 'CSC cluster $z$ spread [cm]'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_zlayer_hits_mean:
+  type: sig_vs_bkg
+  signal: csc_cluster_zlayer_hits_mean_matched
+  background: csc_cluster_zlayer_hits_mean
+  label_x: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{z-layer}\rangle$'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_csc_cluster_zlayer_hits_relrms:
+  type: sig_vs_bkg
+  signal: csc_cluster_zlayer_hits_relrms_matched
+  background: csc_cluster_zlayer_hits_relrms
+  label_x: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{z-layer}$'
+  label_y: 'normalized clusters'
+
+sigbkg_csc_cluster_zlayer_hits_rms:
+  type: sig_vs_bkg
+  signal: csc_cluster_zlayer_hits_rms_matched
+  background: csc_cluster_zlayer_hits_rms
+  label_x: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{z-layer}$)'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_dt_cluster_avg_station:
+  type: sig_vs_bkg
+  signal: dt_cluster_avg_station_matched
+  background: dt_cluster_avg_station
+  label_x: 'DT cluster $\langle$station$\rangle$'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_eta:
+  type: sig_vs_bkg
+  signal: dt_cluster_eta_matched
+  background: dt_cluster_eta
+  label_x: 'DT cluster $\eta$'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_eta_spread:
+  type: sig_vs_bkg
+  signal: dt_cluster_eta_spread_matched
+  background: dt_cluster_eta_spread
+  label_x: 'DT cluster $\eta$ spread'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_layer_hits_mean:
+  type: sig_vs_bkg
+  signal: dt_cluster_layer_hits_mean_matched
+  background: dt_cluster_layer_hits_mean
+  label_x: 'DT cluster $\langle N_{\mathrm{hits}}/\mathrm{layer}\rangle$'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_dt_cluster_layer_hits_relrms:
+  type: sig_vs_bkg
+  signal: dt_cluster_layer_hits_relrms_matched
+  background: dt_cluster_layer_hits_relrms
+  label_x: 'DT cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_layer_hits_rms:
+  type: sig_vs_bkg
+  signal: dt_cluster_layer_hits_rms_matched
+  background: dt_cluster_layer_hits_rms
+  label_x: 'DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_dt_cluster_max_layer_frac:
+  type: sig_vs_bkg
+  signal: dt_cluster_max_layer_frac_matched
+  background: dt_cluster_max_layer_frac
+  label_x: 'DT cluster max layer hit fraction'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_max_station_frac:
+  type: sig_vs_bkg
+  signal: dt_cluster_max_station_frac_matched
+  background: dt_cluster_max_station_frac
+  label_x: 'DT cluster max station hit fraction'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_nlayer:
+  type: sig_vs_bkg
+  signal: dt_cluster_nlayer_matched
+  background: dt_cluster_nlayer
+  label_x: 'DT cluster $N_{\mathrm{layers}}$'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_nstation:
+  type: sig_vs_bkg
+  signal: dt_cluster_nstation_matched
+  background: dt_cluster_nstation
+  label_x: 'DT cluster $N_{\mathrm{stations}}$'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_phi:
+  type: sig_vs_bkg
+  signal: dt_cluster_phi_matched
+  background: dt_cluster_phi
+  label_x: 'DT cluster $\phi$'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_phi_spread:
+  type: sig_vs_bkg
+  signal: dt_cluster_phi_spread_matched
+  background: dt_cluster_phi_spread
+  label_x: 'DT cluster $\phi$ spread'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_r_spread:
+  type: sig_vs_bkg
+  signal: dt_cluster_r_spread_matched
+  background: dt_cluster_r_spread
+  label_x: 'DT cluster $r$ spread [cm]'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_size:
+  type: sig_vs_bkg
+  signal: dt_cluster_size_matched
+  background: dt_cluster_size
+  label_x: 'DT cluster $N_{\mathrm{hits}}$'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_dt_cluster_station_span:
+  type: sig_vs_bkg
+  signal: dt_cluster_station_span_matched
+  background: dt_cluster_station_span
+  label_x: 'DT cluster station span (max-min)'
+  label_y: 'normalized clusters'
+
+sigbkg_dt_cluster_z_spread:
+  type: sig_vs_bkg
+  signal: dt_cluster_z_spread_matched
+  background: dt_cluster_z_spread
+  label_x: 'DT cluster $z$ spread [cm]'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_eta:
+  type: sig_vs_bkg
+  signal: rpc_cluster_eta_matched
+  background: rpc_cluster_eta
+  label_x: 'RPC cluster $\eta$'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_eta_spread:
+  type: sig_vs_bkg
+  signal: rpc_cluster_eta_spread_matched
+  background: rpc_cluster_eta_spread
+  label_x: 'RPC cluster $\eta$ spread'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_layer_hits_relrms:
+  type: sig_vs_bkg
+  signal: rpc_cluster_layer_hits_relrms_matched
+  background: rpc_cluster_layer_hits_relrms
+  label_x: 'RPC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_max_layer_frac:
+  type: sig_vs_bkg
+  signal: rpc_cluster_max_layer_frac_matched
+  background: rpc_cluster_max_layer_frac
+  label_x: 'RPC cluster max layer hit fraction'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_max_station_frac:
+  type: sig_vs_bkg
+  signal: rpc_cluster_max_station_frac_matched
+  background: rpc_cluster_max_station_frac
+  label_x: 'RPC cluster max station hit fraction'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_nlayer:
+  type: sig_vs_bkg
+  signal: rpc_cluster_nlayer_matched
+  background: rpc_cluster_nlayer
+  label_x: 'RPC cluster $N_{\mathrm{layers}}$'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_nstation:
+  type: sig_vs_bkg
+  signal: rpc_cluster_nstation_matched
+  background: rpc_cluster_nstation
+  label_x: 'RPC cluster $N_{\mathrm{stations}}$'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_phi:
+  type: sig_vs_bkg
+  signal: rpc_cluster_phi_matched
+  background: rpc_cluster_phi
+  label_x: 'RPC cluster $\phi$'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_phi_spread:
+  type: sig_vs_bkg
+  signal: rpc_cluster_phi_spread_matched
+  background: rpc_cluster_phi_spread
+  label_x: 'RPC cluster $\phi$ spread'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_size:
+  type: sig_vs_bkg
+  signal: rpc_cluster_size_matched
+  background: rpc_cluster_size
+  label_x: 'RPC cluster $N_{\mathrm{hits}}$'
+  label_y: 'normalized clusters'
+  log_y: true
+
+sigbkg_rpc_cluster_station_span:
+  type: sig_vs_bkg
+  signal: rpc_cluster_station_span_matched
+  background: rpc_cluster_station_span
+  label_x: 'RPC cluster station span (max-min)'
+  label_y: 'normalized clusters'
+
+sigbkg_rpc_cluster_time:
+  type: sig_vs_bkg
+  signal: rpc_cluster_time_matched
+  background: rpc_cluster_time
+  label_x: 'RPC cluster mean time [ns]'
+  label_y: 'normalized clusters'
+  log_y: true
+
+# ── Per-LLP rechit cone size vs hit multiplicity ───────────────────
+llp_dr90_vs_nhits_csc_prof:
+  type: profile_x
+  source: llp_dr90_vs_nhits_csc
+  label_x: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  label_y: 'Mean $\Delta R$ containing 90% of the rechits'

@@ -22,6 +22,14 @@ this module attaches four derived collections:
     Background samples without ``SUEPGenPart`` get an *empty* llp collection
     so llp-based expressions still evaluate (to nothing).
 
+    Gen-level shape of the matched rechits (suffix ``CSC``/``DT``/``RPC`` for
+    one system, ``Total`` for the three pooled): ``drPairMin``/``drPairMax``
+    (extreme dR between two of the LLP's rechits) and
+    ``dr50``/``dr80``/``dr90``/``drMax`` (radius around the rechit centroid
+    holding that percentage of them).  The rechit collections gain
+    ``matchedLLP`` (rechit carries an LLP's ``llpIdx``) and ``drLLP`` (its dR
+    to that LLP's rechit centroid within the same system).
+
 ``events.cscCluster`` / ``events.dtCluster`` / ``events.rpcCluster``
     DBSCAN clusters of the muon-system rechits (per system, dR metric in
     eta-phi with proper phi wrap-around).  A cluster is truth-matched to an
@@ -64,17 +72,28 @@ DT_RMIN, DT_RMAX, DT_ZMAX = 380.0, 738.0, 650.0
 RPC_EC_ZMIN, RPC_EC_ZMAX, RPC_EC_RMAX = 600.0, 1020.0, 660.0  # endcap; barrel = DT volume
 
 # DBSCAN (eps in dR, min_samples) per system.  The CSC/DT minimum cluster
-# size can be overridden with $MDS_CLUSTER_MIN_SAMPLES (default 50) to study
-# its effect without editing the config; RPC stays at 10 (sparse system).
+# size can be overridden with $MDS_CLUSTER_MIN_SAMPLES (default 50) and the
+# dR radius with $MDS_CLUSTER_EPS (default 0.2, all three systems), to study
+# their effect without editing the config; RPC min_samples stays at 10
+# (sparse system).
 _CSC_DT_MIN_SAMPLES = int(os.environ.get("MDS_CLUSTER_MIN_SAMPLES", "50"))
+_EPS = float(os.environ.get("MDS_CLUSTER_EPS", "0.2"))
 DBSCAN_PARAMS = {
-    "csc": (0.2, _CSC_DT_MIN_SAMPLES),
-    "dt": (0.2, _CSC_DT_MIN_SAMPLES),
-    "rpc": (0.2, 10),
+    "csc": (_EPS, _CSC_DT_MIN_SAMPLES),
+    "dt": (_EPS, _CSC_DT_MIN_SAMPLES),
+    "rpc": (_EPS, 10),
 }
 
 # Cluster <-> LLP matching: matched := (# rechits sharing one llpIdx) >= MATCH_MIN_HITS
 MATCH_MIN_HITS = 10
+
+# Per-LLP rechit spread: an LLP with more than this many matched rechits is
+# strided down before the O(N^2) pairwise dR matrix is built (hit
+# multiplicities are far below the cap in practice, so this never fires).
+PAIR_MAX_HITS = 2000
+
+# Containment fractions for the per-LLP cone radius (field names dr50/dr80/...)
+DR_QUANTILES = (0.5, 0.8, 0.9)
 
 # Rechit ``llpIdx`` convention: "genpart" (default; llpIdx is the SUEPGenPart
 # index, post-Geant4-fix files) or "ordinal" (llpIdx is the ordinal LLP index
@@ -149,8 +168,34 @@ def derive(events):
         llp = ak.with_field(llp, reco["dt"], "recoDT")
         llp = ak.with_field(llp, reco["rpc"], "recoRPC")
         llp = ak.with_field(llp, reco["csc"] | reco["dt"] | reco["rpc"], "reco")
+
     else:
         llp = _empty_llps(events)
+
+    # Eta-phi spread of each LLP's truth-matched rechits, per system and for
+    # the three pooled ("Total", matching nHitsTotal).  The per-system passes
+    # also write each matched rechit's dR to its LLP's centroid back onto the
+    # rechit collection.  Samples without truth branches get the same fields
+    # (all NaN / False), so the configs evaluate on background as well.
+    nllp = ak.num(llp.pt)
+    for sys, coll in (("CSC", "cscRechits"), ("DT", "dtRecHits"),
+                      ("RPC", "rpcRecHits")):
+        rechits = events[coll]
+        counts = ak.num(rechits.Eta)
+        hit_dr = np.full(int(ak.sum(counts)), np.nan)
+        if has_truth:
+            for f, v in _llp_rechit_dr(events, [coll], match_key,
+                                       hit_dr=hit_dr).items():
+                llp = ak.with_field(llp, ak.unflatten(v, nllp), f + sys)
+        matched = (rechits.llpIdx >= 0 if "llpIdx" in rechits.fields
+                   else ak.values_astype(ak.zeros_like(rechits.Eta), np.bool_))
+        rechits = ak.with_field(rechits, ak.unflatten(hit_dr, counts), "drLLP")
+        events = ak.with_field(events, ak.with_field(rechits, matched, "matchedLLP"),
+                               coll)
+    if has_truth:
+        for f, v in _llp_rechit_dr(
+                events, ["cscRechits", "dtRecHits", "rpcRecHits"], match_key).items():
+            llp = ak.with_field(llp, ak.unflatten(v, nllp), f + "Total")
 
     events = ak.with_field(events, llp, "llp")
     events = ak.with_field(events, clusters["csc"], "cscCluster")
@@ -232,14 +277,126 @@ def _empty_llps(events):
     def empty(dtype):
         return ak.unflatten(np.zeros(0, dtype=dtype), counts)
 
-    f64 = ("pt", "eta", "phi", "mass", "energy", "decayR", "decayZ",
-           "Llab", "betagamma", "ctau")
+    f64 = (("pt", "eta", "phi", "mass", "energy", "decayR", "decayZ",
+            "Llab", "betagamma", "ctau")
+           + tuple(f + sys for sys in ("CSC", "DT", "RPC", "Total")
+                   for f in _dr_field_names()))
     i64 = ("gidx", "lidx", "nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsTotal")
     boo = ("inCSC", "inDT", "inRPC", "recoCSC", "recoDT", "recoRPC", "reco")
     fields = {f: empty(np.float64) for f in f64}
     fields.update({f: empty(np.int64) for f in i64})
     fields.update({f: empty(np.bool_) for f in boo})
     return ak.zip(fields)
+
+
+def _dr_field_names():
+    """Names of the per-LLP rechit-spread fields (without the system suffix)."""
+    return ("drPairMin", "drPairMax", "drMax") + tuple(
+        f"dr{int(round(q * 100))}" for q in DR_QUANTILES)
+
+
+def _llp_rechit_dr(events, coll_names, keys, hit_dr=None):
+    """Eta-phi spread of the rechits truth-matched to each LLP.
+
+    Pools the rechit collections named in ``coll_names`` (one system, or all
+    three for the combined shape) and, for every LLP with at least one matched
+    rechit, computes
+
+    ``drPairMin`` / ``drPairMax``
+        smallest / largest dR between any two of the LLP's rechits (closest
+        pair and shower "diameter").
+    ``dr50`` / ``dr80`` / ``dr90`` / ``drMax``
+        radius around the rechit centroid containing 50 / 80 / 90 / 100 % of
+        them, i.e. the cone size needed to collect that fraction of the hits.
+
+    LLPs with no matched rechit get NaN in every field (silently dropped at
+    fill time); ``drPairMin/Max`` are NaN as well for a single-hit LLP.
+
+    ``keys`` is the per-event list of LLP identifiers the rechit ``llpIdx``
+    branches are compared against (``llp.gidx`` or ``llp.lidx``).  ``hit_dr``,
+    if given, is a flat per-rechit array (single collection only) filled in
+    place with each matched rechit's dR to its LLP's centroid.
+
+    Returns a dict of flat per-LLP arrays, to be unflattened with ``ak.num(keys)``.
+    """
+    fields = _dr_field_names()
+    nllp = np.asarray(ak.num(keys))
+    keys_flat = np.asarray(ak.flatten(keys))
+    llp_off = np.concatenate([[0], np.cumsum(nllp)])
+    out = {f: np.full(len(keys_flat), np.nan) for f in fields}
+
+    # Materialize the rechit branches to flat numpy once (per-event awkward
+    # indexing is slow), as in _cluster_system.
+    per_coll = []
+    for name in coll_names:
+        rechits = events[name]
+        if "llpIdx" not in rechits.fields:
+            continue
+        counts = np.asarray(ak.num(rechits.Eta))
+        per_coll.append((
+            np.concatenate([[0], np.cumsum(counts)]),
+            np.asarray(ak.flatten(rechits.Eta), dtype=np.float64),
+            np.asarray(ak.flatten(rechits.Phi), dtype=np.float64),
+            np.asarray(ak.flatten(rechits.llpIdx)),
+        ))
+    if not per_coll:
+        return out
+
+    for i in range(len(nllp)):
+        if nllp[i] == 0:
+            continue
+        etas, phis, idxs, srcs = [], [], [], []
+        for offsets, eta, phi, llpidx in per_coll:
+            s = slice(offsets[i], offsets[i + 1])
+            m = llpidx[s] >= 0
+            if not m.any():
+                continue
+            etas.append(eta[s][m])
+            phis.append(phi[s][m])
+            idxs.append(llpidx[s][m])
+            if hit_dr is not None:
+                srcs.append(np.flatnonzero(m) + offsets[i])
+        if not etas:
+            continue
+        hit_eta = np.concatenate(etas)
+        hit_phi = np.concatenate(phis)
+        hit_idx = np.concatenate(idxs)
+        src = np.concatenate(srcs) if hit_dr is not None else None
+
+        # Group the matched hits by llpIdx with one sort, instead of one mask
+        # per LLP (events hold up to O(50) LLPs, most without any rechit).
+        order = np.argsort(hit_idx, kind="stable")
+        idx_sorted = hit_idx[order]
+        edges = np.flatnonzero(np.diff(idx_sorted)) + 1
+        slot = {int(k): llp_off[i] + t
+                for t, k in enumerate(keys_flat[llp_off[i]:llp_off[i + 1]])}
+
+        for a, b in zip(np.concatenate([[0], edges]),
+                        np.concatenate([edges, [len(order)]])):
+            j = slot.get(int(idx_sorted[a]))
+            if j is None:          # hits from a gen particle that is not an LLP
+                continue
+            sel = order[a:b]
+            e, p = hit_eta[sel], hit_phi[sel]
+            # Centroid: circular mean in phi, so hits either side of +-pi
+            # average correctly (same convention as the DBSCAN clusters).
+            cphi = np.arctan2(np.sin(p).sum(), np.cos(p).sum())
+            dr = np.hypot(e - e.mean(), (p - cphi + np.pi) % (2 * np.pi) - np.pi)
+            out["drMax"][j] = dr.max()
+            for q, val in zip(DR_QUANTILES, np.quantile(dr, DR_QUANTILES)):
+                out[f"dr{int(round(q * 100))}"][j] = val
+            if hit_dr is not None:
+                hit_dr[src[sel]] = dr
+            if len(sel) >= 2:
+                step = max(1, -(-len(sel) // PAIR_MAX_HITS))
+                e2, p2 = e[::step], p[::step]
+                dphi = p2[:, None] - p2[None, :]
+                dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
+                dmat = np.hypot(e2[:, None] - e2[None, :], dphi)
+                pair = dmat[np.triu_indices(len(e2), 1)]
+                out["drPairMin"][j] = pair.min()
+                out["drPairMax"][j] = pair.max()
+    return out
 
 
 def _flat_layer_key(rechits):

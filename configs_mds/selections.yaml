@@ -38,6 +38,35 @@ llp_hits10_csc:
 llp_hits10_dt:
   level: object
   expression: "events.llp.nHitsDT >= 10"
+llp_hits10_total:
+  level: object
+  expression: "events.llp.nHitsTotal >= 10"
+
+# LLP with >= 2 truth rechits: the minimum for a rechit-rechit dR to exist
+# (the per-LLP dR fields are NaN below it and drop out of the fill anyway)
+llp_hits2_csc:
+  level: object
+  expression: "events.llp.nHitsCSC >= 2"
+llp_hits2_dt:
+  level: object
+  expression: "events.llp.nHitsDT >= 2"
+llp_hits2_rpc:
+  level: object
+  expression: "events.llp.nHitsRPC >= 2"
+llp_hits2_total:
+  level: object
+  expression: "events.llp.nHitsTotal >= 2"
+
+# Rechit truth-matched to an LLP (always False on truth-less background)
+csc_rechit_matched:
+  level: object
+  expression: "events.cscRechits.matchedLLP"
+dt_rechit_matched:
+  level: object
+  expression: "events.dtRecHits.matchedLLP"
+rpc_rechit_matched:
+  level: object
+  expression: "events.rpcRecHits.matchedLLP"
 
 # Cluster truth-matched to an LLP (>= 10 rechits sharing one llpIdx)
 csc_cluster_matched:
@@ -65,3 +94,15 @@ has_matched_dt:
   expression: "ak.any(events.dtCluster.matched, axis=1)"
 has_matched_rpc:
   expression: "ak.any(events.rpcCluster.matched, axis=1)"
+
+
+# Cluster NOT truth-matched (fake / pile-up-like)
+csc_cluster_unmatched:
+  level: object
+  expression: "~events.cscCluster.matched"
+dt_cluster_unmatched:
+  level: object
+  expression: "~events.dtCluster.matched"
+rpc_cluster_unmatched:
+  level: object
+  expression: "~events.rpcCluster.matched"

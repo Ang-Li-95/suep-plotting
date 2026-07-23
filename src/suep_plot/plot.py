@@ -217,16 +217,27 @@ def plot_histogram(
     if bkg_hists:
         bkg_labels = [sample_defs.get(s, {}).get("label", s) for s in bkg_samples]
         bkg_colors = [sample_defs.get(s, {}).get("color", None) for s in bkg_samples]
-        hep.histplot(
-            bkg_hists,
-            ax=ax,
-            stack=True,
-            histtype="fill",
-            label=bkg_labels,
-            color=bkg_colors,
-            edgecolor="black",
-            linewidth=0.5,
-        )
+        if normalize:
+            # Stacking unit-area histograms is meaningless, so in shape mode
+            # each background is normalized on its own and overlaid as a step,
+            # directly comparable with the signal curves below.
+            for bh, label, color in zip(bkg_hists, bkg_labels, bkg_colors):
+                if bh.sum().value > 0:
+                    bh = bh * (1.0 / bh.sum().value)
+                hep.histplot(bh, ax=ax, histtype="step", label=label,
+                             color=color, linewidth=2,
+                             yerr=np.sqrt(bh.variances()))
+        else:
+            hep.histplot(
+                bkg_hists,
+                ax=ax,
+                stack=True,
+                histtype="fill",
+                label=bkg_labels,
+                color=bkg_colors,
+                edgecolor="black",
+                linewidth=0.5,
+            )
 
     # Fill style only for a lone signal; overlaid signals read better as steps.
     solo_signal = not (bkg_samples or data_samples) and len(signal_samples) == 1
@@ -430,6 +441,9 @@ def _plot_derived_one(name, cfg, histograms, sample_defs, output_dir, *,
     if dtype == "ratio":
         return _plot_ratio(name, cfg, histograms, sample_defs, output_dir,
                            lumi=lumi, formats=formats)
+    if dtype == "sig_vs_bkg":
+        return _plot_sig_vs_bkg(name, cfg, histograms, sample_defs, output_dir,
+                                log_y=log_y, lumi=lumi, formats=formats)
     print(f"  WARNING: unknown derived type '{dtype}' for '{name}'")
     return 0
 
@@ -659,6 +673,73 @@ def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
     ax.set_xlabel(cfg.get("label_x", h_num.axes["x"].label))
     ax.set_ylabel(cfg.get("label_y", "Ratio"))
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8)
+    ax.legend(fontsize=18, loc="best")
+
+    _cms_label(ax, lumi=lumi)
+
+    for ext in formats:
+        fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return 1
+
+
+def _plot_sig_vs_bkg(name, cfg, histograms, sample_defs, output_dir, *,
+                     log_y=False, lumi=None, formats=DEFAULT_FORMATS):
+    """Overlay a different histogram for signal and for background samples.
+
+    Signal samples are drawn from the ``signal`` histogram and background
+    samples from the ``background`` one, so e.g. gen-matched signal clusters
+    can be compared with the full cluster population of a truth-less
+    background sample without refilling either.  Curves are normalized to
+    unit area by default (``normalize: false`` keeps raw yields), since the
+    two source histograms generally hold different populations.
+    """
+    sig_name = cfg["signal"]
+    bkg_name = cfg["background"]
+    for src in (sig_name, bkg_name):
+        if src not in histograms:
+            print(f"  WARNING: histogram '{src}' not found for derived plot '{name}'")
+            return 0
+
+    h_sig, h_bkg = histograms[sig_name], histograms[bkg_name]
+    normalize = cfg.get("normalize", True)
+
+    # Each sample is drawn from the histogram matching its own group.
+    sig_samples, bkg_samples, data_samples = _split_samples(
+        list(h_sig.axes["dataset"]), sample_defs)
+    entries = [(s, h_sig) for s in sig_samples]
+    entries += [(s, h_bkg) for s in bkg_samples + data_samples
+                if s in h_bkg.axes["dataset"]]
+    if not entries:
+        print(f"  WARNING: no samples to draw for derived plot '{name}'")
+        return 0
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    drawn = 0
+    for i, (s, h) in enumerate(entries):
+        sh = _prep_1d(h[{"dataset": s}], cfg)
+        if sh.sum().value <= 0:
+            continue
+        if normalize:
+            sh = sh * (1.0 / sh.sum().value)
+        cfg_s = sample_defs.get(s, {})
+        hep.histplot(sh, ax=ax, histtype="step", linewidth=2,
+                     label=cfg_s.get("label", s),
+                     color=cfg_s.get("color", colors[i % len(colors)]),
+                     yerr=np.sqrt(sh.variances()))
+        drawn += 1
+
+    if not drawn:
+        plt.close(fig)
+        print(f"  WARNING: all source histograms empty for derived plot '{name}'")
+        return 0
+
+    ax.set_xlabel(cfg.get("label_x", h_sig.axes["x"].label))
+    ax.set_ylabel(cfg.get("label_y", "Normalized" if normalize else "Events"))
+    if log_y or cfg.get("log_y"):
+        ax.set_yscale("log")
     ax.legend(fontsize=18, loc="best")
 
     _cms_label(ax, lumi=lumi)
@@ -904,6 +985,8 @@ def plot_all(
             needed = [cfg.get("source")]
         elif dtype in ("efficiency", "ratio"):
             needed = [cfg.get("numerator"), cfg.get("denominator")]
+        elif dtype == "sig_vs_bkg":
+            needed = [cfg.get("signal"), cfg.get("background")]
         else:
             print(f"  WARNING: unknown derived type '{dtype}' for '{name}'")
             continue
