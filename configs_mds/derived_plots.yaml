@@ -1090,10 +1090,3 @@ sigbkg_rpc_cluster_time:
   label_x: 'RPC cluster mean time [ns]'
   label_y: 'normalized clusters'
   log_y: true
-
-# ── Per-LLP rechit cone size vs hit multiplicity ───────────────────
-llp_dr90_vs_nhits_csc_prof:
-  type: profile_x
-  source: llp_dr90_vs_nhits_csc
-  label_x: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
-  label_y: 'Mean $\Delta R$ containing 90% of the rechits'

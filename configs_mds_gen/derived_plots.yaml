@@ -1,0 +1,19 @@
+# ── Derived plots (computed at plot time, no reprocessing) ────────
+
+# Does an LLP's rechit cone grow with the number of rechits it leaves?
+llp_dr90_vs_nhits_csc_prof:
+  type: profile_x
+  source: llp_dr90_vs_nhits_csc
+  label_x: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  label_y: 'Mean $\Delta R$ containing 90% of the rechits'
+
+# 1D projections of the same 2D histogram
+llp_nhits_csc_from_2d:
+  type: projection_x
+  source: llp_dr90_vs_nhits_csc
+  label_x: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+
+llp_dr90_csc_from_2d:
+  type: projection_y
+  source: llp_dr90_vs_nhits_csc
+  label_x: 'LLP CSC rechits: $\Delta R$ containing 90%'

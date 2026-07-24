@@ -62,6 +62,7 @@ import os
 
 import awkward as ak
 import numpy as np
+from numba import njit
 
 # ── MDS study parameters ───────────────────────────────────────────
 LLP_PDGID = 999999
@@ -83,6 +84,13 @@ DBSCAN_PARAMS = {
     "dt": (_EPS, _CSC_DT_MIN_SAMPLES),
     "rpc": (_EPS, 10),
 }
+
+# $MDS_SKIP_CLUSTERING=1 drops the DBSCAN step, ~35% of derive() (measured on
+# the 2024 signal: 8.8 s -> 5.7 s per 1000 events).
+# For gen-level-only configs (configs_mds_gen/): the cluster collections and
+# the llp.reco* flags are then NOT attached, so a config that needs them fails
+# at expression validation instead of quietly filling empty histograms.
+SKIP_CLUSTERING = os.environ.get("MDS_SKIP_CLUSTERING", "0") not in ("0", "", "false")
 
 # Cluster <-> LLP matching: matched := (# rechits sharing one llpIdx) >= MATCH_MIN_HITS
 MATCH_MIN_HITS = 10
@@ -132,11 +140,12 @@ def derive(events):
     has_truth = "SUEPGenPart" in events.fields
 
     clusters = {}
-    for sys, coll, timefield in (("csc", "cscRechits", "Tpeak"),
-                                 ("dt", "dtRecHits", None),
-                                 ("rpc", "rpcRecHits", "Time")):
-        eps, min_samples = DBSCAN_PARAMS[sys]
-        clusters[sys] = _cluster_system(events[coll], timefield, eps, min_samples)
+    if not SKIP_CLUSTERING:
+        for sys, coll, timefield in (("csc", "cscRechits", "Tpeak"),
+                                     ("dt", "dtRecHits", None),
+                                     ("rpc", "rpcRecHits", "Time")):
+            eps, min_samples = DBSCAN_PARAMS[sys]
+            clusters[sys] = _cluster_system(events[coll], timefield, eps, min_samples)
 
     if has_truth:
         llp = _build_llps(events)
@@ -160,14 +169,16 @@ def derive(events):
         llp = ak.with_field(llp, nhits["RPC"], "nHitsRPC")
         llp = ak.with_field(llp, nhits["CSC"] + nhits["DT"] + nhits["RPC"], "nHitsTotal")
 
-        reco = {}
-        for sys in ("csc", "dt", "rpc"):
-            reco[sys] = ak.any(
-                match_key[:, :, None] == clusters[sys].matchedLLPIdx[:, None, :], axis=2)
-        llp = ak.with_field(llp, reco["csc"], "recoCSC")
-        llp = ak.with_field(llp, reco["dt"], "recoDT")
-        llp = ak.with_field(llp, reco["rpc"], "recoRPC")
-        llp = ak.with_field(llp, reco["csc"] | reco["dt"] | reco["rpc"], "reco")
+        if not SKIP_CLUSTERING:
+            reco = {}
+            for sys in ("csc", "dt", "rpc"):
+                reco[sys] = ak.any(
+                    match_key[:, :, None] == clusters[sys].matchedLLPIdx[:, None, :],
+                    axis=2)
+            llp = ak.with_field(llp, reco["csc"], "recoCSC")
+            llp = ak.with_field(llp, reco["dt"], "recoDT")
+            llp = ak.with_field(llp, reco["rpc"], "recoRPC")
+            llp = ak.with_field(llp, reco["csc"] | reco["dt"] | reco["rpc"], "reco")
 
     else:
         llp = _empty_llps(events)
@@ -198,6 +209,11 @@ def derive(events):
             llp = ak.with_field(llp, ak.unflatten(v, nllp), f + "Total")
 
     events = ak.with_field(events, llp, "llp")
+    if SKIP_CLUSTERING:
+        # Deliberately no events.<sys>Cluster and no llp.reco* fields: a config
+        # that needs them should fail loudly at expression validation rather
+        # than silently fill zeros.
+        return events
     events = ak.with_field(events, clusters["csc"], "cscCluster")
     events = ak.with_field(events, clusters["dt"], "dtCluster")
     events = ak.with_field(events, clusters["rpc"], "rpcCluster")
@@ -319,84 +335,150 @@ def _llp_rechit_dr(events, coll_names, keys, hit_dr=None):
 
     Returns a dict of flat per-LLP arrays, to be unflattened with ``ak.num(keys)``.
     """
-    fields = _dr_field_names()
     nllp = np.asarray(ak.num(keys))
-    keys_flat = np.asarray(ak.flatten(keys))
-    llp_off = np.concatenate([[0], np.cumsum(nllp)])
-    out = {f: np.full(len(keys_flat), np.nan) for f in fields}
+    keys_flat = np.asarray(ak.flatten(keys), dtype=np.int64)
+    llp_off = np.concatenate([[0], np.cumsum(nllp)]).astype(np.int64)
 
-    # Materialize the rechit branches to flat numpy once (per-event awkward
-    # indexing is slow), as in _cluster_system.
-    per_coll = []
+    n_llp = len(keys_flat)
+    pair_min = np.full(n_llp, np.nan)
+    pair_max = np.full(n_llp, np.nan)
+    dr_max = np.full(n_llp, np.nan)
+    dr_q = np.full((len(DR_QUANTILES), n_llp), np.nan)
+
+    def result():
+        out = {"drPairMin": pair_min, "drPairMax": pair_max, "drMax": dr_max}
+        for t, q in enumerate(DR_QUANTILES):
+            out[f"dr{int(round(q * 100))}"] = dr_q[t]
+        return out
+
+    # Materialize the matched rechits of every requested collection to flat
+    # numpy once (per-event awkward indexing is slow), as in _cluster_system.
+    evts, etas, phis, idxs, srcs = [], [], [], [], []
     for name in coll_names:
         rechits = events[name]
         if "llpIdx" not in rechits.fields:
             continue
         counts = np.asarray(ak.num(rechits.Eta))
-        per_coll.append((
-            np.concatenate([[0], np.cumsum(counts)]),
-            np.asarray(ak.flatten(rechits.Eta), dtype=np.float64),
-            np.asarray(ak.flatten(rechits.Phi), dtype=np.float64),
-            np.asarray(ak.flatten(rechits.llpIdx)),
-        ))
-    if not per_coll:
-        return out
+        llpidx = np.asarray(ak.flatten(rechits.llpIdx), dtype=np.int64)
+        m = llpidx >= 0
+        evts.append(np.repeat(np.arange(len(counts), dtype=np.int64), counts)[m])
+        etas.append(np.asarray(ak.flatten(rechits.Eta), dtype=np.float64)[m])
+        phis.append(np.asarray(ak.flatten(rechits.Phi), dtype=np.float64)[m])
+        idxs.append(llpidx[m])
+        srcs.append(np.flatnonzero(m).astype(np.int64))
+    if not evts or sum(len(e) for e in evts) == 0:
+        return result()
 
-    for i in range(len(nllp)):
-        if nllp[i] == 0:
-            continue
-        etas, phis, idxs, srcs = [], [], [], []
-        for offsets, eta, phi, llpidx in per_coll:
-            s = slice(offsets[i], offsets[i + 1])
-            m = llpidx[s] >= 0
-            if not m.any():
-                continue
-            etas.append(eta[s][m])
-            phis.append(phi[s][m])
-            idxs.append(llpidx[s][m])
-            if hit_dr is not None:
-                srcs.append(np.flatnonzero(m) + offsets[i])
-        if not etas:
-            continue
-        hit_eta = np.concatenate(etas)
-        hit_phi = np.concatenate(phis)
-        hit_idx = np.concatenate(idxs)
-        src = np.concatenate(srcs) if hit_dr is not None else None
+    # One stable sort by event groups the pooled hits the way the per-event
+    # loop used to: all CSC hits of the event, then DT, then RPC.
+    evt = np.concatenate(evts)
+    grp = np.argsort(evt, kind="stable")
+    hit_eta = np.concatenate(etas)[grp]
+    hit_phi = np.concatenate(phis)[grp]
+    hit_idx = np.concatenate(idxs)[grp]
+    hit_src = (np.concatenate(srcs)[grp] if hit_dr is not None
+               else np.empty(0, dtype=np.int64))
+    ev_off = np.searchsorted(evt[grp], np.arange(len(nllp) + 1)).astype(np.int64)
 
-        # Group the matched hits by llpIdx with one sort, instead of one mask
+    _dr_kernel(ev_off, hit_eta, hit_phi, hit_idx, hit_src, keys_flat, llp_off,
+               np.asarray(DR_QUANTILES, dtype=np.float64),
+               pair_min, pair_max, dr_max, dr_q,
+               hit_dr if hit_dr is not None else np.empty(0),
+               hit_dr is not None)
+    return result()
+
+
+@njit(cache=True)
+def _dr_kernel(ev_off, hit_eta, hit_phi, hit_idx, hit_src, keys_flat, llp_off,
+               quantiles, pair_min, pair_max, dr_max, dr_q, hit_dr, do_hits):
+    """Compiled inner loop of :func:`_llp_rechit_dr` (see it for definitions).
+
+    Every array is flat and preallocated by the caller; the five output arrays
+    are written in place.  ``ev_off`` slices the matched-hit arrays per event,
+    ``llp_off`` slices ``keys_flat`` and the output rows per event.
+
+    Compiled because the groups are tiny (~3 rechits per LLP): in numpy this
+    loop was ~17x slower, spending almost all of it on per-call dispatch rather
+    than arithmetic.  Results match the numpy version to the last ulp (numpy
+    sums pairwise, this sums in a plain loop).
+    """
+    two_pi = 2.0 * np.pi
+    for i in range(len(ev_off) - 1):
+        a0, a1 = ev_off[i], ev_off[i + 1]
+        k0, k1 = llp_off[i], llp_off[i + 1]
+        if a1 <= a0 or k1 <= k0:
+            continue
+        n = a1 - a0
+        # Group this event's hits by llpIdx with one sort, instead of one mask
         # per LLP (events hold up to O(50) LLPs, most without any rechit).
-        order = np.argsort(hit_idx, kind="stable")
-        idx_sorted = hit_idx[order]
-        edges = np.flatnonzero(np.diff(idx_sorted)) + 1
-        slot = {int(k): llp_off[i] + t
-                for t, k in enumerate(keys_flat[llp_off[i]:llp_off[i + 1]])}
+        order = np.argsort(hit_idx[a0:a1], kind="mergesort")
 
-        for a, b in zip(np.concatenate([[0], edges]),
-                        np.concatenate([edges, [len(order)]])):
-            j = slot.get(int(idx_sorted[a]))
-            if j is None:          # hits from a gen particle that is not an LLP
+        a = 0
+        while a < n:
+            key = hit_idx[a0 + order[a]]
+            b = a + 1
+            while b < n and hit_idx[a0 + order[b]] == key:
+                b += 1
+            j = -1
+            for t in range(k0, k1):
+                if keys_flat[t] == key:
+                    j = t
+                    break
+            if j < 0:              # hits from a gen particle that is not an LLP
+                a = b
                 continue
-            sel = order[a:b]
-            e, p = hit_eta[sel], hit_phi[sel]
+
+            m = b - a
+            e = np.empty(m, dtype=np.float64)
+            p = np.empty(m, dtype=np.float64)
+            for t in range(m):
+                g = a0 + order[a + t]
+                e[t] = hit_eta[g]
+                p[t] = hit_phi[g]
+
             # Centroid: circular mean in phi, so hits either side of +-pi
             # average correctly (same convention as the DBSCAN clusters).
-            cphi = np.arctan2(np.sin(p).sum(), np.cos(p).sum())
-            dr = np.hypot(e - e.mean(), (p - cphi + np.pi) % (2 * np.pi) - np.pi)
-            out["drMax"][j] = dr.max()
-            for q, val in zip(DR_QUANTILES, np.quantile(dr, DR_QUANTILES)):
-                out[f"dr{int(round(q * 100))}"][j] = val
-            if hit_dr is not None:
-                hit_dr[src[sel]] = dr
-            if len(sel) >= 2:
-                step = max(1, -(-len(sel) // PAIR_MAX_HITS))
-                e2, p2 = e[::step], p[::step]
-                dphi = p2[:, None] - p2[None, :]
-                dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
-                dmat = np.hypot(e2[:, None] - e2[None, :], dphi)
-                pair = dmat[np.triu_indices(len(e2), 1)]
-                out["drPairMin"][j] = pair.min()
-                out["drPairMax"][j] = pair.max()
-    return out
+            sin_sum = 0.0
+            cos_sum = 0.0
+            eta_sum = 0.0
+            for t in range(m):
+                sin_sum += np.sin(p[t])
+                cos_sum += np.cos(p[t])
+                eta_sum += e[t]
+            cphi = np.arctan2(sin_sum, cos_sum)
+            emean = eta_sum / m
+
+            dr = np.empty(m, dtype=np.float64)
+            biggest = 0.0
+            for t in range(m):
+                dphi = (p[t] - cphi + np.pi) % two_pi - np.pi
+                dr[t] = np.hypot(e[t] - emean, dphi)
+                if dr[t] > biggest:
+                    biggest = dr[t]
+            dr_max[j] = biggest
+            quants = np.quantile(dr, quantiles)
+            for t in range(len(quantiles)):
+                dr_q[t, j] = quants[t]
+            if do_hits:
+                for t in range(m):
+                    hit_dr[hit_src[a0 + order[a + t]]] = dr[t]
+
+            if m >= 2:
+                step = 1 + (m - 1) // PAIR_MAX_HITS
+                lo = np.inf
+                hi = -np.inf
+                for u in range(0, m, step):
+                    for v in range(u + step, m, step):
+                        dphi = (p[u] - p[v] + np.pi) % two_pi - np.pi
+                        d = np.hypot(e[u] - e[v], dphi)
+                        if d < lo:
+                            lo = d
+                        if d > hi:
+                            hi = d
+                if hi >= 0.0:
+                    pair_min[j] = lo
+                    pair_max[j] = hi
+            a = b
 
 
 def _flat_layer_key(rechits):
