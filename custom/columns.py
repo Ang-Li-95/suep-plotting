@@ -15,8 +15,10 @@ this module attaches four derived collections:
 
 ``events.llp``
     One entry per generated LLP (``SUEPGenPart.pdgId == 999999``): kinematics,
-    decay vertex (from the production vertex of its daughters), decay-volume
-    flags (``inCSC/inDT/inRPC``), per-system truth rechit counts
+    decay vertex (from the production vertex of its daughters), the 3D
+    ``openingAngle`` between the two decay daughters (boost-driven: a more
+    boosted LLP gives a tighter pair), decay-volume flags
+    (``inCSC/inDT/inRPC``), per-system truth rechit counts
     (``nHitsCSC/nHitsDT/nHitsRPC/nHitsTotal``) and reconstruction flags
     (``recoCSC/recoDT/recoRPC/reco``: LLP has a matched DBSCAN cluster).
     Background samples without ``SUEPGenPart`` get an *empty* llp collection
@@ -43,7 +45,10 @@ this module attaches four derived collections:
     (``nLayer``, ``layerHitsMean/RMS/RelRMS``, ``maxLayerFrac``) and across
     stations (``nStation``, ``stationSpan``, ``avgStation``,
     ``maxStationFrac``), plus spatial spreads (``etaSpread``, ``phiSpread``,
-    ``rSpread``, ``zSpread``).  Two "layer" definitions are kept in parallel:
+    ``rSpread``, ``zSpread``).  Isolation from prompt activity: ``drMuon`` /
+    ``drJet``, the dR from the cluster centroid to the closest reconstructed
+    muon / jet (NaN when the event has none, so those clusters simply drop out
+    of the histogram).  Two "layer" definitions are kept in parallel:
     ``layer*`` fields use the stored segmentation (physical chamber for CSC,
     which has no in-chamber layer branch; the physical layer for DT/RPC),
     while ``zLayer*`` fields identify the layer plane from quantized global z
@@ -146,6 +151,10 @@ def derive(events):
                                      ("rpc", "rpcRecHits", "Time")):
             eps, min_samples = DBSCAN_PARAMS[sys]
             clusters[sys] = _cluster_system(events[coll], timefield, eps, min_samples)
+            for field, obj in (("drMuon", "Muon"), ("drJet", "Jet")):
+                if obj in events.fields:
+                    clusters[sys] = ak.with_field(
+                        clusters[sys], _dr_to_nearest(clusters[sys], events[obj]), field)
 
     if has_truth:
         llp = _build_llps(events)
@@ -171,10 +180,24 @@ def derive(events):
 
         if not SKIP_CLUSTERING:
             reco = {}
-            for sys in ("csc", "dt", "rpc"):
-                reco[sys] = ak.any(
-                    match_key[:, :, None] == clusters[sys].matchedLLPIdx[:, None, :],
-                    axis=2)
+            for sys, SYS in (("csc", "CSC"), ("dt", "DT"), ("rpc", "RPC")):
+                # (ev, nLLP, nCluster) truth-match table: cluster's best-LLP
+                # index equals this LLP's.  Unmatched clusters carry -1, which
+                # never equals an LLP index (>= 0), so they drop out.
+                sel = match_key[:, :, None] == clusters[sys].matchedLLPIdx[:, None, :]
+                reco[sys] = ak.any(sel, axis=2)
+                # (2) number of DBSCAN clusters truth-matched to each LLP
+                nclu = ak.values_astype(ak.sum(sel, axis=2), np.int64)
+                llp = ak.with_field(llp, nclu, "nRecoCluster" + SYS)
+                # (3) fraction of the LLP's matched rechits captured by its best
+                # matched cluster: max over matched clusters of that cluster's
+                # matched-hit count, divided by the LLP's total matched rechits
+                # in the system.  NaN when the LLP has no matched rechit there.
+                hits_in = ak.where(sel, clusters[sys].nMatchedHits[:, None, :], 0)
+                best = ak.fill_none(ak.max(hits_in, axis=2), 0)
+                nh = llp["nHits" + SYS]
+                frac = ak.where(nh > 0, best / ak.where(nh > 0, nh, 1), np.nan)
+                llp = ak.with_field(llp, frac, "clusterHitFrac" + SYS)
             llp = ak.with_field(llp, reco["csc"], "recoCSC")
             llp = ak.with_field(llp, reco["dt"], "recoDT")
             llp = ak.with_field(llp, reco["rpc"], "recoRPC")
@@ -220,6 +243,18 @@ def derive(events):
     return events
 
 
+def _dr_to_nearest(clusters, objects):
+    """dR from each cluster centroid to the closest object in the event.
+
+    NaN in events with no such object (``ak.min`` over an empty list), which the
+    fill drops.  Written out by hand because the cluster collection is a plain
+    record array with no vector behaviour, so ``.nearest()`` is unavailable.
+    """
+    deta = clusters.eta[:, :, None] - objects.eta[:, None, :]
+    dphi = (clusters.phi[:, :, None] - objects.phi[:, None, :] + np.pi) % (2 * np.pi) - np.pi
+    return ak.fill_none(ak.min(np.sqrt(deta ** 2 + dphi ** 2), axis=2), np.nan)
+
+
 def _build_llps(events):
     """LLP collection from the unpruned SUEPGenPart table.
 
@@ -245,6 +280,25 @@ def _build_llps(events):
     dvx = ak.where(has_dau, gp.vx[is_dau][first], np.nan)
     dvy = ak.where(has_dau, gp.vy[is_dau][first], np.nan)
     dvz = ak.where(has_dau, gp.vz[is_dau][first], np.nan)
+
+    # Opening angle between the two decay daughters (every LLP has exactly two).
+    # Boost-driven: a more boosted LLP decays into a tighter pair, which is what
+    # ultimately sets the eta-phi spread of its rechits.  Second daughter = the
+    # matched one that is not `first`; NaN if the LLP has fewer than two stored.
+    dau_local = ak.local_index(dau_mom, axis=1)
+    match2 = match & (dau_local[:, None, :] != first[:, :, None])
+    has_two = ak.sum(match, axis=2) >= 2
+    second = ak.fill_none(ak.argmax(match2, axis=2), 0)
+    d_eta, d_phi = gp.eta[is_dau], gp.phi[is_dau]
+    t1 = 2 * np.arctan(np.exp(-d_eta[first]))
+    t2 = 2 * np.arctan(np.exp(-d_eta[second]))
+    dphi_d = d_phi[first] - d_phi[second]
+    cos_open = (np.sin(t1) * np.sin(t2) * np.cos(dphi_d)
+                + np.cos(t1) * np.cos(t2))
+    # np.clip is not a ufunc, so it can't dispatch over the jagged array; clamp
+    # with the min/max ufuncs before arccos (guards float round-off past +-1).
+    cos_open = np.minimum(np.maximum(cos_open, -1.0), 1.0)
+    opening_angle = ak.where(has_two, np.arccos(cos_open), np.nan)
 
     pt, eta, mass = gp.pt[is_llp], gp.eta[is_llp], gp.mass[is_llp]
     decay_r = np.hypot(dvx, dvy)
@@ -276,6 +330,7 @@ def _build_llps(events):
         "Llab": l_lab,
         "betagamma": betagamma,
         "ctau": l_lab / betagamma,
+        "openingAngle": opening_angle,
         "inCSC": in_csc,
         "inDT": in_dt,
         "inRPC": in_rpc,
@@ -294,10 +349,12 @@ def _empty_llps(events):
         return ak.unflatten(np.zeros(0, dtype=dtype), counts)
 
     f64 = (("pt", "eta", "phi", "mass", "energy", "decayR", "decayZ",
-            "Llab", "betagamma", "ctau")
+            "Llab", "betagamma", "ctau", "openingAngle",
+            "clusterHitFracCSC", "clusterHitFracDT", "clusterHitFracRPC")
            + tuple(f + sys for sys in ("CSC", "DT", "RPC", "Total")
                    for f in _dr_field_names()))
-    i64 = ("gidx", "lidx", "nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsTotal")
+    i64 = ("gidx", "lidx", "nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsTotal",
+           "nRecoClusterCSC", "nRecoClusterDT", "nRecoClusterRPC")
     boo = ("inCSC", "inDT", "inRPC", "recoCSC", "recoDT", "recoRPC", "reco")
     fields = {f: empty(np.float64) for f in f64}
     fields.update({f: empty(np.int64) for f in i64})
@@ -553,7 +610,7 @@ def _cluster_system(rechits, timefield, eps, min_samples):
               "maxLayerFrac",
               "nZLayer", "zLayerHitsMean", "zLayerHitsRMS", "zLayerHitsRelRMS",
               "maxZLayerFrac",
-              "nMatchedHits", "matchedLLPIdx", "matched", "hasTruth"]
+              "nMatchedHits", "matchedLLPIdx", "matched", "nMatchedLLP", "hasTruth"]
     if tvals is not None:
         fields.append("time")
     out = {f: [] for f in fields}
@@ -579,8 +636,11 @@ def _cluster_system(rechits, timefield, eps, min_samples):
             if len(idx):
                 uniq, cnt = np.unique(idx, return_counts=True)
                 best, nbest = int(uniq[cnt.argmax()]), int(cnt.max())
+                # How many distinct LLPs clear the match threshold in this
+                # cluster (a cluster can overlap more than one LLP's shower).
+                nmatched_llp = int((cnt >= MATCH_MIN_HITS).sum())
             else:
-                best, nbest = -1, 0
+                best, nbest, nmatched_llp = -1, 0, 0
             matched = nbest >= MATCH_MIN_HITS
             out["size"].append(int(m.sum()))
             out["eta"].append(float(e[m].mean()))
@@ -623,6 +683,7 @@ def _cluster_system(rechits, timefield, eps, min_samples):
             out["nMatchedHits"].append(nbest)
             out["matchedLLPIdx"].append(best if matched else -1)
             out["matched"].append(matched)
+            out["nMatchedLLP"].append(nmatched_llp)
             out["hasTruth"].append(has_truth)
             if tvals is not None:
                 out["time"].append(float(tvals[s][m].mean()))
@@ -631,6 +692,6 @@ def _cluster_system(rechits, timefield, eps, min_samples):
     dtypes = {"size": np.int64, "nStation": np.int64, "stationSpan": np.int64,
               "nLayer": np.int64, "nZLayer": np.int64, "nMatchedHits": np.int64,
               "matchedLLPIdx": np.int64, "matched": np.bool_,
-              "hasTruth": np.bool_}
+              "nMatchedLLP": np.int64, "hasTruth": np.bool_}
     return ak.zip({f: ak.unflatten(np.asarray(v, dtype=dtypes.get(f, np.float64)), nclu)
                    for f, v in out.items()})

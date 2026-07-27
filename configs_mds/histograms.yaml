@@ -1,111 +1,13 @@
-# ── Histograms for the MDS LLP cluster study ──────────────────────
-# All expressions reference the derived collections attached in
-# custom/columns.py: events.llp, events.cscCluster, events.dtCluster,
-# events.rpcCluster.  Efficiency numerator/denominator pairs share
-# identical binning (required by derived_plots.yaml type: efficiency).
+
+# ── Reco-level histograms for the MDS cluster study ───────────────
+# DBSCAN cluster properties from the derived collections in
+# custom/columns.py (events.cscCluster / dtCluster / rpcCluster).
 #
-# Efficiency factorization chain (per system, see derived_plots.yaml):
-#   fiducial        llp_<var>_den_<sys>  / llp_<var>_all_den
-#   reconstructable llp_<var>_hits_<sys> / llp_<var>_den_<sys>
-#   reconstructed   llp_<var>_num_<sys>  / llp_<var>_hits_<sys>
-# Common binning per variable:
-#   pt:        edges [0,1,2,3,4,5,6,7,8,10,12,15,20,30,50]
-#   abseta:    30 bins, 0..3
-#   decayr:    60 bins, 0..1200  (20 cm)
-#   absdecayz: 75 bins, 0..1500  (20 cm)
-# (empty bins are dropped at plot time, so in-volume plots auto-zoom)
-
-# ── (1) LLP multiplicity ──────────────────────────────────────────
-llp_n:
-  expression: "ak.num(events.llp)"
-  bins: 60
-  lo: 0
-  hi: 60
-  label: '$N_{\mathrm{LLP}}$'
-
-# ── (2) LLPs decaying in each muon system volume ──────────────────
-llp_n_csc:
-  expression: "ak.sum(events.llp.inCSC, axis=1)"
-  bins: 15
-  lo: 0
-  hi: 15
-  label: '$N_{\mathrm{LLP}}$ decaying in CSC'
-
-llp_n_dt:
-  expression: "ak.sum(events.llp.inDT, axis=1)"
-  bins: 15
-  lo: 0
-  hi: 15
-  label: '$N_{\mathrm{LLP}}$ decaying in DT'
-
-llp_n_rpc:
-  expression: "ak.sum(events.llp.inRPC, axis=1)"
-  bins: 15
-  lo: 0
-  hi: 15
-  label: '$N_{\mathrm{LLP}}$ decaying in RPC'
-
-llp_decay_r:
-  expression: "events.llp.decayR"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-  log_y: true
-
-llp_decay_absz:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 2000
-  label: 'LLP decay $|z|$ [cm]'
-  log_y: true
-
-llp_decay_rz:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  bins_x: 60
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 900
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-
-# ── (2b) LLP lifetime / boost ─────────────────────────────────────
-# Proper decay length ctau = L_lab / (beta*gamma): exponential with mean
-# = nominal sample lifetime (5 m = 500 cm here).
-llp_ctau:
-  expression: "events.llp.ctau"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 3000
-  label: 'LLP $c\tau$ (proper) [cm]'
-  log_y: true
-
-llp_llab:
-  expression: "events.llp.Llab"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 6000
-  label: 'LLP lab decay length [cm]'
-  log_y: true
-
-llp_betagamma:
-  expression: "events.llp.betagamma"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 30
-  label: 'LLP $\beta\gamma$'
-  log_y: true
+# Nothing here uses gen-level information, so every histogram fills
+# identically on signal and on background samples without truth branches.
+# Everything truth-dependent — the LLP collection, the truth-matched /
+# unmatched cluster splits, the efficiency chain, the matched fractions and
+# the signal-vs-background overlays — lives in configs_mds_llp/.
 
 # ── (3) DBSCAN cluster properties: CSC ─────────────────────────────
 csc_cluster_n:
@@ -174,44 +76,6 @@ csc_cluster_time:
   label: 'CSC cluster mean $t_{\mathrm{peak}}$ [ns]'
   log_y: true
 
-csc_cluster_nmatchedhits:
-  expression: "events.cscCluster.nMatchedHits"
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 200
-  label: 'CSC cluster $N_{\mathrm{hits}}^{\mathrm{LLP-matched}}$'
-  log_y: true
-
-csc_cluster_size_matched:
-  expression: "events.cscCluster.size"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'matched CSC cluster $N_{\mathrm{hits}}$'
-  log_y: true
-
-csc_cluster_eta_matched:
-  expression: "events.cscCluster.eta"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'matched CSC cluster $\eta$'
-
-csc_cluster_time_matched:
-  expression: "events.cscCluster.time"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 60
-  lo: -30
-  hi: 90
-  label: 'matched CSC cluster mean $t_{\mathrm{peak}}$ [ns]'
-  log_y: true
-
 # ── (3) DBSCAN cluster properties: DT ──────────────────────────────
 dt_cluster_n:
   expression: "ak.num(events.dtCluster)"
@@ -269,34 +133,6 @@ dt_cluster_nstation:
   lo: 0
   hi: 5
   label: 'DT cluster $N_{\mathrm{stations}}$'
-
-dt_cluster_nmatchedhits:
-  expression: "events.dtCluster.nMatchedHits"
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 200
-  label: 'DT cluster $N_{\mathrm{hits}}^{\mathrm{LLP-matched}}$'
-  log_y: true
-
-dt_cluster_size_matched:
-  expression: "events.dtCluster.size"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'matched DT cluster $N_{\mathrm{hits}}$'
-  log_y: true
-
-dt_cluster_eta_matched:
-  expression: "events.dtCluster.eta"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'matched DT cluster $\eta$'
 
 # ── (3) DBSCAN cluster properties: RPC ─────────────────────────────
 rpc_cluster_n:
@@ -365,780 +201,6 @@ rpc_cluster_time:
   label: 'RPC cluster mean time [ns]'
   log_y: true
 
-rpc_cluster_nmatchedhits:
-  expression: "events.rpcCluster.nMatchedHits"
-  per_object: true
-  bins: 30
-  lo: 0
-  hi: 60
-  label: 'RPC cluster $N_{\mathrm{hits}}^{\mathrm{LLP-matched}}$'
-  log_y: true
-
-rpc_cluster_size_matched:
-  expression: "events.rpcCluster.size"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 30
-  lo: 0
-  hi: 60
-  label: 'matched RPC cluster $N_{\mathrm{hits}}$'
-  log_y: true
-
-rpc_cluster_eta_matched:
-  expression: "events.rpcCluster.eta"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'matched RPC cluster $\eta$'
-
-# ── (4b) Per-LLP matched rechit counts ────────────────────────────
-llpcsc_nhits_csc:
-  expression: "events.llp.nHitsCSC"
-  per_object: true
-  selections: [llp_in_csc]
-  bins: 100
-  lo: 0
-  hi: 200
-  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
-  log_y: true
-
-llpdt_nhits_dt:
-  expression: "events.llp.nHitsDT"
-  per_object: true
-  selections: [llp_in_dt]
-  bins: 100
-  lo: 0
-  hi: 200
-  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
-  log_y: true
-
-llp_nhits_csc:
-  expression: "events.llp.nHitsCSC"
-  per_object: true
-  bins: 100
-  lo: 0
-  hi: 200
-  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
-  log_y: true
-
-llp_nhits_dt:
-  expression: "events.llp.nHitsDT"
-  per_object: true
-  bins: 100
-  lo: 0
-  hi: 200
-  label: '$N_{\mathrm{DT\ rechits}}$ from LLP'
-  log_y: true
-
-llp_nhits_rpc:
-  expression: "events.llp.nHitsRPC"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 60
-  label: '$N_{\mathrm{RPC\ rechits}}$ from LLP'
-  log_y: true
-
-llp_nhits_total:
-  expression: "events.llp.nHitsTotal"
-  per_object: true
-  bins: 100
-  lo: 0
-  hi: 300
-  label: '$N_{\mathrm{muon\ rechits}}$ from LLP (CSC+DT+RPC)'
-  log_y: true
-
-# ── (5) Efficiency histograms: vs pT ───────────────────────────────
-llp_pt_all_den:
-  expression: "events.llp.pt"
-  per_object: true
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-
-llp_pt_den_csc:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_csc]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-llp_pt_hits_csc:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_csc, llp_hits10_csc]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-llp_pt_num_csc:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_csc, llp_reco_csc]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-
-llp_pt_den_dt:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_dt]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-llp_pt_hits_dt:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_dt, llp_hits10_dt]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-llp_pt_num_dt:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_dt, llp_reco_dt]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-
-llp_pt_den_rpc:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_rpc]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-llp_pt_num_rpc:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_rpc, llp_reco_rpc]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-
-llp_pt_den_any:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_ms]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-llp_pt_num_any:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_ms, llp_reco_any]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
-
-# ── (5) Efficiency histograms: vs nhits ────────────────────────────
-llpcsc_nhits_csc_den:
-  expression: "events.llp.nHitsCSC"
-  per_object: true
-  selections: [llp_in_csc]
-  bins: 100
-  lo: 0
-  hi: 200
-  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
-  log_y: true
-
-llpdt_nhits_dt_den:
-  expression: "events.llp.nHitsDT"
-  per_object: true
-  selections: [llp_in_dt]
-  bins: 100
-  lo: 0
-  hi: 200
-  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
-  log_y: true
-
-llpcsc_nhits_csc_num:
-  expression: "events.llp.nHitsCSC"
-  per_object: true
-  selections: [llp_in_csc, llp_reco_csc]
-  bins: 100
-  lo: 0
-  hi: 200
-  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
-  log_y: true
-
-llpdt_nhits_dt_num:
-  expression: "events.llp.nHitsDT"
-  per_object: true
-  selections: [llp_in_dt, llp_reco_dt]
-  bins: 100
-  lo: 0
-  hi: 200
-  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
-  log_y: true
-
-# ── (5) Efficiency histograms: vs |eta| ────────────────────────────
-llp_abseta_all_den:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-
-llp_abseta_den_csc:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_csc]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-llp_abseta_hits_csc:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_csc, llp_hits10_csc]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-llp_abseta_num_csc:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_csc, llp_reco_csc]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-
-llp_abseta_den_dt:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_dt]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-llp_abseta_hits_dt:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_dt, llp_hits10_dt]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-llp_abseta_num_dt:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_dt, llp_reco_dt]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-
-llp_abseta_den_rpc:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_rpc]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-llp_abseta_num_rpc:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_rpc, llp_reco_rpc]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-
-llp_abseta_den_any:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_ms]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-llp_abseta_num_any:
-  expression: "abs(events.llp.eta)"
-  per_object: true
-  selections: [llp_in_ms, llp_reco_any]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'LLP $|\eta|$'
-
-# ── (5) Efficiency histograms: vs decay r (20 cm bins) ─────────────
-llp_decayr_all_den:
-  expression: "events.llp.decayR"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-
-llp_decayr_den_csc:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_csc]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-llp_decayr_num_csc:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_csc, llp_reco_csc]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-
-llp_decayr_den_dt:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_dt]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-llp_decayr_hits_dt:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_dt, llp_hits10_dt]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-llp_decayr_num_dt:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_dt, llp_reco_dt]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-
-llp_decayr_den_rpc:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_rpc]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-llp_decayr_num_rpc:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_rpc, llp_reco_rpc]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-
-llp_decayr_all_num_csc:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_reco_csc]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-llp_decayr_all_num_dt:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_reco_dt]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-llp_decayr_all_num_rpc:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_reco_rpc]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-llp_decayr_all_num_any:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_reco_any]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
-
-# ── (5) Efficiency histograms: vs |decay z| (20 cm bins) ───────────
-llp_absdecayz_all_den:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-
-llp_absdecayz_den_csc:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_in_csc]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-llp_absdecayz_hits_csc:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_in_csc, llp_hits10_csc]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-llp_absdecayz_num_csc:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_in_csc, llp_reco_csc]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-
-llp_absdecayz_den_dt:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_in_dt]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-llp_absdecayz_num_dt:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_in_dt, llp_reco_dt]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-
-llp_absdecayz_den_rpc:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_in_rpc]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-llp_absdecayz_num_rpc:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_in_rpc, llp_reco_rpc]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-
-llp_absdecayz_all_num_csc:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_reco_csc]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-llp_absdecayz_all_num_dt:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_reco_dt]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-llp_absdecayz_all_num_rpc:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_reco_rpc]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-llp_absdecayz_all_num_any:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_reco_any]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
-
-# ── (5) Efficiency histograms: 2D decay r vs |z| maps ──────────────
-# Same 20 cm binning as the 1D efficiency histograms (|z|: 75 bins 0..1500,
-# r: 60 bins 0..1200).  Empty-denominator bins are left blank at plot time.
-llp_rz_all_den:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-
-llp_rz_den_csc:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_csc]
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-llp_rz_hits_csc:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_csc, llp_hits10_csc]
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-llp_rz_num_csc:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_csc, llp_reco_csc]
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-
-llp_rz_den_dt:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_dt]
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-llp_rz_hits_dt:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_dt, llp_hits10_dt]
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-llp_rz_num_dt:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_dt, llp_reco_dt]
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-
-llp_rz_all_num_csc:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  selections: [llp_reco_csc]
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-llp_rz_all_num_dt:
-  expression_x: "abs(events.llp.decayZ)"
-  expression_y: "events.llp.decayR"
-  per_object: true
-  selections: [llp_reco_dt]
-  bins_x: 75
-  lo_x: 0
-  hi_x: 1500
-  bins_y: 60
-  lo_y: 0
-  hi_y: 1200
-  label_x: 'LLP decay $|z|$ [cm]'
-  label_y: 'LLP decay $r$ [cm]'
-  log_z: true
-
-# ── (6) Matched-LLP properties ─────────────────────────────────────
-llp_matched_pt:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_reco_any]
-  bins: 50
-  lo: 0
-  hi: 50
-  label: 'matched LLP $p_T$ [GeV]'
-
-llp_matched_eta:
-  expression: "events.llp.eta"
-  per_object: true
-  selections: [llp_reco_any]
-  bins: 50
-  lo: -5
-  hi: 5
-  label: 'matched LLP $\eta$'
-
-llp_matched_phi:
-  expression: "events.llp.phi"
-  per_object: true
-  selections: [llp_reco_any]
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'matched LLP $\phi$'
-
-llp_matched_energy:
-  expression: "events.llp.energy"
-  per_object: true
-  selections: [llp_reco_any]
-  bins: 50
-  lo: 0
-  hi: 100
-  label: 'matched LLP $E$ [GeV]'
-
-llp_matched_decayr:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_reco_any]
-  bins: 40
-  lo: 0
-  hi: 800
-  label: 'matched LLP decay $r$ [cm]'
-
-llp_matched_decayz:
-  expression: "events.llp.decayZ"
-  per_object: true
-  selections: [llp_reco_any]
-  bins: 48
-  lo: -1200
-  hi: 1200
-  label: 'matched LLP decay $z$ [cm]'
-
-# ── (3b) Matched vs unmatched cluster shapes ──────────────────────
-# Same binning as the inclusive histograms above, so each pair can be
-# turned into a matched-fraction 'efficiency' in derived_plots.yaml.
-
-csc_cluster_size_unmatched:
-  expression: "events.cscCluster.size"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'unmatched CSC cluster $N_{\mathrm{hits}}$'
-  log_y: true
-
-csc_cluster_eta_unmatched:
-  expression: "events.cscCluster.eta"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'unmatched CSC cluster $\eta$'
-
-csc_cluster_phi_matched:
-  expression: "events.cscCluster.phi"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'matched CSC cluster $\phi$'
-
-csc_cluster_phi_unmatched:
-  expression: "events.cscCluster.phi"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'unmatched CSC cluster $\phi$'
-
-csc_cluster_eta_spread_matched:
-  expression: "events.cscCluster.etaSpread"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'matched CSC cluster $\eta$ spread'
-
-csc_cluster_eta_spread_unmatched:
-  expression: "events.cscCluster.etaSpread"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'unmatched CSC cluster $\eta$ spread'
-
-csc_cluster_phi_spread_matched:
-  expression: "events.cscCluster.phiSpread"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'matched CSC cluster $\phi$ spread'
-
-csc_cluster_phi_spread_unmatched:
-  expression: "events.cscCluster.phiSpread"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'unmatched CSC cluster $\phi$ spread'
-
-csc_cluster_nstation_matched:
-  expression: "events.cscCluster.nStation"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'matched CSC cluster $N_{\mathrm{stations}}$'
-
-csc_cluster_nstation_unmatched:
-  expression: "events.cscCluster.nStation"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'unmatched CSC cluster $N_{\mathrm{stations}}$'
-
 csc_cluster_nlayer:
   expression: "events.cscCluster.nLayer"
   per_object: true
@@ -1146,125 +208,6 @@ csc_cluster_nlayer:
   lo: 0
   hi: 12
   label: 'CSC cluster $N_{\mathrm{layers}}$'
-
-csc_cluster_nlayer_matched:
-  expression: "events.cscCluster.nLayer"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 12
-  lo: 0
-  hi: 12
-  label: 'matched CSC cluster $N_{\mathrm{layers}}$'
-
-csc_cluster_nlayer_unmatched:
-  expression: "events.cscCluster.nLayer"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 12
-  lo: 0
-  hi: 12
-  label: 'unmatched CSC cluster $N_{\mathrm{layers}}$'
-
-csc_cluster_time_unmatched:
-  expression: "events.cscCluster.time"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 60
-  lo: -30
-  hi: 90
-  label: 'unmatched CSC cluster mean $t_{\mathrm{peak}}$ [ns]'
-  log_y: true
-
-dt_cluster_size_unmatched:
-  expression: "events.dtCluster.size"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'unmatched DT cluster $N_{\mathrm{hits}}$'
-  log_y: true
-
-dt_cluster_eta_unmatched:
-  expression: "events.dtCluster.eta"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'unmatched DT cluster $\eta$'
-
-dt_cluster_phi_matched:
-  expression: "events.dtCluster.phi"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'matched DT cluster $\phi$'
-
-dt_cluster_phi_unmatched:
-  expression: "events.dtCluster.phi"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'unmatched DT cluster $\phi$'
-
-dt_cluster_eta_spread_matched:
-  expression: "events.dtCluster.etaSpread"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'matched DT cluster $\eta$ spread'
-
-dt_cluster_eta_spread_unmatched:
-  expression: "events.dtCluster.etaSpread"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'unmatched DT cluster $\eta$ spread'
-
-dt_cluster_phi_spread_matched:
-  expression: "events.dtCluster.phiSpread"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'matched DT cluster $\phi$ spread'
-
-dt_cluster_phi_spread_unmatched:
-  expression: "events.dtCluster.phiSpread"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'unmatched DT cluster $\phi$ spread'
-
-dt_cluster_nstation_matched:
-  expression: "events.dtCluster.nStation"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'matched DT cluster $N_{\mathrm{stations}}$'
-
-dt_cluster_nstation_unmatched:
-  expression: "events.dtCluster.nStation"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'unmatched DT cluster $N_{\mathrm{stations}}$'
 
 dt_cluster_nlayer:
   expression: "events.dtCluster.nLayer"
@@ -1274,115 +217,6 @@ dt_cluster_nlayer:
   hi: 12
   label: 'DT cluster $N_{\mathrm{layers}}$'
 
-dt_cluster_nlayer_matched:
-  expression: "events.dtCluster.nLayer"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 12
-  lo: 0
-  hi: 12
-  label: 'matched DT cluster $N_{\mathrm{layers}}$'
-
-dt_cluster_nlayer_unmatched:
-  expression: "events.dtCluster.nLayer"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 12
-  lo: 0
-  hi: 12
-  label: 'unmatched DT cluster $N_{\mathrm{layers}}$'
-
-rpc_cluster_size_unmatched:
-  expression: "events.rpcCluster.size"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 30
-  lo: 0
-  hi: 60
-  label: 'unmatched RPC cluster $N_{\mathrm{hits}}$'
-  log_y: true
-
-rpc_cluster_eta_unmatched:
-  expression: "events.rpcCluster.eta"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'unmatched RPC cluster $\eta$'
-
-rpc_cluster_phi_matched:
-  expression: "events.rpcCluster.phi"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'matched RPC cluster $\phi$'
-
-rpc_cluster_phi_unmatched:
-  expression: "events.rpcCluster.phi"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'unmatched RPC cluster $\phi$'
-
-rpc_cluster_eta_spread_matched:
-  expression: "events.rpcCluster.etaSpread"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'matched RPC cluster $\eta$ spread'
-
-rpc_cluster_eta_spread_unmatched:
-  expression: "events.rpcCluster.etaSpread"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'unmatched RPC cluster $\eta$ spread'
-
-rpc_cluster_phi_spread_matched:
-  expression: "events.rpcCluster.phiSpread"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'matched RPC cluster $\phi$ spread'
-
-rpc_cluster_phi_spread_unmatched:
-  expression: "events.rpcCluster.phiSpread"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'unmatched RPC cluster $\phi$ spread'
-
-rpc_cluster_nstation_matched:
-  expression: "events.rpcCluster.nStation"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'matched RPC cluster $N_{\mathrm{stations}}$'
-
-rpc_cluster_nstation_unmatched:
-  expression: "events.rpcCluster.nStation"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'unmatched RPC cluster $N_{\mathrm{stations}}$'
-
 rpc_cluster_nlayer:
   expression: "events.rpcCluster.nLayer"
   per_object: true
@@ -1391,49 +225,10 @@ rpc_cluster_nlayer:
   hi: 12
   label: 'RPC cluster $N_{\mathrm{layers}}$'
 
-rpc_cluster_nlayer_matched:
-  expression: "events.rpcCluster.nLayer"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 12
-  lo: 0
-  hi: 12
-  label: 'matched RPC cluster $N_{\mathrm{layers}}$'
-
-rpc_cluster_nlayer_unmatched:
-  expression: "events.rpcCluster.nLayer"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 12
-  lo: 0
-  hi: 12
-  label: 'unmatched RPC cluster $N_{\mathrm{layers}}$'
-
-rpc_cluster_time_matched:
-  expression: "events.rpcCluster.time"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 60
-  lo: -30
-  hi: 90
-  label: 'matched RPC cluster mean $t_{\mathrm{peak}}$ [ns]'
-  log_y: true
-
-rpc_cluster_time_unmatched:
-  expression: "events.rpcCluster.time"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 60
-  lo: -30
-  hi: 90
-  label: 'unmatched RPC cluster mean $t_{\mathrm{peak}}$ [ns]'
-  log_y: true
-
 # ── (3c) Cluster shower-shape discriminants ───────────────────────
 # Variable set and binning taken from configs_mds_shape/histograms.yaml
 # (layer-occupancy spread and station span separate localized LLP
-# showers from muon punch-through).  Same inclusive/_matched/_unmatched
-# triplet as above, so each also gets a matchfrac_* derived plot.
+# showers from muon punch-through).
 
 csc_cluster_station_span:
   expression: "events.cscCluster.stationSpan"
@@ -1443,24 +238,6 @@ csc_cluster_station_span:
   hi: 3.5
   label: 'CSC cluster station span (max-min)'
 
-csc_cluster_station_span_matched:
-  expression: "events.cscCluster.stationSpan"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'matched CSC cluster station span (max-min)'
-
-csc_cluster_station_span_unmatched:
-  expression: "events.cscCluster.stationSpan"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'unmatched CSC cluster station span (max-min)'
-
 csc_cluster_avg_station:
   expression: "events.cscCluster.avgStation"
   per_object: true
@@ -1468,24 +245,6 @@ csc_cluster_avg_station:
   lo: 1
   hi: 4
   label: 'CSC cluster $\langle$station$\rangle$'
-
-csc_cluster_avg_station_matched:
-  expression: "events.cscCluster.avgStation"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 30
-  lo: 1
-  hi: 4
-  label: 'matched CSC cluster $\langle$station$\rangle$'
-
-csc_cluster_avg_station_unmatched:
-  expression: "events.cscCluster.avgStation"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 30
-  lo: 1
-  hi: 4
-  label: 'unmatched CSC cluster $\langle$station$\rangle$'
 
 csc_cluster_max_station_frac:
   expression: "events.cscCluster.maxStationFrac"
@@ -1495,24 +254,6 @@ csc_cluster_max_station_frac:
   hi: 1.05
   label: 'CSC cluster max station hit fraction'
 
-csc_cluster_max_station_frac_matched:
-  expression: "events.cscCluster.maxStationFrac"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'matched CSC cluster max station hit fraction'
-
-csc_cluster_max_station_frac_unmatched:
-  expression: "events.cscCluster.maxStationFrac"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'unmatched CSC cluster max station hit fraction'
-
 csc_cluster_layer_hits_mean:
   expression: "events.cscCluster.layerHitsMean"
   per_object: true
@@ -1520,26 +261,6 @@ csc_cluster_layer_hits_mean:
   lo: 0
   hi: 120
   label: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{chamber}\rangle$'
-  log_y: true
-
-csc_cluster_layer_hits_mean_matched:
-  expression: "events.cscCluster.layerHitsMean"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 120
-  label: 'matched CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{chamber}\rangle$'
-  log_y: true
-
-csc_cluster_layer_hits_mean_unmatched:
-  expression: "events.cscCluster.layerHitsMean"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 120
-  label: 'unmatched CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{chamber}\rangle$'
   log_y: true
 
 csc_cluster_layer_hits_rms:
@@ -1551,26 +272,6 @@ csc_cluster_layer_hits_rms:
   label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)'
   log_y: true
 
-csc_cluster_layer_hits_rms_matched:
-  expression: "events.cscCluster.layerHitsRMS"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 80
-  label: 'matched CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)'
-  log_y: true
-
-csc_cluster_layer_hits_rms_unmatched:
-  expression: "events.cscCluster.layerHitsRMS"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 80
-  label: 'unmatched CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)'
-  log_y: true
-
 csc_cluster_layer_hits_relrms:
   expression: "events.cscCluster.layerHitsRelRMS"
   per_object: true
@@ -1578,24 +279,6 @@ csc_cluster_layer_hits_relrms:
   lo: 0
   hi: 3
   label: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{chamber}$'
-
-csc_cluster_layer_hits_relrms_matched:
-  expression: "events.cscCluster.layerHitsRelRMS"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'matched CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{chamber}$'
-
-csc_cluster_layer_hits_relrms_unmatched:
-  expression: "events.cscCluster.layerHitsRelRMS"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'unmatched CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{chamber}$'
 
 csc_cluster_max_layer_frac:
   expression: "events.cscCluster.maxLayerFrac"
@@ -1605,24 +288,6 @@ csc_cluster_max_layer_frac:
   hi: 1.05
   label: 'CSC cluster max chamber hit fraction'
 
-csc_cluster_max_layer_frac_matched:
-  expression: "events.cscCluster.maxLayerFrac"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'matched CSC cluster max chamber hit fraction'
-
-csc_cluster_max_layer_frac_unmatched:
-  expression: "events.cscCluster.maxLayerFrac"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'unmatched CSC cluster max chamber hit fraction'
-
 csc_cluster_nzlayer:
   expression: "events.cscCluster.nZLayer"
   per_object: true
@@ -1631,24 +296,6 @@ csc_cluster_nzlayer:
   hi: 30.5
   label: 'CSC cluster $N_{\mathrm{z-layers}}$'
 
-csc_cluster_nzlayer_matched:
-  expression: "events.cscCluster.nZLayer"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 30
-  lo: 0.5
-  hi: 30.5
-  label: 'matched CSC cluster $N_{\mathrm{z-layers}}$'
-
-csc_cluster_nzlayer_unmatched:
-  expression: "events.cscCluster.nZLayer"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 30
-  lo: 0.5
-  hi: 30.5
-  label: 'unmatched CSC cluster $N_{\mathrm{z-layers}}$'
-
 csc_cluster_zlayer_hits_mean:
   expression: "events.cscCluster.zLayerHitsMean"
   per_object: true
@@ -1656,26 +303,6 @@ csc_cluster_zlayer_hits_mean:
   lo: 0
   hi: 40
   label: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{z-layer}\rangle$'
-  log_y: true
-
-csc_cluster_zlayer_hits_mean_matched:
-  expression: "events.cscCluster.zLayerHitsMean"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 40
-  label: 'matched CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{z-layer}\rangle$'
-  log_y: true
-
-csc_cluster_zlayer_hits_mean_unmatched:
-  expression: "events.cscCluster.zLayerHitsMean"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 40
-  label: 'unmatched CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{z-layer}\rangle$'
   log_y: true
 
 csc_cluster_zlayer_hits_rms:
@@ -1687,26 +314,6 @@ csc_cluster_zlayer_hits_rms:
   label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{z-layer}$)'
   log_y: true
 
-csc_cluster_zlayer_hits_rms_matched:
-  expression: "events.cscCluster.zLayerHitsRMS"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 20
-  label: 'matched CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{z-layer}$)'
-  log_y: true
-
-csc_cluster_zlayer_hits_rms_unmatched:
-  expression: "events.cscCluster.zLayerHitsRMS"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 20
-  label: 'unmatched CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{z-layer}$)'
-  log_y: true
-
 csc_cluster_zlayer_hits_relrms:
   expression: "events.cscCluster.zLayerHitsRelRMS"
   per_object: true
@@ -1714,24 +321,6 @@ csc_cluster_zlayer_hits_relrms:
   lo: 0
   hi: 3
   label: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{z-layer}$'
-
-csc_cluster_zlayer_hits_relrms_matched:
-  expression: "events.cscCluster.zLayerHitsRelRMS"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'matched CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{z-layer}$'
-
-csc_cluster_zlayer_hits_relrms_unmatched:
-  expression: "events.cscCluster.zLayerHitsRelRMS"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'unmatched CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{z-layer}$'
 
 csc_cluster_max_zlayer_frac:
   expression: "events.cscCluster.maxZLayerFrac"
@@ -1741,24 +330,6 @@ csc_cluster_max_zlayer_frac:
   hi: 1.05
   label: 'CSC cluster max z-layer hit fraction'
 
-csc_cluster_max_zlayer_frac_matched:
-  expression: "events.cscCluster.maxZLayerFrac"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'matched CSC cluster max z-layer hit fraction'
-
-csc_cluster_max_zlayer_frac_unmatched:
-  expression: "events.cscCluster.maxZLayerFrac"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'unmatched CSC cluster max z-layer hit fraction'
-
 csc_cluster_r_spread:
   expression: "events.cscCluster.rSpread"
   per_object: true
@@ -1766,24 +337,6 @@ csc_cluster_r_spread:
   lo: 0
   hi: 200
   label: 'CSC cluster $r$ spread [cm]'
-
-csc_cluster_r_spread_matched:
-  expression: "events.cscCluster.rSpread"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 200
-  label: 'matched CSC cluster $r$ spread [cm]'
-
-csc_cluster_r_spread_unmatched:
-  expression: "events.cscCluster.rSpread"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 200
-  label: 'unmatched CSC cluster $r$ spread [cm]'
 
 csc_cluster_z_spread:
   expression: "events.cscCluster.zSpread"
@@ -1793,24 +346,6 @@ csc_cluster_z_spread:
   hi: 250
   label: 'CSC cluster $z$ spread [cm]'
 
-csc_cluster_z_spread_matched:
-  expression: "events.cscCluster.zSpread"
-  per_object: true
-  selections: [csc_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 250
-  label: 'matched CSC cluster $z$ spread [cm]'
-
-csc_cluster_z_spread_unmatched:
-  expression: "events.cscCluster.zSpread"
-  per_object: true
-  selections: [csc_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 250
-  label: 'unmatched CSC cluster $z$ spread [cm]'
-
 dt_cluster_station_span:
   expression: "events.dtCluster.stationSpan"
   per_object: true
@@ -1818,24 +353,6 @@ dt_cluster_station_span:
   lo: -0.5
   hi: 3.5
   label: 'DT cluster station span (max-min)'
-
-dt_cluster_station_span_matched:
-  expression: "events.dtCluster.stationSpan"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'matched DT cluster station span (max-min)'
-
-dt_cluster_station_span_unmatched:
-  expression: "events.dtCluster.stationSpan"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'unmatched DT cluster station span (max-min)'
 
 dt_cluster_avg_station:
   expression: "events.dtCluster.avgStation"
@@ -1845,24 +362,6 @@ dt_cluster_avg_station:
   hi: 4
   label: 'DT cluster $\langle$station$\rangle$'
 
-dt_cluster_avg_station_matched:
-  expression: "events.dtCluster.avgStation"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 30
-  lo: 1
-  hi: 4
-  label: 'matched DT cluster $\langle$station$\rangle$'
-
-dt_cluster_avg_station_unmatched:
-  expression: "events.dtCluster.avgStation"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 30
-  lo: 1
-  hi: 4
-  label: 'unmatched DT cluster $\langle$station$\rangle$'
-
 dt_cluster_max_station_frac:
   expression: "events.dtCluster.maxStationFrac"
   per_object: true
@@ -1871,24 +370,6 @@ dt_cluster_max_station_frac:
   hi: 1.05
   label: 'DT cluster max station hit fraction'
 
-dt_cluster_max_station_frac_matched:
-  expression: "events.dtCluster.maxStationFrac"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'matched DT cluster max station hit fraction'
-
-dt_cluster_max_station_frac_unmatched:
-  expression: "events.dtCluster.maxStationFrac"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'unmatched DT cluster max station hit fraction'
-
 dt_cluster_layer_hits_mean:
   expression: "events.dtCluster.layerHitsMean"
   per_object: true
@@ -1896,26 +377,6 @@ dt_cluster_layer_hits_mean:
   lo: 0
   hi: 20
   label: 'DT cluster $\langle N_{\mathrm{hits}}/\mathrm{layer}\rangle$'
-  log_y: true
-
-dt_cluster_layer_hits_mean_matched:
-  expression: "events.dtCluster.layerHitsMean"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 20
-  label: 'matched DT cluster $\langle N_{\mathrm{hits}}/\mathrm{layer}\rangle$'
-  log_y: true
-
-dt_cluster_layer_hits_mean_unmatched:
-  expression: "events.dtCluster.layerHitsMean"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 20
-  label: 'unmatched DT cluster $\langle N_{\mathrm{hits}}/\mathrm{layer}\rangle$'
   log_y: true
 
 dt_cluster_layer_hits_rms:
@@ -1927,26 +388,6 @@ dt_cluster_layer_hits_rms:
   label: 'DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)'
   log_y: true
 
-dt_cluster_layer_hits_rms_matched:
-  expression: "events.dtCluster.layerHitsRMS"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 10
-  label: 'matched DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)'
-  log_y: true
-
-dt_cluster_layer_hits_rms_unmatched:
-  expression: "events.dtCluster.layerHitsRMS"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 10
-  label: 'unmatched DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)'
-  log_y: true
-
 dt_cluster_layer_hits_relrms:
   expression: "events.dtCluster.layerHitsRelRMS"
   per_object: true
@@ -1954,24 +395,6 @@ dt_cluster_layer_hits_relrms:
   lo: 0
   hi: 3
   label: 'DT cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
-
-dt_cluster_layer_hits_relrms_matched:
-  expression: "events.dtCluster.layerHitsRelRMS"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'matched DT cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
-
-dt_cluster_layer_hits_relrms_unmatched:
-  expression: "events.dtCluster.layerHitsRelRMS"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'unmatched DT cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
 
 dt_cluster_max_layer_frac:
   expression: "events.dtCluster.maxLayerFrac"
@@ -1981,24 +404,6 @@ dt_cluster_max_layer_frac:
   hi: 1.05
   label: 'DT cluster max layer hit fraction'
 
-dt_cluster_max_layer_frac_matched:
-  expression: "events.dtCluster.maxLayerFrac"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'matched DT cluster max layer hit fraction'
-
-dt_cluster_max_layer_frac_unmatched:
-  expression: "events.dtCluster.maxLayerFrac"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'unmatched DT cluster max layer hit fraction'
-
 dt_cluster_r_spread:
   expression: "events.dtCluster.rSpread"
   per_object: true
@@ -2006,24 +411,6 @@ dt_cluster_r_spread:
   lo: 0
   hi: 200
   label: 'DT cluster $r$ spread [cm]'
-
-dt_cluster_r_spread_matched:
-  expression: "events.dtCluster.rSpread"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 200
-  label: 'matched DT cluster $r$ spread [cm]'
-
-dt_cluster_r_spread_unmatched:
-  expression: "events.dtCluster.rSpread"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 200
-  label: 'unmatched DT cluster $r$ spread [cm]'
 
 dt_cluster_z_spread:
   expression: "events.dtCluster.zSpread"
@@ -2033,24 +420,6 @@ dt_cluster_z_spread:
   hi: 250
   label: 'DT cluster $z$ spread [cm]'
 
-dt_cluster_z_spread_matched:
-  expression: "events.dtCluster.zSpread"
-  per_object: true
-  selections: [dt_cluster_matched]
-  bins: 40
-  lo: 0
-  hi: 250
-  label: 'matched DT cluster $z$ spread [cm]'
-
-dt_cluster_z_spread_unmatched:
-  expression: "events.dtCluster.zSpread"
-  per_object: true
-  selections: [dt_cluster_unmatched]
-  bins: 40
-  lo: 0
-  hi: 250
-  label: 'unmatched DT cluster $z$ spread [cm]'
-
 rpc_cluster_station_span:
   expression: "events.rpcCluster.stationSpan"
   per_object: true
@@ -2058,24 +427,6 @@ rpc_cluster_station_span:
   lo: -0.5
   hi: 3.5
   label: 'RPC cluster station span (max-min)'
-
-rpc_cluster_station_span_matched:
-  expression: "events.rpcCluster.stationSpan"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'matched RPC cluster station span (max-min)'
-
-rpc_cluster_station_span_unmatched:
-  expression: "events.rpcCluster.stationSpan"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'unmatched RPC cluster station span (max-min)'
 
 rpc_cluster_max_station_frac:
   expression: "events.rpcCluster.maxStationFrac"
@@ -2085,24 +436,6 @@ rpc_cluster_max_station_frac:
   hi: 1.05
   label: 'RPC cluster max station hit fraction'
 
-rpc_cluster_max_station_frac_matched:
-  expression: "events.rpcCluster.maxStationFrac"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'matched RPC cluster max station hit fraction'
-
-rpc_cluster_max_station_frac_unmatched:
-  expression: "events.rpcCluster.maxStationFrac"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'unmatched RPC cluster max station hit fraction'
-
 rpc_cluster_layer_hits_relrms:
   expression: "events.rpcCluster.layerHitsRelRMS"
   per_object: true
@@ -2110,24 +443,6 @@ rpc_cluster_layer_hits_relrms:
   lo: 0
   hi: 3
   label: 'RPC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
-
-rpc_cluster_layer_hits_relrms_matched:
-  expression: "events.rpcCluster.layerHitsRelRMS"
-  per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'matched RPC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
-
-rpc_cluster_layer_hits_relrms_unmatched:
-  expression: "events.rpcCluster.layerHitsRelRMS"
-  per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'unmatched RPC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
 
 rpc_cluster_max_layer_frac:
   expression: "events.rpcCluster.maxLayerFrac"
@@ -2137,73 +452,94 @@ rpc_cluster_max_layer_frac:
   hi: 1.05
   label: 'RPC cluster max layer hit fraction'
 
-rpc_cluster_max_layer_frac_matched:
-  expression: "events.rpcCluster.maxLayerFrac"
+# ── (8) Cluster isolation from prompt muons / jets ────────────────
+# events.<sys>Cluster.drMuon / .drJet: dR from the cluster centroid to the
+# closest reconstructed Muon / Jet in the event (custom/columns.py).  Events
+# with no muon (no jet) give NaN and drop out of the fill, so these are the
+# distributions over clusters that *have* something to be measured against.
+# Punch-through and muon-bremsstrahlung clusters pile up near 0; a displaced
+# decay has no prompt object pointing at it and populates the tail.
+
+csc_cluster_dr_muon:
+  expression: "events.cscCluster.drMuon"
   per_object: true
-  selections: [rpc_cluster_matched]
-  bins: 21
+  bins: 60
   lo: 0
-  hi: 1.05
-  label: 'matched RPC cluster max layer hit fraction'
+  hi: 6
+  label: 'CSC cluster $\Delta R$(closest muon)'
+  log_y: true
 
-rpc_cluster_max_layer_frac_unmatched:
-  expression: "events.rpcCluster.maxLayerFrac"
+csc_cluster_dr_jet:
+  expression: "events.cscCluster.drJet"
   per_object: true
-  selections: [rpc_cluster_unmatched]
-  bins: 21
+  bins: 60
   lo: 0
-  hi: 1.05
-  label: 'unmatched RPC cluster max layer hit fraction'
+  hi: 6
+  label: 'CSC cluster $\Delta R$(closest jet)'
+  log_y: true
 
+dt_cluster_dr_muon:
+  expression: "events.dtCluster.drMuon"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 6
+  label: 'DT cluster $\Delta R$(closest muon)'
+  log_y: true
 
+dt_cluster_dr_jet:
+  expression: "events.dtCluster.drJet"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 6
+  label: 'DT cluster $\Delta R$(closest jet)'
+  log_y: true
 
+rpc_cluster_dr_muon:
+  expression: "events.rpcCluster.drMuon"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 6
+  label: 'RPC cluster $\Delta R$(closest muon)'
+  log_y: true
 
+rpc_cluster_dr_jet:
+  expression: "events.rpcCluster.drJet"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 6
+  label: 'RPC cluster $\Delta R$(closest jet)'
+  log_y: true
 
+# 2D: dR to the closest muon vs to the closest jet, to see whether the two
+# select the same clusters.
+csc_cluster_dr_muon_vs_jet:
+  expression_x: "events.cscCluster.drMuon"
+  expression_y: "events.cscCluster.drJet"
+  per_object: true
+  bins_x: 60
+  lo_x: 0
+  hi_x: 6
+  bins_y: 60
+  lo_y: 0
+  hi_y: 6
+  label_x: 'CSC cluster $\Delta R$(closest muon)'
+  label_y: 'CSC cluster $\Delta R$(closest jet)'
+  log_z: true
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+dt_cluster_dr_muon_vs_jet:
+  expression_x: "events.dtCluster.drMuon"
+  expression_y: "events.dtCluster.drJet"
+  per_object: true
+  bins_x: 60
+  lo_x: 0
+  hi_x: 6
+  bins_y: 60
+  lo_y: 0
+  hi_y: 6
+  label_x: 'DT cluster $\Delta R$(closest muon)'
+  label_y: 'DT cluster $\Delta R$(closest jet)'
+  log_z: true

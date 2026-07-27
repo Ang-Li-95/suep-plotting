@@ -42,6 +42,16 @@ llp_hits2_total:
   level: object
   expression: "events.llp.nHitsTotal >= 2"
 
+# Controls for the boost study: to expose the dR90-vs-betagamma trend the
+# multiplicity (shower size) and |eta| (eta-phi metric) must be held fixed,
+# else they swamp the collimation effect.  Low-N + endcap-plateau |eta| band.
+llp_hits_lt25_csc:
+  level: object
+  expression: "events.llp.nHitsCSC < 25"
+llp_abseta_plateau:
+  level: object
+  expression: "(abs(events.llp.eta) > 1.6) & (abs(events.llp.eta) < 2.2)"
+
 # Rechit truth-matched to an LLP (always False on truth-less background)
 csc_rechit_matched:
   level: object

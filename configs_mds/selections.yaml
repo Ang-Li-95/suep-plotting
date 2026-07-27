@@ -1,79 +1,11 @@
-# ── Selections for the MDS LLP cluster study ──────────────────────
-# Object-level masks are built from the same derived collection as the
-# histograms they filter (events.llp / events.<sys>Cluster, attached in
-# custom/columns.py).
-
-# LLP decay volume flags (geometry defined in custom/columns.py)
-llp_in_csc:
-  level: object
-  expression: "events.llp.inCSC"
-llp_in_dt:
-  level: object
-  expression: "events.llp.inDT"
-llp_in_rpc:
-  level: object
-  expression: "events.llp.inRPC"
-llp_in_ms:
-  level: object
-  expression: "events.llp.inCSC | events.llp.inDT | events.llp.inRPC"
-
-# LLP successfully reconstructed (>= 1 matched DBSCAN cluster)
-llp_reco_csc:
-  level: object
-  expression: "events.llp.recoCSC"
-llp_reco_dt:
-  level: object
-  expression: "events.llp.recoDT"
-llp_reco_rpc:
-  level: object
-  expression: "events.llp.recoRPC"
-llp_reco_any:
-  level: object
-  expression: "events.llp.reco"
-
-# LLP is "reconstructable": >= 10 of its truth rechits in the system
-llp_hits10_csc:
-  level: object
-  expression: "events.llp.nHitsCSC >= 10"
-llp_hits10_dt:
-  level: object
-  expression: "events.llp.nHitsDT >= 10"
-
-# Cluster truth-matched to an LLP (>= 10 rechits sharing one llpIdx)
-csc_cluster_matched:
-  level: object
-  expression: "events.cscCluster.matched"
-dt_cluster_matched:
-  level: object
-  expression: "events.dtCluster.matched"
-rpc_cluster_matched:
-  level: object
-  expression: "events.rpcCluster.matched"
+# ── Reco-level selections for the MDS cluster study ───────────────
+# Truth-based masks (LLP decay volume / reconstruction flags, truth-matched
+# clusters) live in configs_mds_llp/selections.yaml.
 
 # Event-level bookkeeping (cutflow.txt)
-has_llp_in_ms:
-  expression: "ak.any(events.llp.inCSC | events.llp.inDT | events.llp.inRPC, axis=1)"
 has_csc_cluster:
   expression: "ak.num(events.cscCluster) >= 1"
 has_dt_cluster:
   expression: "ak.num(events.dtCluster) >= 1"
 has_rpc_cluster:
   expression: "ak.num(events.rpcCluster) >= 1"
-has_matched_csc:
-  expression: "ak.any(events.cscCluster.matched, axis=1)"
-has_matched_dt:
-  expression: "ak.any(events.dtCluster.matched, axis=1)"
-has_matched_rpc:
-  expression: "ak.any(events.rpcCluster.matched, axis=1)"
-
-
-# Cluster NOT truth-matched (fake / pile-up-like)
-csc_cluster_unmatched:
-  level: object
-  expression: "~events.cscCluster.matched"
-dt_cluster_unmatched:
-  level: object
-  expression: "~events.dtCluster.matched"
-rpc_cluster_unmatched:
-  level: object
-  expression: "~events.rpcCluster.matched"

@@ -583,3 +583,194 @@ llp_dr90_vs_nhits_csc:
   label_x: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
   label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
   log_z: true
+
+# ── (4d) eta dependence: CSC is an endcap, so both the hit count and the
+# eta-phi dR metric depend on |eta| (dR at fixed physical size grows toward
+# the beamline).  Same >= 2-hit population as llp_dr90_vs_nhits_csc, so the
+# three 2D maps are directly comparable.
+llp_nhits_csc_vs_abseta:
+  expression_x: "abs(events.llp.eta)"
+  expression_y: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 30
+  lo_x: 0
+  hi_x: 3
+  bins_y: 40
+  lo_y: 0
+  hi_y: 120
+  label_x: 'LLP $|\eta|$'
+  label_y: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_z: true
+
+llp_dr90_vs_abseta:
+  expression_x: "abs(events.llp.eta)"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 30
+  lo_x: 0
+  hi_x: 3
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP $|\eta|$'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# ── (4e) pT / energy dependence: a more energetic LLP showers more (higher
+# nHits) and, being more boosted, more collimated.  Same >= 2-hit population
+# as the |eta| maps above.
+llp_nhits_csc_vs_pt:
+  expression_x: "events.llp.pt"
+  expression_y: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 50
+  bins_y: 40
+  lo_y: 0
+  hi_y: 120
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_z: true
+
+llp_dr90_vs_pt:
+  expression_x: "events.llp.pt"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 50
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+llp_nhits_csc_vs_energy:
+  expression_x: "events.llp.energy"
+  expression_y: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 100
+  bins_y: 40
+  lo_y: 0
+  hi_y: 120
+  label_x: 'LLP energy [GeV]'
+  label_y: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_z: true
+
+llp_dr90_vs_energy:
+  expression_x: "events.llp.energy"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 100
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP energy [GeV]'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# ── (4f) Boost / decay-opening-angle: a more boosted (higher betagamma) LLP
+# decays into a tighter daughter pair (openingAngle), which -- at low hit
+# multiplicity, before showers merge -- shrinks the eta-phi rechit spread.
+# openingAngle is the 3D angle between the two decay daughters (custom/columns.py).
+llp_opening_angle:
+  expression: "events.llp.openingAngle"
+  per_object: true
+  bins: 64
+  lo: 0
+  hi: 3.2
+  label: 'LLP decay opening angle [rad]'
+  log_y: true
+  flow: sum
+
+# link (A): boost sets the opening angle (expect a tight anti-correlation)
+llp_opening_angle_vs_betagamma:
+  expression_x: "events.llp.betagamma"
+  expression_y: "events.llp.openingAngle"
+  per_object: true
+  bins_x: 40
+  lo_x: 0
+  hi_x: 40
+  bins_y: 64
+  lo_y: 0
+  hi_y: 3.2
+  label_x: 'LLP $\beta\gamma$'
+  label_y: 'LLP decay opening angle [rad]'
+  log_z: true
+
+llp_nhits_csc_vs_betagamma:
+  expression_x: "events.llp.betagamma"
+  expression_y: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 40
+  lo_x: 0
+  hi_x: 40
+  bins_y: 40
+  lo_y: 0
+  hi_y: 120
+  label_x: 'LLP $\beta\gamma$'
+  label_y: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_z: true
+
+# dR90 vs boost, full population (confounded by |eta| and nHits -- the profile
+# will look flat/rising, like the energy one)
+llp_dr90_vs_betagamma:
+  expression_x: "events.llp.betagamma"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 40
+  lo_x: 0
+  hi_x: 40
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP $\beta\gamma$'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# dR90 vs boost, CONTROLLED: fixed endcap |eta| band + low multiplicity, so the
+# collimation effect is not swamped -- the profile should DECREASE with betagamma
+llp_dr90_vs_betagamma_ctrl:
+  expression_x: "events.llp.betagamma"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc, llp_hits_lt25_csc, llp_abseta_plateau]
+  bins_x: 40
+  lo_x: 0
+  hi_x: 40
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP $\beta\gamma$ ($1.6<|\eta|<2.2$, $N_{\mathrm{hits}}<25$)'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# link (B): dR90 vs the opening angle directly
+llp_dr90_vs_openangle:
+  expression_x: "events.llp.openingAngle"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 2.5
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP decay opening angle [rad]'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
