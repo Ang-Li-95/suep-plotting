@@ -502,6 +502,7 @@ bash output/slurm/merge_and_plot.sh
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `-s` / `--samples` | all | Submit only these samples (e.g. signal-only reruns). |
 | `--conda-env` | `mds` | Environment activated inside each job. |
 | `--time` / `--mem` | `04:00:00` / `8000` | Wall time / memory (MB) per job. |
 | `--partition` / `--account` | — | Slurm partition / account. |

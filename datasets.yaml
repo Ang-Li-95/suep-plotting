@@ -12,9 +12,10 @@
 # 'files' may be a file, a glob, or a directory (walked recursively for *.root),
 # local or xrootd.  Keep plot-only keys (label, color) here as defaults and
 # override them per config where a study needs something different.
+# Signal points to Gen3 (2026-08-05); Gen2 kept below for the G4 comparison.
 suep_temp1:
   files:
-  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
   tree: Events
   is_data: false
   xs: 1.0
@@ -23,11 +24,22 @@ suep_temp1:
   group: signal
 suep_temp2:
   files:
-  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
   tree: Events
   is_data: false
   xs: 1.0
   label: SUEP $T$=2, $c\tau$=5 m
+  color: tab:red
+  group: signal
+# Gen2 T=2: the post-G4-fix leg of configs_g4compare, pinned so that comparison
+# keeps its original production when suep_temp2 moves to a newer one.
+suep_temp2_gen2:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $T$=2, $c\tau$=5 m (Gen2)
   color: tab:red
   group: signal
 suep_temp2_preG4fix:

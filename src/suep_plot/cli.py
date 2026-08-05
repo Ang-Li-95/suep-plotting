@@ -140,6 +140,8 @@ def submit(argv=None):
                                      description="Submit histogram-filling jobs to Slurm.")
     parser.add_argument("-c", "--config-dir", default="configs", help="Directory with YAML configs")
     parser.add_argument("-o", "--output-dir", default="output", help="Output directory for per-job pickles")
+    parser.add_argument("-s", "--samples", nargs="*", default=None,
+                        help="Submit only these samples (default: all)")
     parser.add_argument("--partition", default=None, help="Slurm partition")
     parser.add_argument("--account", default=None, help="Slurm account")
     parser.add_argument("--time", default="04:00:00", help="Wall time per job")
@@ -159,6 +161,7 @@ def submit(argv=None):
     submit_jobs(
         config_dir=args.config_dir,
         output_dir=args.output_dir,
+        samples_filter=args.samples,
         partition=args.partition,
         account=args.account,
         time_limit=args.time,

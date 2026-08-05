@@ -140,3 +140,34 @@ def test_job_script_parses_task_line(tmp_path, files_per_job, expected_part):
 
     n_files = files_per_job or 5
     assert out == f"sig|{n_files}|{expected_part}"
+
+
+def test_submit_samples_filter(tmp_path):
+    from suep_plot.slurm import submit_jobs
+
+    cfg_dir, out_dir = tmp_path / "cfg", tmp_path / "out"
+    cfg_dir.mkdir()
+    _write(cfg_dir / "samples.yaml", {
+        "sig": {"files": [str(_fake_dataset(tmp_path, "sig", 2))]},
+        "bkg": {"files": [str(_fake_dataset(tmp_path, "bkg", 3))]},
+    })
+    submit_jobs(str(cfg_dir), str(out_dir), None, None, "01:00:00", "4G", "mds",
+                chunk_size=1000, dry_run=True, samples_filter=["sig"])
+
+    lines = (out_dir / "slurm" / "task_list.txt").read_text().splitlines()
+
+    assert [line.split("\t")[0] for line in lines] == ["sig"]
+
+
+def test_submit_rejects_unknown_sample(tmp_path):
+    from suep_plot.slurm import submit_jobs
+
+    cfg_dir = tmp_path / "cfg"
+    cfg_dir.mkdir()
+    _write(cfg_dir / "samples.yaml",
+           {"sig": {"files": [str(_fake_dataset(tmp_path, "sig", 2))]}})
+
+    with pytest.raises(SystemExit, match="typo"):
+        submit_jobs(str(cfg_dir), str(tmp_path / "out"), None, None, "01:00:00",
+                    "4G", "mds", chunk_size=1000, dry_run=True,
+                    samples_filter=["typo"])

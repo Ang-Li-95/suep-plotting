@@ -22,6 +22,7 @@ def submit_jobs(
     max_concurrent: int | None = None,
     files_per_job: int | None = None,
     dry_run: bool = False,
+    samples_filter: list[str] | None = None,
 ):
     """Submit Slurm array jobs for parallel processing.
 
@@ -46,6 +47,13 @@ def submit_jobs(
     if not samples:
         print("No samples defined in samples.yaml")
         sys.exit(1)
+
+    if samples_filter:
+        unknown = [s for s in samples_filter if s not in samples]
+        if unknown:
+            sys.exit(f"ERROR: unknown sample(s) {unknown}; "
+                     f"available: {sorted(samples)}")
+        samples = {k: v for k, v in samples.items() if k in samples_filter}
 
     if files_per_job is not None and files_per_job < 1:
         sys.exit("--files-per-job must be >= 1")

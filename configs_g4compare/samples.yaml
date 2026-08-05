@@ -3,6 +3,6 @@ _include: ../datasets.yaml
 
 suep_temp2_preG4fix:
 suep_temp2_postG4fix:
-  _from: suep_temp2
+  _from: suep_temp2_gen2   # pinned: this study compares SUEPs_Gen vs SUEPs_Gen2
   label: "T=2 (post-G4 fix)"
   color: "tab:red"
