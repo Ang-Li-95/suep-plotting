@@ -1,0 +1,464 @@
+# ── Cluster shape variables: gen-matched signal vs background ─────
+# Every histogram is filled per cluster with the <sys>_cluster_sig_or_bkg
+# selection: signal samples contribute only gen-matched clusters, the
+# truth-less background sample contributes all clusters.  Plot with
+# `suep-plot --normalize` (all samples are group: signal -> unit-area steps).
+#
+# "Layer" = finest depth segment consistent across productions: physical
+# chamber for CSC (central MDSNano stores one z per chamber, so neither a
+# layer branch nor global z resolves in-chamber layers there),
+# (wheel,sector,station,superlayer,layer) for DT,
+# (region,ring,sector,station,layer) for RPC.
+#
+# Discriminators targeted here:
+#   * layerHitsRelRMS / layerHitsRMS / layerHitsMean / maxLayerFrac -
+#     variation of the number of rechits across layers (shower fuzziness)
+#   * nStation / stationSpan / maxStationFrac - how many stations the
+#     cluster spans (signal is localized, muon punch-through crosses many)
+
+# ── cluster counts (no selection; sanity) ──────────────────────────
+csc_cluster_n:
+  expression: "ak.num(events.cscCluster)"
+  bins: 6
+  lo: 0
+  hi: 6
+  label: '$N_{\mathrm{CSC\ clusters}}$'
+  log_y: true
+
+dt_cluster_n:
+  expression: "ak.num(events.dtCluster)"
+  bins: 6
+  lo: 0
+  hi: 6
+  label: '$N_{\mathrm{DT\ clusters}}$'
+  log_y: true
+
+rpc_cluster_n:
+  expression: "ak.num(events.rpcCluster)"
+  bins: 6
+  lo: 0
+  hi: 6
+  label: '$N_{\mathrm{RPC\ clusters}}$'
+  log_y: true
+
+# ── CSC cluster shape ──────────────────────────────────────────────
+csc_size:
+  expression: "events.cscCluster.size"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 50
+  lo: 0
+  hi: 500
+  label: 'CSC cluster $N_{\mathrm{hits}}$'
+  log_y: true
+
+csc_eta:
+  expression: "events.cscCluster.eta"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 50
+  lo: -3
+  hi: 3
+  label: 'CSC cluster $\eta$'
+
+csc_nstation:
+  expression: "events.cscCluster.nStation"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 4
+  lo: 0.5
+  hi: 4.5
+  label: 'CSC cluster $N_{\mathrm{stations}}$'
+
+csc_station_span:
+  expression: "events.cscCluster.stationSpan"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 4
+  lo: -0.5
+  hi: 3.5
+  label: 'CSC cluster station span (max-min)'
+
+csc_avg_station:
+  expression: "events.cscCluster.avgStation"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 30
+  lo: 1
+  hi: 4
+  label: 'CSC cluster $\langle$station$\rangle$'
+
+csc_max_station_frac:
+  expression: "events.cscCluster.maxStationFrac"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 21
+  lo: 0
+  hi: 1.05
+  label: 'CSC cluster max station hit fraction'
+
+csc_nlayer:
+  expression: "events.cscCluster.nLayer"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 15
+  lo: 0.5
+  hi: 15.5
+  label: 'CSC cluster $N_{\mathrm{chambers}}$'
+
+csc_layer_hits_mean:
+  expression: "events.cscCluster.layerHitsMean"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 120
+  label: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{chamber}\rangle$'
+  log_y: true
+
+csc_layer_hits_rms:
+  expression: "events.cscCluster.layerHitsRMS"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 80
+  label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)'
+  log_y: true
+
+csc_layer_hits_relrms:
+  expression: "events.cscCluster.layerHitsRelRMS"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 30
+  lo: 0
+  hi: 3
+  label: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{chamber}$'
+
+csc_max_layer_frac:
+  expression: "events.cscCluster.maxLayerFrac"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 21
+  lo: 0
+  hi: 1.05
+  label: 'CSC cluster max chamber hit fraction'
+
+# z-layer variants: layer plane from quantized global rechit z (6 planes per
+# chamber).  CAVEAT: the current central MDSNano v2 background stores one z
+# per chamber, so for DY these degenerate to the chamber variables above —
+# they become meaningful with a reprocessed background that saves per-layer z.
+csc_nzlayer:
+  expression: "events.cscCluster.nZLayer"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 30
+  lo: 0.5
+  hi: 30.5
+  label: 'CSC cluster $N_{\mathrm{z-layers}}$'
+
+csc_zlayer_hits_mean:
+  expression: "events.cscCluster.zLayerHitsMean"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 40
+  label: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{z-layer}\rangle$'
+  log_y: true
+
+csc_zlayer_hits_rms:
+  expression: "events.cscCluster.zLayerHitsRMS"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 20
+  label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{z-layer}$)'
+  log_y: true
+
+csc_zlayer_hits_relrms:
+  expression: "events.cscCluster.zLayerHitsRelRMS"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 30
+  lo: 0
+  hi: 3
+  label: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{z-layer}$'
+
+csc_max_zlayer_frac:
+  expression: "events.cscCluster.maxZLayerFrac"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 21
+  lo: 0
+  hi: 1.05
+  label: 'CSC cluster max z-layer hit fraction'
+
+csc_eta_spread:
+  expression: "events.cscCluster.etaSpread"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 0.4
+  label: 'CSC cluster $\eta$ spread'
+
+csc_phi_spread:
+  expression: "events.cscCluster.phiSpread"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 0.4
+  label: 'CSC cluster $\phi$ spread'
+
+csc_r_spread:
+  expression: "events.cscCluster.rSpread"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 200
+  label: 'CSC cluster $r$ spread [cm]'
+
+csc_z_spread:
+  expression: "events.cscCluster.zSpread"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 250
+  label: 'CSC cluster $z$ spread [cm]'
+
+csc_time:
+  expression: "events.cscCluster.time"
+  per_object: true
+  selections: [csc_cluster_sig_or_bkg]
+  bins: 60
+  lo: -30
+  hi: 90
+  label: 'CSC cluster mean $t_{\mathrm{peak}}$ [ns]'
+  log_y: true
+
+# ── DT cluster shape ───────────────────────────────────────────────
+dt_size:
+  expression: "events.dtCluster.size"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 50
+  lo: 0
+  hi: 500
+  label: 'DT cluster $N_{\mathrm{hits}}$'
+  log_y: true
+
+dt_eta:
+  expression: "events.dtCluster.eta"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 50
+  lo: -3
+  hi: 3
+  label: 'DT cluster $\eta$'
+
+dt_nstation:
+  expression: "events.dtCluster.nStation"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 4
+  lo: 0.5
+  hi: 4.5
+  label: 'DT cluster $N_{\mathrm{stations}}$'
+
+dt_station_span:
+  expression: "events.dtCluster.stationSpan"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 4
+  lo: -0.5
+  hi: 3.5
+  label: 'DT cluster station span (max-min)'
+
+dt_avg_station:
+  expression: "events.dtCluster.avgStation"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 30
+  lo: 1
+  hi: 4
+  label: 'DT cluster $\langle$station$\rangle$'
+
+dt_max_station_frac:
+  expression: "events.dtCluster.maxStationFrac"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 21
+  lo: 0
+  hi: 1.05
+  label: 'DT cluster max station hit fraction'
+
+dt_nlayer:
+  expression: "events.dtCluster.nLayer"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 30
+  lo: 0
+  hi: 60
+  label: 'DT cluster $N_{\mathrm{layers}}$'
+
+dt_layer_hits_mean:
+  expression: "events.dtCluster.layerHitsMean"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 20
+  label: 'DT cluster $\langle N_{\mathrm{hits}}/\mathrm{layer}\rangle$'
+  log_y: true
+
+dt_layer_hits_rms:
+  expression: "events.dtCluster.layerHitsRMS"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 10
+  label: 'DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)'
+  log_y: true
+
+dt_layer_hits_relrms:
+  expression: "events.dtCluster.layerHitsRelRMS"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 30
+  lo: 0
+  hi: 3
+  label: 'DT cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
+
+dt_max_layer_frac:
+  expression: "events.dtCluster.maxLayerFrac"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 21
+  lo: 0
+  hi: 1.05
+  label: 'DT cluster max layer hit fraction'
+
+dt_eta_spread:
+  expression: "events.dtCluster.etaSpread"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 0.4
+  label: 'DT cluster $\eta$ spread'
+
+dt_phi_spread:
+  expression: "events.dtCluster.phiSpread"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 0.4
+  label: 'DT cluster $\phi$ spread'
+
+dt_r_spread:
+  expression: "events.dtCluster.rSpread"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 200
+  label: 'DT cluster $r$ spread [cm]'
+
+dt_z_spread:
+  expression: "events.dtCluster.zSpread"
+  per_object: true
+  selections: [dt_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 250
+  label: 'DT cluster $z$ spread [cm]'
+
+# ── RPC cluster shape ──────────────────────────────────────────────
+rpc_size:
+  expression: "events.rpcCluster.size"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 30
+  lo: 0
+  hi: 60
+  label: 'RPC cluster $N_{\mathrm{hits}}$'
+  log_y: true
+
+rpc_nstation:
+  expression: "events.rpcCluster.nStation"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 4
+  lo: 0.5
+  hi: 4.5
+  label: 'RPC cluster $N_{\mathrm{stations}}$'
+
+rpc_station_span:
+  expression: "events.rpcCluster.stationSpan"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 4
+  lo: -0.5
+  hi: 3.5
+  label: 'RPC cluster station span (max-min)'
+
+rpc_max_station_frac:
+  expression: "events.rpcCluster.maxStationFrac"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 21
+  lo: 0
+  hi: 1.05
+  label: 'RPC cluster max station hit fraction'
+
+rpc_nlayer:
+  expression: "events.rpcCluster.nLayer"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 12
+  lo: 0.5
+  hi: 12.5
+  label: 'RPC cluster $N_{\mathrm{layers}}$'
+
+rpc_layer_hits_relrms:
+  expression: "events.rpcCluster.layerHitsRelRMS"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 30
+  lo: 0
+  hi: 3
+  label: 'RPC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
+
+rpc_max_layer_frac:
+  expression: "events.rpcCluster.maxLayerFrac"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 21
+  lo: 0
+  hi: 1.05
+  label: 'RPC cluster max layer hit fraction'
+
+rpc_eta_spread:
+  expression: "events.rpcCluster.etaSpread"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 0.4
+  label: 'RPC cluster $\eta$ spread'
+
+rpc_phi_spread:
+  expression: "events.rpcCluster.phiSpread"
+  per_object: true
+  selections: [rpc_cluster_sig_or_bkg]
+  bins: 40
+  lo: 0
+  hi: 0.4
+  label: 'RPC cluster $\phi$ spread'

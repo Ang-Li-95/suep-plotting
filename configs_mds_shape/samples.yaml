@@ -3,4 +3,5 @@ _include: ../datasets.yaml
 
 suep_temp1:
 suep_temp2:
-dy_2mu_50to120:
+dy:
+  _from: dy_central_50to120

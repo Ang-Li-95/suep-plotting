@@ -8,8 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
 
 def submit_jobs(
     config_dir: str,
@@ -27,57 +25,66 @@ def submit_jobs(
 ):
     """Submit Slurm array jobs for parallel processing.
 
-    By default one array task processes one whole sample.  With
-    *files_per_job* each sample's file list is split into shards of that many
-    files and every shard becomes its own array task, writing
-    ``<sample>.part<k>.pkl``; ``suep-plot`` sums the parts back into one
-    sample at load time.
+    Sample files are resolved once, here, and each array task is handed a
+    written-out list of the files it owns.  Tasks therefore never walk the
+    input directories themselves: a dataset that grows after submission cannot
+    shift the shard boundaries, and re-running ``sbatch job.sh`` reprocesses
+    exactly the same files.
+
+    By default one array task processes one whole sample.  With *files_per_job*
+    a sample's file list is split into shards of that many files and every
+    shard becomes its own array task, writing ``<sample>.part<k>.pkl``;
+    ``suep-plot`` sums the parts back into one sample at load time.
     """
     config_dir = Path(config_dir).resolve()
     output_dir = Path(output_dir).resolve()
 
-    with open(config_dir / "samples.yaml") as f:
-        samples = yaml.safe_load(f)
+    from .processor import _resolve_files, load_samples
+
+    samples = load_samples(config_dir / "samples.yaml")
 
     if not samples:
         print("No samples defined in samples.yaml")
         sys.exit(1)
 
-    # One task per sample, or per files_per_job-sized shard of a sample.
-    # Each task is (sample, part, start, end); part is None when unsplit.
-    tasks: list[tuple[str, int | None, int | None, int | None]] = []
-    if files_per_job:
-        if files_per_job < 1:
-            sys.exit("--files-per-job must be >= 1")
-        from .processor import _resolve_files
+    if files_per_job is not None and files_per_job < 1:
+        sys.exit("--files-per-job must be >= 1")
 
-        for name, cfg in samples.items():
-            n_files = len(_resolve_files(cfg.get("files") or []))
-            if n_files == 0:
-                print(f"WARNING: sample '{name}' has no files, skipping")
-                continue
-            for k, start in enumerate(range(0, n_files, files_per_job)):
-                tasks.append((name, k, start, min(start + files_per_job, n_files)))
-    else:
-        tasks = [(name, None, None, None) for name in samples]
+    work_dir = output_dir / "slurm"
+    log_dir = work_dir / "logs"
+    list_dir = work_dir / "filelists"
+    for d in (work_dir, log_dir, list_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    # One task per sample, or per files_per_job-sized shard of a sample.
+    # Each task is (sample, part, files); part is None when unsplit.
+    tasks: list[tuple[str, int | None, list[str]]] = []
+    print("Resolving sample files...")
+    for name, cfg in samples.items():
+        files = _resolve_files(cfg.get("files") or [])
+        if not files:
+            print(f"  WARNING: sample '{name}' has no files, skipping")
+            continue
+        step = files_per_job or len(files)
+        shards = [files[i:i + step] for i in range(0, len(files), step)]
+        print(f"  {name}: {len(files)} file(s) -> {len(shards)} task(s)")
+        for k, shard in enumerate(shards):
+            tasks.append((name, k if files_per_job else None, shard))
 
     n_jobs = len(tasks)
     if n_jobs == 0:
         print("No tasks to submit")
         sys.exit(1)
 
-    work_dir = output_dir / "slurm"
-    log_dir = work_dir / "logs"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
-
     task_list = work_dir / "task_list.txt"
     with open(task_list, "w") as f:
-        for name, task_part, start, end in tasks:
-            if task_part is None:
-                f.write(name + "\n")
-            else:
-                f.write(f"{name}\t{task_part}\t{start}\t{end}\n")
+        for name, task_part, files in tasks:
+            suffix = "" if task_part is None else f".part{task_part}"
+            file_list = list_dir / f"{name}{suffix}.txt"
+            with open(file_list, "w") as lf:
+                lf.write("\n".join(files) + "\n")
+            # Part last: an empty field is only safe at the end (see job.sh).
+            f.write(f"{name}\t{file_list}\t{'' if task_part is None else task_part}\n")
 
     repo_root = Path(__file__).resolve().parent.parent.parent
 
@@ -106,22 +113,23 @@ set -eo pipefail
 
 TASK="${{SLURM_ARRAY_TASK_ID}}"
 TASK_LIST="{task_list}"
-# Lines are either "<sample>" (whole sample) or
-# "<sample>\\t<part>\\t<start>\\t<end>" (shard of the sample's file list).
-IFS=$'\\t' read -r SAMPLE PART START END <<< "$(sed -n "$((TASK + 1))p" "$TASK_LIST")"
+# Lines are "<sample>\\t<file list>\\t<part>"; <part> is empty for a whole sample
+# (it must come last: bash 'read' collapses consecutive tabs, so an empty field
+# in the middle would shift the others).  The file list was written at
+# submission time, so this task processes exactly those files no matter what
+# the input directories look like now.
+IFS=$'\\t' read -r SAMPLE FILE_LIST PART <<< "$(sed -n "$((TASK + 1))p" "$TASK_LIST")"
 
-if [[ -z "$SAMPLE" ]]; then
+if [[ -z "$SAMPLE" || -z "$FILE_LIST" ]]; then
     echo "ERROR: no sample for task $TASK" >&2
     exit 1
 fi
 
-EXTRA=()
+EXTRA=(--file-list "$FILE_LIST")
 if [[ -n "$PART" ]]; then
-    EXTRA+=(--file-range "${{START}}:${{END}}" --part "$PART")
-    echo "==> task $TASK: sample=$SAMPLE part=$PART files=[$START:$END) on $(hostname) at $(date)"
-else
-    echo "==> task $TASK: sample=$SAMPLE on $(hostname) at $(date)"
+    EXTRA+=(--part "$PART")
 fi
+echo "==> task $TASK: sample=$SAMPLE part=${{PART:-all}} files=$(wc -l < "$FILE_LIST") on $(hostname) at $(date)"
 
 # Activate conda environment
 eval "$(conda shell.bash hook)"
@@ -163,14 +171,13 @@ python -m suep_plot.cli plot "{output_dir}" -o "{output_dir}/plots" -c "{config_
 
     print("=" * 64)
     print(f"Array tasks   : {n_jobs}")
-    for i, (name, task_part, start, end) in enumerate(tasks):
-        if task_part is None:
-            print(f"  [{i}] {name}")
-        else:
-            print(f"  [{i}] {name} part {task_part} (files {start}:{end})")
+    for i, (name, task_part, files) in enumerate(tasks):
+        part_str = "" if task_part is None else f" part {task_part}"
+        print(f"  [{i}] {name}{part_str} ({len(files)} files)")
     print(f"Config dir    : {config_dir}")
     print(f"Output dir    : {output_dir}")
     print(f"Work dir      : {work_dir}")
+    print(f"File lists    : {list_dir}")
     print(f"Job script    : {job_sh}")
     print(f"Merge script  : {merge_sh}")
     print(f"Conda env     : {conda_env}")

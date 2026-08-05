@@ -1,0 +1,29 @@
+# ── Selections for the cluster shape signal/background comparison ──
+# "sig_or_bkg": on signal samples keep only gen-matched clusters (>= 10
+# rechits sharing one llpIdx); on samples without truth branches (central
+# background MDSNano, hasTruth == False) keep every cluster.  One histogram
+# then overlays pure-signal clusters and pure-background clusters.
+
+csc_cluster_sig_or_bkg:
+  level: object
+  expression: "events.cscCluster.matched | ~events.cscCluster.hasTruth"
+dt_cluster_sig_or_bkg:
+  level: object
+  expression: "events.dtCluster.matched | ~events.dtCluster.hasTruth"
+rpc_cluster_sig_or_bkg:
+  level: object
+  expression: "events.rpcCluster.matched | ~events.rpcCluster.hasTruth"
+
+# Event-level bookkeeping (cutflow.txt)
+has_csc_cluster:
+  expression: "ak.num(events.cscCluster) >= 1"
+has_dt_cluster:
+  expression: "ak.num(events.dtCluster) >= 1"
+has_rpc_cluster:
+  expression: "ak.num(events.rpcCluster) >= 1"
+has_sig_or_bkg_csc:
+  expression: "ak.any(events.cscCluster.matched | ~events.cscCluster.hasTruth, axis=1)"
+has_sig_or_bkg_dt:
+  expression: "ak.any(events.dtCluster.matched | ~events.dtCluster.hasTruth, axis=1)"
+has_sig_or_bkg_rpc:
+  expression: "ak.any(events.rpcCluster.matched | ~events.rpcCluster.hasTruth, axis=1)"

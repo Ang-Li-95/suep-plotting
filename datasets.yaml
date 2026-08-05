@@ -1,0 +1,73 @@
+# Central dataset registry.
+#
+# One definition per dataset; configs pull them in via
+#
+#   _include: ../datasets.yaml
+#   suep_temp1:                 # verbatim
+#   suep_temp2:                 # with overrides
+#     color: "black"
+#   dy:                         # same dataset under another config name
+#     _from: dy_central_50to120
+#
+# 'files' may be a file, a glob, or a directory (walked recursively for *.root),
+# local or xrootd.  Keep plot-only keys (label, color) here as defaults and
+# override them per config where a study needs something different.
+suep_temp1:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $T$=1, $c\tau$=5 m
+  color: tab:blue
+  group: signal
+suep_temp2:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $T$=2, $c\tau$=5 m
+  color: tab:red
+  group: signal
+suep_temp2_preG4fix:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: T=2 (pre-G4 fix)
+  color: gray
+  group: signal
+# Whole crab production (subdirs 0000-0005): was an explicit 338-file subset.
+dy_2mu_50to120:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/MDSnano_RunIII2024Summer24DRPremix-140X_v26-v2/260714_082146
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: DY$\to2\mu$ (50-120)
+  color: tab:gray
+  group: background
+dy_central_50to120:
+  files:
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_1.root
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_10.root
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_100.root
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_101.root
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_102.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: DY$\to\mu\mu$ (bkg clusters)
+  color: black
+  group: signal
+suep_mMed125_mDark2:
+  files:
+  - /users/ang.li/public/SUEP/Generation/MDSNano/CMSSW_15_0_2/src/MDSNANO/EXO-RunIII2024Summer24NanoAODv15-00307.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $m_{\mathrm{Med}}$=125, $m_{\mathrm{Dark}}$=2
+  color: tab:blue
+  group: signal

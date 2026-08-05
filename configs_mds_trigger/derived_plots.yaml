@@ -1,0 +1,96 @@
+# ── Trigger efficiencies (Clopper-Pearson at plot time) ───────────
+# NOTE: do not pass --lumi (xs is a placeholder; scaling would distort
+# the binomial intervals).
+
+eff_hlt_csccluster_vs_maxsize:
+  type: efficiency
+  numerator: evt_maxcscsize_num
+  denominator: evt_maxcscsize_den
+  label_x: 'largest CSC cluster $N_{\mathrm{hits}}$'
+  label_y: 'HLT_CscCluster_Loose efficiency'
+
+eff_hlt_csccluster_vs_ngenhits:
+  type: efficiency
+  numerator: evt_ngenhits_csc_num
+  denominator: evt_ngenhits_csc_den
+  label_x: '$N_{\mathrm{CSC\ rechits}}$ gen-matched to LLPs'
+  label_y: 'HLT_CscCluster_Loose efficiency'
+
+eff_hlt_metnomu120_vs_met:
+  type: efficiency
+  numerator: evt_met_num
+  denominator: evt_met_den
+  label_x: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  label_y: 'HLT_PFMETNoMu120_PFMHTNoMu120_IDTight efficiency'
+
+eff_hlt_doublecsc75_vs_subsize:
+  type: efficiency
+  numerator: evt_subcscsize_num_dbl75
+  denominator: evt_subcscsize_den
+  label_x: '2nd-largest CSC cluster $N_{\mathrm{hits}}$'
+  label_y: 'HLT_DoubleCscCluster75 efficiency'
+
+eff_hlt_doublecsc100_vs_subsize:
+  type: efficiency
+  numerator: evt_subcscsize_num_dbl100
+  denominator: evt_subcscsize_den
+  label_x: '2nd-largest CSC cluster $N_{\mathrm{hits}}$'
+  label_y: 'HLT_DoubleCscCluster100 efficiency'
+
+eff_hlt_l1met_dt50_vs_maxdtsize:
+  type: efficiency
+  numerator: evt_maxdtsize_num_l1met50
+  denominator: evt_maxdtsize_den
+  label_x: 'largest DT cluster $N_{\mathrm{hits}}$'
+  label_y: 'HLT_L1MET_DTCluster50 efficiency'
+
+eff_hlt_l1met_dtnomb1s50_vs_maxdtsize:
+  type: efficiency
+  numerator: evt_maxdtsize_num_l1metnomb1s50
+  denominator: evt_maxdtsize_den
+  label_x: 'largest DT cluster $N_{\mathrm{hits}}$'
+  label_y: 'HLT_L1MET_DTClusterNoMB1S50 efficiency'
+
+eff_hlt_l1cscshower_dt50_vs_maxdtsize:
+  type: efficiency
+  numerator: evt_maxdtsize_num_l1csc50
+  denominator: evt_maxdtsize_den
+  label_x: 'largest DT cluster $N_{\mathrm{hits}}$'
+  label_y: 'HLT_L1CSCShower_DTCluster50 efficiency'
+
+eff_hlt_l1cscshower_dt75_vs_maxdtsize:
+  type: efficiency
+  numerator: evt_maxdtsize_num_l1csc75
+  denominator: evt_maxdtsize_den
+  label_x: 'largest DT cluster $N_{\mathrm{hits}}$'
+  label_y: 'HLT_L1CSCShower_DTCluster75 efficiency'
+
+eff_hlt_l1met_dt50_vs_met:
+  type: efficiency
+  numerator: evt_met_num_l1met50
+  denominator: evt_met_den
+  label_x: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  label_y: 'HLT_L1MET_DTCluster50 efficiency'
+
+eff_hlt_l1met_dtnomb1s50_vs_met:
+  type: efficiency
+  numerator: evt_met_num_l1metnomb1s50
+  denominator: evt_met_den
+  label_x: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  label_y: 'HLT_L1MET_DTClusterNoMB1S50 efficiency'
+
+# ── 2D efficiency map (one figure per sample) ─────────────────────
+eff2d_hlt_l1met_dt50_met_vs_hltdtsize:
+  type: efficiency
+  numerator: evt_met_vs_hltdtsize_num_l1met50
+  denominator: evt_met_vs_hltdtsize_den
+  label_x: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  label_y: 'largest HLT DT cluster $N_{\mathrm{hits}}$'
+  label_z: 'HLT_L1MET_DTCluster50 efficiency'
+
+eff_hlt_l1met_dt50_vs_met_hasdt:
+  type: efficiency
+  numerator: evt_met_num_l1met50_hasdt
+  denominator: evt_met_den_hasdt
+  label_x: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  label_y: 'HLT_L1MET_DTCluster50 efficiency'

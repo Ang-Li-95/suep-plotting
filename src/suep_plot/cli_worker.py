@@ -17,6 +17,9 @@ def main():
     parser.add_argument("--file-range", default=None, metavar="START:END",
                         help="Process only files [START, END) of the sample's "
                              "resolved file list")
+    parser.add_argument("--file-list", default=None, metavar="PATH",
+                        help="Process exactly the files listed in PATH (one per "
+                             "line), instead of resolving the sample's files:")
     parser.add_argument("--part", default=None,
                         help="Shard tag: write <sample>.part<PART>.pkl")
     args = parser.parse_args()
@@ -26,10 +29,17 @@ def main():
         start, end = args.file_range.split(":")
         file_range = (int(start), int(end))
 
+    file_list = None
+    if args.file_list:
+        with open(args.file_list) as f:
+            file_list = [line.strip() for line in f if line.strip()]
+        if not file_list:
+            raise SystemExit(f"ERROR: file list '{args.file_list}' is empty")
+
     from .processor import run_all
     run_all(args.config_dir, args.output_dir, [args.sample], args.chunk_size,
             args.workers, force=args.force, file_range=file_range,
-            part=args.part)
+            part=args.part, file_list=file_list)
 
 
 if __name__ == "__main__":

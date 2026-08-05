@@ -1,0 +1,242 @@
+# MDS LLP cluster study — how to reproduce the plots
+
+Analysis of two SUEP MDSNANO signal points (ggH, mMed=125, mDark=2, cτ=5 m,
+`temp=1` / `temp=2`) read over xrootd from VBC EOS. The derived collections
+(LLPs, DBSCAN CSC/DT/RPC clusters, cluster↔LLP matching) are built in
+[`custom/columns.py`](custom/columns.py); the plots are split over two config
+sets by whether they need gen information:
+
+| config | contents | output |
+| --- | --- | --- |
+| [`configs_mds/`](configs_mds/) | reco-only DBSCAN cluster properties and shower shapes, incl. ΔR to the closest muon / jet — fills identically on samples without truth branches | `output_mds*/` |
+| [`configs_mds_llp/`](configs_mds_llp/) | everything truth-dependent: the LLP collection, the truth-matched/unmatched cluster splits, the efficiency chain, the matched fractions and the signal-vs-background overlays | `output_mds_llp/` |
+
+Both run over the same samples and the same `derive()`, so pick the config set
+by which plots you want; `configs_mds_llp/` is the superset of the fills.
+
+Two configurations are produced:
+
+| folder | DBSCAN min cluster size (CSC/DT) | how |
+| --- | --- | --- |
+| `output_mds/` | 50 (standard MDS) | default |
+| `output_mds_minpts10/` | 10 | `MDS_CLUSTER_MIN_SAMPLES=10` |
+
+RPC clustering is always `min_samples=10` (sparse system). **Never pass `--lumi`** —
+`xs=1.0` in `configs_mds/samples.yaml` is a placeholder and lumi scaling would
+distort the Clopper–Pearson efficiency intervals.
+
+---
+
+## 0. One-time setup (environment + grid proxy)
+
+```bash
+cd /users/ang.li/public/SUEP/suep-plotting
+conda activate mds                            # coffea/uproot/sklearn/hist/mplhep
+export X509_USER_PROXY=$HOME/private/.proxy   # xrootd auth for root://eos.grid.vbc.ac.at
+
+# refresh the proxy if voms-proxy-info shows it expired (8-day lifetime):
+voms-proxy-init -voms cms --valid 192:00 --vomslife 192:0 -out $HOME/private/.proxy
+```
+
+---
+
+## 1. Local / interactive
+
+The quickest way is the wrapper script (does both folders, checks the proxy):
+
+```bash
+bash reproduce.sh
+```
+
+Or run the steps by hand:
+
+```bash
+# default — DBSCAN min cluster size = 50  -> output_mds/
+suep-run  -c configs_mds -o output_mds --chunk-size 10000 --workers 8
+suep-plot output_mds -o output_mds/plots -c configs_mds -j 8
+
+# variant — DBSCAN min cluster size = 10  -> output_mds_minpts10/
+MDS_CLUSTER_MIN_SAMPLES=10 \
+  suep-run  -c configs_mds -o output_mds_minpts10 --chunk-size 10000 --workers 8
+suep-plot output_mds_minpts10 -o output_mds_minpts10/plots -c configs_mds -j 8
+
+# gen-level LLP / matched-rechit plots only -> output_mds_gen/
+MDS_SKIP_CLUSTERING=1 \
+  suep-run  -c configs_mds_gen -o output_mds_gen --chunk-size 10000 --workers 8
+suep-plot output_mds_gen -o output_mds_gen/plots -c configs_mds_gen -j 8
+```
+
+Each `suep-run` reads all 50 files over xrootd and takes ~8–9 min/sample with 8
+workers; `configs_mds_gen` with `MDS_SKIP_CLUSTERING=1` needs ~3.5 min/sample.
+Galleries land at `<output>/plots/index.html`.
+
+### Re-style only (no reprocessing)
+
+If you change **plot-time** keys only (labels, `rebin`, `log_*`, `spans`, or
+anything in `configs_mds/derived_plots.yaml`), re-run `suep-plot` on the existing
+pickles — seconds, no xrootd:
+
+```bash
+suep-plot output_mds          -o output_mds/plots          -c configs_mds -j 8
+suep-plot output_mds_minpts10 -o output_mds_minpts10/plots -c configs_mds -j 8
+```
+
+Reprocess (`suep-run`) only for **fill-time** changes: `custom/columns.py`,
+`MDS_CLUSTER_MIN_SAMPLES`, or a histogram's `bins`/`edges`/`selections`/`expression`.
+
+---
+
+## 2. Slurm submission
+
+`suep-submit` writes one array task per sample (plus a merge+plot script) under
+`<output>/slurm/` and submits it. Slurm's default `--export=ALL` carries your
+**submit-shell** environment to the tasks, so `X509_USER_PROXY` and
+`MDS_CLUSTER_MIN_SAMPLES` must be exported *before* you submit.
+
+```bash
+conda activate mds
+export X509_USER_PROXY=$HOME/private/.proxy   # ensure the proxy is valid (voms-proxy-info)
+```
+
+### Default (min cluster size 50)
+
+```bash
+suep-submit -c configs_mds -o output_mds \
+    --partition c --time 02:00:00 --mem 16000 --workers 8 --chunk-size 10000
+
+# after all array tasks finish:
+bash output_mds/slurm/merge_and_plot.sh -j 8
+```
+
+### Variant (min cluster size 10)
+
+Only difference: export the knob before submitting so it propagates to the tasks.
+
+```bash
+export MDS_CLUSTER_MIN_SAMPLES=10
+suep-submit -c configs_mds -o output_mds_minpts10 \
+    --partition c --time 02:00:00 --mem 16000 --workers 8 --chunk-size 10000
+
+bash output_mds_minpts10/slurm/merge_and_plot.sh -j 8
+unset MDS_CLUSTER_MIN_SAMPLES     # so later default submissions use 50
+```
+
+### Splitting samples by files (more nodes in flight)
+
+By default one array task = one whole sample (2 tasks here). Add
+`--files-per-job N` to shard each sample's file list into tasks of N files:
+
+```bash
+suep-submit -c configs_mds -o output_mds \
+    --partition c --time 01:00:00 --mem 16000 --workers 8 --chunk-size 10000 \
+    --files-per-job 5          # 25 files/sample -> 5 tasks/sample -> 10 array tasks
+
+bash output_mds/slurm/merge_and_plot.sh -j 8
+```
+
+Each shard writes `<sample>.part<k>.pkl`; `suep-plot` (and therefore
+`merge_and_plot.sh`) sums the parts back into one sample automatically —
+histograms, sumw, nevents and the cutflow all add. **Don't mix** split and
+unsplit pickles for the same sample in one output directory (the sample would
+be double counted); use a fresh `-o` directory or delete the old pickles when
+switching.
+
+Shards are cut from the file list resolved at submission time and written to
+`<output>/slurm/filelists/<sample>.part<k>.txt`; tasks read those lists rather
+than re-expanding `files:`, so the split stays fixed even if the dataset grows,
+and `sbatch --array=<k> job.sh` reruns a failed shard on the same files.
+
+Notes:
+- `suep-submit` always reprocesses (`--force` inside the generated job); the
+  per-sample pickles are written to `<output>/`, logs to `<output>/slurm/logs/`.
+- `--conda-env` defaults to `mds` (matches setup). Add `--max-concurrent N` to cap
+  simultaneous array tasks, or `--dry-run` to generate the scripts without submitting
+  (then `sbatch output_mds/slurm/job.sh` yourself).
+- `merge_and_plot.sh` forwards extra flags (`"$@"`) to `suep-plot`; do **not** add
+  `--lumi`.
+- Adjust `--partition` to your cluster; each task is one 500k-event sample and needs
+  ~16 GB for 8 workers at chunk size 10000.
+
+---
+
+## What lives where
+
+- [`configs_mds/samples.yaml`](configs_mds/samples.yaml) — the two samples, 25 xrootd URLs each (identical in `configs_mds_llp/`).
+- [`configs_mds/histograms.yaml`](configs_mds/histograms.yaml) — reco-only cluster fills, incl. `<sys>_cluster_dr_muon` / `_dr_jet`.
+- [`configs_mds/selections.yaml`](configs_mds/selections.yaml) — reco-only event masks (`has_<sys>_cluster`).
+- [`configs_mds_llp/histograms.yaml`](configs_mds_llp/histograms.yaml) — all truth fills + efficiency num/den pairs; LLP η is signed (60 bins, −3..3), not |η|.
+- [`configs_mds_llp/selections.yaml`](configs_mds_llp/selections.yaml) — object/event masks (fiducial, ≥10 hits, matched cluster).
+- [`configs_mds_llp/derived_plots.yaml`](configs_mds_llp/derived_plots.yaml) — efficiency plots incl. the factorized chain and detector-station bands, matched fractions, sig-vs-bkg overlays.
+- [`custom/columns.py`](custom/columns.py) — `derive()`: LLP + cluster collections, matching, `MDS_CLUSTER_MIN_SAMPLES` / `MDS_SKIP_CLUSTERING` knobs.
+- [`configs_mds_gen/`](configs_mds_gen) — gen-level-only subset (LLPs + matched rechits), → `output_mds_gen/`.
+
+---
+
+## Gen-level rechit spread of one LLP
+
+These plots live only in `configs_mds_gen/`, a trimmed, self-contained config —
+LLP gen kinematics, per-LLP matched-rechit counts, the ΔR plots below, and 2D
+maps of CSC nHits and ΔR₉₀ against |η| / pT / energy / boost (sections `4d`–`4f`;
+their `profile_x` curves are in `derived_plots.yaml`), and nothing else (68
+histograms against 237, signal samples only, since the background has no
+`SUEPGenPart`). It touches no cluster collection, so run it with
+`MDS_SKIP_CLUSTERING=1` to skip DBSCAN (~35 % of `derive()`). Under that flag
+`events.<sys>Cluster` and `llp.reco*` are deliberately *not* attached, so a
+config that needs them fails at expression validation instead of quietly
+filling empty histograms. `configs_mds/` + `configs_mds_llp/` keep the full
+reconstruction study (clusters, efficiencies) and do not repeat these
+rechit-spread plots.
+
+The `4d`/`4e` maps show that the CSC is an endcap: both the hit count and ΔR₉₀
+turn on at |η| ≈ 1, plateau across the endcap, and fall off past |η| ≈ 2.4, in
+lockstep — so |η| drives both axes of `llp_dr90_vs_nhits_csc`. At fixed nHits,
+ΔR₉₀ is larger at high |η| (the η-φ metric stretches toward the beamline). nHits
+saturates with LLP energy (~40 hits) while ΔR₉₀ peaks near 20 GeV and then
+declines, the high-energy compact-shower regime behind the turnover in the
+nHits map.
+
+The `4f` maps add the boost. The gen `llp.openingAngle` (3D angle between the
+two decay daughters) falls as a clean 1/βγ curve — a more boosted LLP decays
+into a tighter pair. But ΔR₉₀ vs opening angle is **non-monotonic**: it peaks
+near 0.3 rad and falls off on both sides. Toward small angle (high boost) the
+two daughter showers merge and ΔR₉₀ drops to the single-shower floor (~0.08 at
+these |η|) — the boost/collimation effect. Toward wide angle (low boost) ΔR₉₀
+also drops, because the rechits are then dominated by a single daughter (the
+other leaves the CSC acceptance or too few hits). The controlled
+`llp_dr90_vs_betagamma_ctrl` (fixed 1.6<|η|<2.2, nHits<25) isolates the boost
+side: past the βγ≈5 peak, ΔR₉₀ falls with boost as expected. So a raw
+`dR₉₀ vs βγ` profile is confounded (|η| and nHits both rise with βγ); the
+collimation shows only once those are pinned.
+
+These answer "how wide is the rechit shower of a single LLP", from truth only
+(`cscRechits_llpIdx` etc.), with no clustering involved. Per LLP, over the
+rechits carrying its `llpIdx`:
+
+| plot | field | meaning |
+| --- | --- | --- |
+| `llp_nhits_<sys>` | `nHits<SYS>` | matched rechits per LLP |
+| `llp_drpair_min/max_<sys>` | `drPairMin/Max<SYS>` | smallest / largest ΔR between two of its rechits |
+| `llp_dr{50,80,90}_<sys>`, `llp_drmax_<sys>` | `dr50/dr80/dr90/drMax<SYS>` | radius around the rechit centroid holding 50/80/90/100 % of them |
+| `<sys>_rechit_dr_llp` | `<coll>.drLLP` | hit-weighted: every matched rechit's ΔR to its LLP's centroid |
+
+`<sys>` is `csc`, `dt`, `rpc` or `total` (the three pooled). The `_hits10`
+variants keep only LLPs with ≥10 matched rechits — the number a DBSCAN cluster
+needs to be truth-matched, and the regime where a cone size is meaningful.
+LLPs with <2 matched rechits have no ΔR and drop out of the fill.
+
+Results on `suep_temp1` (500k events, median over LLPs with the [16 %, 84 %]
+band; DBSCAN currently runs with eps = 0.2). `suep_temp2` agrees to within
+≈0.01 everywhere, so the numbers barely depend on the SUEP temperature:
+
+| system | ΔR(50 %) | ΔR(80 %) | ΔR(90 %) |
+| --- | --- | --- | --- |
+| CSC | 0.031 [0.006, 0.105] | 0.042 [0.007, 0.151] | 0.048 [0.008, 0.185] |
+| CSC, ≥10 hits | 0.048 [0.017, 0.127] | 0.067 [0.023, 0.185] | 0.077 [0.025, 0.229] |
+| DT | 0.074 [0.023, 0.124] | 0.113 [0.032, 0.189] | 0.129 [0.038, 0.222] |
+| RPC | 0.053 [0.024, 0.125] | 0.067 [0.027, 0.165] | 0.072 [0.027, 0.188] |
+
+Hit-weighted (pooling all matched rechits instead of averaging over LLPs) the
+containment radii are 0.053 / 0.134 / 0.205 for CSC and 0.088 / 0.163 / 0.226
+for DT at 50 / 80 / 90 %. The closest pair of rechits of one LLP sits at
+ΔR ≈ 1e-3 (CSC/DT strip granularity) and the farthest at ΔR ≈ 0.1 (CSC) to
+0.22 (DT).

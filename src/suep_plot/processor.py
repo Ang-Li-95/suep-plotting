@@ -44,20 +44,112 @@ NanoAODSchema.warn_missing_crossrefs = False
 
 
 def load_samples(path: str) -> dict:
+    """Read a config's ``samples.yaml`` -> {name: cfg}.
+
+    A samples.yaml may pull definitions from one or more shared dataset
+    registries listed under the reserved ``_include`` key (paths relative to
+    the samples.yaml).  Each entry is then either
+
+    * ``name:`` (empty) — take the registry entry verbatim;
+    * ``name: {…}`` — registry entry with these keys overridden;
+    * ``name: {_from: other, …}`` — as above but based on registry entry
+      ``other``, so one dataset can appear under several config names;
+    * a full standalone definition, as before, needing no registry at all.
+    """
+    path = Path(path)
     with open(path) as f:
-        return yaml.safe_load(f) or {}
+        raw = yaml.safe_load(f) or {}
+
+    includes = raw.pop("_include", [])
+    if isinstance(includes, str):
+        includes = [includes]
+    registry: dict = {}
+    for inc in includes:
+        inc_path = Path(inc) if Path(inc).is_absolute() else path.parent / inc
+        if not inc_path.exists():
+            raise FileNotFoundError(f"{path}: _include file not found: {inc_path}")
+        with open(inc_path) as f:
+            registry.update(yaml.safe_load(f) or {})
+
+    samples = {}
+    for name, cfg in raw.items():
+        cfg = dict(cfg or {})
+        base_name = cfg.pop("_from", name)
+        base = registry.get(base_name)
+        if base is None:
+            if not cfg.get("files"):
+                known = ", ".join(sorted(registry)) or "(no _include)"
+                raise KeyError(
+                    f"{path}: sample '{name}' has no 'files' and no registry "
+                    f"entry '{base_name}'. Available: {known}")
+            samples[name] = cfg
+        else:
+            samples[name] = {**base, **cfg}
+    return samples
+
+
+def _split_xrootd_url(url: str) -> tuple[str, str]:
+    """``root://host//eos/dir`` -> (``root://host/``, ``/eos/dir``)."""
+    scheme, rest = url.split("://", 1)
+    host, _, path = rest.partition("/")
+    return f"{scheme}://{host}/", "/" + path.lstrip("/")
+
+
+def _xrootd_listdir(fs, path: str) -> list[str]:
+    """Recursively list ``*.root`` under a remote directory (server paths)."""
+    from XRootD.client.flags import DirListFlags
+
+    status, listing = fs.dirlist(path, DirListFlags.STAT)
+    if not status.ok or listing is None:
+        raise RuntimeError(f"xrootd dirlist failed for {path}: {status.message}")
+
+    out = []
+    for entry in listing:
+        child = f"{path.rstrip('/')}/{entry.name}"
+        if entry.statinfo is not None and entry.statinfo.flags & 2:  # kXR_isDir
+            out.extend(_xrootd_listdir(fs, child))
+        elif entry.name.endswith(".root"):
+            out.append(child)
+    return sorted(out)
+
+
+def _resolve_xrootd(spec: str) -> list[str]:
+    """Expand one xrootd spec: a file passes through, a directory is walked,
+    a trailing wildcard is matched against its parent directory's listing."""
+    import fnmatch
+
+    from XRootD import client
+
+    prefix, path = _split_xrootd_url(spec)
+    if "*" not in path and "?" not in path and path.endswith(".root"):
+        return [spec]
+
+    fs = client.FileSystem(prefix)
+    # Server paths are absolute, so host + path keeps the usual root://host//eos/…
+    if "*" in path or "?" in path:
+        parent, _, pattern = path.rpartition("/")
+        return [prefix + f for f in _xrootd_listdir(fs, parent)
+                if fnmatch.fnmatch(f.rpartition("/")[2], pattern)]
+    return [prefix + f for f in _xrootd_listdir(fs, path)]
 
 
 def _resolve_files(file_specs: list[str]) -> list[str]:
-    """Expand globs / pass through xrootd URLs -> flat list of file paths."""
+    """Expand globs / directories / xrootd URLs -> flat list of file paths.
+
+    A spec may be a single file, a glob, or a directory (local or xrootd), in
+    which case it is walked recursively for ``*.root``.
+    """
     import glob
+    import os
 
     out = []
     for spec in file_specs:
         if "://" in spec:
-            out.append(spec)
+            out.extend(_resolve_xrootd(spec))
         elif "*" in spec or "?" in spec:
             out.extend(sorted(glob.glob(spec)))
+        elif os.path.isdir(spec):
+            out.extend(sorted(str(p) for p in Path(spec).rglob("*.root")))
         else:
             out.append(spec)
     return out
@@ -260,14 +352,16 @@ def run_all(
     force: bool = False,
     file_range: tuple[int, int] | None = None,
     part: str | int | None = None,
+    file_list: list[str] | None = None,
 ):
     """Load configs, process each sample through coffea, save per-sample pickles.
 
-    *file_range* restricts processing to a ``[start, end)`` slice of each
-    sample's resolved file list and *part* tags the output pickle as
-    ``<sample>.part<part>.pkl`` — together they let Slurm array tasks split a
-    sample by files (one shard per task).  ``suep-plot`` sums the part pickles
-    back into one sample at load time.
+    *file_list* replaces the sample's own ``files:`` with an already-resolved
+    list of files, and *part* tags the output pickle as
+    ``<sample>.part<part>.pkl``; ``suep-slurm`` uses the pair to hand each array
+    task a frozen shard of one sample (``suep-plot`` sums the part pickles back
+    into one sample at load time).  *file_range* is the equivalent for a direct
+    ``suep-run``: a ``[start, end)`` slice of the resolved file list.
     """
     config_dir = Path(config_dir)
     output_dir = Path(output_dir)
@@ -354,11 +448,16 @@ def run_all(
 
     validated = False
     for name, cfg in sample_defs.items():
-        file_specs = cfg.get("files") or []
-        if not file_specs:
-            print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
-            continue
-        files = _resolve_files(file_specs)
+        # A caller-supplied list is already resolved: no directory walk here,
+        # so a shard processes exactly the files it was submitted with.
+        if file_list is not None:
+            files = list(file_list)
+        else:
+            file_specs = cfg.get("files") or []
+            if not file_specs:
+                print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
+                continue
+            files = _resolve_files(file_specs)
         tree = cfg.get("tree", "Events")
         if not files:
             print(f"  WARNING: no files resolved for '{name}', skipping")

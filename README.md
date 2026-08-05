@@ -199,8 +199,8 @@ All behaviour is controlled by YAML files in `configs/`.
 
 ```yaml
 suep_mMed125_mDark2:
-  files:                                    # list of paths, globs, or xrootd URLs
-    - "/path/to/NanoAOD/*.root"
+  files:                                    # paths, globs, directories, or xrootd URLs
+    - "/path/to/NanoAOD/*.root"             # a directory is walked recursively for *.root
   tree: Events                              # TTree name (default: Events)
   is_data: false                            # true for collision data
   xs: 1.0                                   # cross section in pb (MC; used by --lumi scaling)
@@ -210,9 +210,34 @@ suep_mMed125_mDark2:
   scale: 100                                # optional: draw signal x100 (legend shows "×100")
 ```
 
-xrootd URLs (`root://…`) are passed through; paths with `*`/`?` are glob-expanded;
-plain paths are used directly. `group` drives plot styling: `background` → stacked
-fill, `signal` → step overlay (or fill if alone), `is_data: true` → error bars.
+A `files:` entry may be a file, a glob (`*`/`?`), or a **directory** — local or
+xrootd — in which case it is walked recursively for `*.root`. `group` drives plot
+styling: `background` → stacked fill, `signal` → step overlay (or fill if alone),
+`is_data: true` → error bars.
+
+#### Central dataset registry
+
+Datasets are defined once in the top-level [`datasets.yaml`](datasets.yaml); each
+config picks the combination it needs instead of repeating the definitions:
+
+```yaml
+_include: ../datasets.yaml    # one path or a list; relative to this samples.yaml
+
+suep_temp1:                   # registry entry, verbatim
+suep_temp2:                   # registry entry with per-study overrides
+  color: "black"
+  scale: 100
+dy:                           # same dataset under a different config name
+  _from: dy_central_50to120
+qcd_private:                  # full standalone definition — registry not required
+  files: ["/my/private/dir"]
+  xs: 1.0
+```
+
+Per-sample keys are merged over the registry entry (config wins). A name that is
+neither in the registry nor carries its own `files:` is an error listing the
+available datasets, so typos fail at startup rather than mid-run. Configs that
+define everything inline keep working unchanged — `_include` is optional.
 `sumw` (Σ genWeight) and `nevents` are recorded per sample in the pickle; when
 `--lumi` is passed to the plotter, each MC sample is normalized by
 `xs × lumi × 1000 / sumw` (data is never scaled; MC without `xs`/`sumw` is left
@@ -485,7 +510,13 @@ bash output/slurm/merge_and_plot.sh
 | `--max-concurrent` | — | Cap on simultaneous array tasks (`%N`). |
 | `--dry-run` | off | Generate scripts without submitting. |
 
-Resubmit failures by task index (line number − 1 in `slurm/sample_list.txt`):
+Sample files are resolved **once, at submission time**: each task's files are
+written to `slurm/filelists/<sample>[.part<k>].txt` and the task reads that list
+instead of expanding `files:` itself. So a directory that gains files after
+submission cannot shift shard boundaries, tasks don't re-list storage, and a
+resubmission reruns exactly the same inputs. To pick up new files, submit again.
+
+Resubmit failures by task index (line number − 1 in `slurm/task_list.txt`):
 `sbatch --array=3,7 output/slurm/job.sh`. Slurm jobs always reprocess their
 sample (`--force`); the incremental skip only applies to local `suep-run`.
 `merge_and_plot.sh` forwards extra arguments to `suep-plot`
@@ -676,4 +707,9 @@ tracked, so affected samples re-run automatically).
 and reference them as `events.name` in any expression.
 
 **xrootd files** — list `root://host//store/…` URLs under `files:`; coffea/uproot
-handle them natively (ensure a valid grid proxy / kerberos token).
+handle them natively (ensure a valid grid proxy / kerberos token).  An entry may
+also be a *directory* URL (`root://host//store/user/…/MDSNANO`), which is listed
+on the server and walked recursively for `*.root`, or a wildcard on the file
+name (`…/MDSNANO/nano_*.root`) — so a whole dataset is one line instead of
+hundreds.  Local directories work the same way.  Listing happens each time
+`suep-run`/`suep-slurm` starts, so files added later are picked up automatically.

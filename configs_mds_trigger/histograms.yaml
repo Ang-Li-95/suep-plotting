@@ -1,0 +1,180 @@
+# ── Trigger-efficiency histograms ─────────────────────────────────
+# All are event-level.  Numerator/denominator pairs share identical
+# binning (required by derived_plots.yaml type: efficiency).
+#
+# Variables:
+#   max CSC DBSCAN cluster size in the event (0 when no cluster)
+#   total number of gen-matched CSC rechits in the event, counted
+#   directly on the rechits (llpIdx >= 0) — never sum llp.nHitsCSC,
+#   that can double count
+#   PFMET pt (the METNoMu trigger variable minus muon correction; ggH
+#   SUEP has essentially no prompt muons so PFMET ~ PFMETNoMu)
+# Rechit-count axes use a constant 10-hit bin width.
+
+# ── HLT_CscCluster_Loose vs largest CSC cluster size ──────────────
+evt_maxcscsize_den:
+  expression: "ak.fill_none(ak.max(events.cscCluster.size, axis=1), 0)"
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: 'largest CSC cluster $N_{\mathrm{hits}}$'
+  log_y: true
+evt_maxcscsize_num:
+  expression: "ak.fill_none(ak.max(events.cscCluster.size, axis=1), 0)"
+  selections: [hlt_csccluster_loose]
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: 'largest CSC cluster $N_{\mathrm{hits}}$'
+  log_y: true
+
+# ── HLT_CscCluster_Loose vs total gen-matched CSC rechits ─────────
+evt_ngenhits_csc_den:
+  expression: "ak.sum(events.cscRechits.llpIdx >= 0, axis=1)"
+  bins: 100
+  lo: 0
+  hi: 1000
+  label: '$N_{\mathrm{CSC\ rechits}}$ gen-matched to LLPs'
+  log_y: true
+evt_ngenhits_csc_num:
+  expression: "ak.sum(events.cscRechits.llpIdx >= 0, axis=1)"
+  selections: [hlt_csccluster_loose]
+  bins: 100
+  lo: 0
+  hi: 1000
+  label: '$N_{\mathrm{CSC\ rechits}}$ gen-matched to LLPs'
+  log_y: true
+
+# ── HLT_PFMETNoMu120_PFMHTNoMu120_IDTight vs MET ──────────────────
+evt_met_den:
+  expression: "events.PFMET.pt"
+  edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 500]
+  label: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  log_y: true
+evt_met_num:
+  expression: "events.PFMET.pt"
+  selections: [hlt_pfmetnomu120]
+  edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 500]
+  label: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  log_y: true
+
+# ── HLT_DoubleCscCluster75/100 vs 2nd-largest CSC cluster size ────
+# The double triggers require two HLT clusters, so the subleading
+# offline cluster size is the natural turn-on variable.
+evt_subcscsize_den:
+  expression: "ak.fill_none(ak.pad_none(ak.sort(events.cscCluster.size, axis=1, ascending=False), 2, axis=1)[:, 1], 0)"
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: '2nd-largest CSC cluster $N_{\mathrm{hits}}$'
+  log_y: true
+evt_subcscsize_num_dbl75:
+  expression: "ak.fill_none(ak.pad_none(ak.sort(events.cscCluster.size, axis=1, ascending=False), 2, axis=1)[:, 1], 0)"
+  selections: [hlt_doublecsc75]
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: '2nd-largest CSC cluster $N_{\mathrm{hits}}$'
+  log_y: true
+evt_subcscsize_num_dbl100:
+  expression: "ak.fill_none(ak.pad_none(ak.sort(events.cscCluster.size, axis=1, ascending=False), 2, axis=1)[:, 1], 0)"
+  selections: [hlt_doublecsc100]
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: '2nd-largest CSC cluster $N_{\mathrm{hits}}$'
+  log_y: true
+
+# ── DT cluster triggers vs largest DT cluster size ────────────────
+evt_maxdtsize_den:
+  expression: "ak.fill_none(ak.max(events.dtCluster.size, axis=1), 0)"
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: 'largest DT cluster $N_{\mathrm{hits}}$'
+  log_y: true
+evt_maxdtsize_num_l1met50:
+  expression: "ak.fill_none(ak.max(events.dtCluster.size, axis=1), 0)"
+  selections: [hlt_l1met_dt50]
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: 'largest DT cluster $N_{\mathrm{hits}}$'
+  log_y: true
+evt_maxdtsize_num_l1metnomb1s50:
+  expression: "ak.fill_none(ak.max(events.dtCluster.size, axis=1), 0)"
+  selections: [hlt_l1met_dtnomb1s50]
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: 'largest DT cluster $N_{\mathrm{hits}}$'
+  log_y: true
+evt_maxdtsize_num_l1csc50:
+  expression: "ak.fill_none(ak.max(events.dtCluster.size, axis=1), 0)"
+  selections: [hlt_l1cscshower_dt50]
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: 'largest DT cluster $N_{\mathrm{hits}}$'
+  log_y: true
+evt_maxdtsize_num_l1csc75:
+  expression: "ak.fill_none(ak.max(events.dtCluster.size, axis=1), 0)"
+  selections: [hlt_l1cscshower_dt75]
+  bins: 120
+  lo: 0
+  hi: 1200
+  label: 'largest DT cluster $N_{\mathrm{hits}}$'
+  log_y: true
+
+# ── L1MET-seeded DT triggers vs MET (they need L1 MET to fire) ────
+evt_met_num_l1met50:
+  expression: "events.PFMET.pt"
+  selections: [hlt_l1met_dt50]
+  edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 500]
+  label: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  log_y: true
+evt_met_num_l1metnomb1s50:
+  expression: "events.PFMET.pt"
+  selections: [hlt_l1met_dtnomb1s50]
+  edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 500]
+  label: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  log_y: true
+
+# ── HLT_L1MET_DTCluster50 in the (MET, HLT DT cluster size) plane ─
+# The trigger is an AND of an L1 MET seed and an HLT DT cluster with
+# >= 50 hits, so the 2D map shows where each leg is the bottleneck.
+# y uses the HLT cluster collection directly (no offline DBSCAN);
+# events with no HLT DT cluster sit in the y=0 bin.
+evt_met_vs_hltdtsize_den:
+  expression_x: "events.PFMET.pt"
+  expression_y: "ak.fill_none(ak.max(events.dtMDSHLTCluster.size, axis=1), 0)"
+  edges_x: [0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400, 500]
+  edges_y: [0, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400]
+  label_x: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  label_y: 'largest HLT DT cluster $N_{\mathrm{hits}}$'
+  log_z: true
+evt_met_vs_hltdtsize_num_l1met50:
+  expression_x: "events.PFMET.pt"
+  expression_y: "ak.fill_none(ak.max(events.dtMDSHLTCluster.size, axis=1), 0)"
+  selections: [hlt_l1met_dt50]
+  edges_x: [0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400, 500]
+  edges_y: [0, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400]
+  label_x: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  label_y: 'largest HLT DT cluster $N_{\mathrm{hits}}$'
+  log_z: true
+
+# ── HLT_L1MET_DTCluster50 vs MET, cluster leg already required ────
+# Both num and den demand >= 1 HLT DT cluster, so this isolates the
+# L1 MET seed turn-on with the cluster requirement factored out.
+evt_met_den_hasdt:
+  expression: "events.PFMET.pt"
+  selections: [has_hlt_dtcluster]
+  edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 500]
+  label: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  log_y: true
+evt_met_num_l1met50_hasdt:
+  expression: "events.PFMET.pt"
+  selections: [has_hlt_dtcluster, hlt_l1met_dt50]
+  edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 500]
+  label: 'PF $p_T^{\mathrm{miss}}$ [GeV]'
+  log_y: true

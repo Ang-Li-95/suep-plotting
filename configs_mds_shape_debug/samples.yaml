@@ -1,0 +1,31 @@
+# Debug variant: ONE file per sample (chain validation only).
+# dy = locally reprocessed SUEPMDSNano test file with correct
+# per-layer CSC rechit z (10 events).
+
+suep_temp1:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO/nano_0.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $T$=1, $c\tau$=5 m
+  color: tab:blue
+  group: signal
+suep_temp2:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO/nano_0.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $T$=2, $c\tau$=5 m
+  color: tab:red
+  group: signal
+dy:
+  files:
+  - /tmp/claude-13317/-users-ang-li-public-SUEP-Generation-CMSSW-15-0-2-src-SUEPMDSNano/bb154451-3674-407d-9427-e1c926116948/scratchpad/localtest/nano_DY2024_test_numEvent10.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: DY$\to\mu\mu$ reproc. (bkg clusters)
+  color: black
+  group: signal
