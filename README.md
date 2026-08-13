@@ -206,6 +206,7 @@ suep_mMed125_mDark2:
   xs: 1.0                                   # cross section in pb (MC; used by --lumi scaling)
   label: "SUEP $m_{Med}$=125"               # legend label (LaTeX ok)
   color: "tab:blue"                         # matplotlib color
+  linestyle: "--"                           # optional: dash pattern for step curves
   group: signal                             # signal / background (data via is_data)
   scale: 100                                # optional: draw signal x100 (legend shows "×100")
 ```
@@ -277,7 +278,7 @@ Plot-time fields (take effect on the next `suep-plot`, **no reprocessing**):
 | `label` | name | X-axis label (LaTeX between `$…$`). |
 | `blind` | `false` | Don't draw data for this histogram (signal regions). |
 | `rebin` | — | Merge N adjacent bins at plot time (1D only). |
-| `flow` | — | `sum` folds under/overflow into the first/last bin. |
+| `flow` | `sum` | Under/overflow is folded into the first/last bin, so nothing is lost off the axis; `none` drops it instead. |
 | `log_x` / `log_y` | `false` | Logarithmic axes for this histogram. |
 | `log_z` | `false` | Log color scale (2D histograms). |
 

@@ -134,6 +134,39 @@ def reweight(argv=None):
     print(f"Wrote reweight map to {path}")
 
 
+def status(argv=None):
+    """Report which array tasks of a submitted run finished, and redo the rest."""
+    parser = argparse.ArgumentParser(
+        prog="suep-status",
+        description="Check a Slurm run for missing or unreadable output pickles, "
+                    "and optionally resubmit exactly those array tasks.",
+        epilog="Examples:\n"
+               "  suep-status -o output_mds_data\n"
+               "  suep-status -o output_mds_data --resubmit\n",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("-o", "--output-dir", required=True,
+                        help="Output directory of a 'suep-submit' run")
+    parser.add_argument("--resubmit", action="store_true",
+                        help="Resubmit the incomplete tasks over the run's job.sh")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="(with --resubmit) print the sbatch command, don't run it")
+    parser.add_argument("--no-verify", action="store_true",
+                        help="Only check that pickles exist and are non-empty; skip "
+                             "reading them back (faster, misses truncated files)")
+    parser.add_argument("--max-concurrent", type=int, default=None,
+                        help="(with --resubmit) max simultaneous array tasks")
+    args = parser.parse_args(argv)
+
+    from .status import report, resubmit
+    verify = not args.no_verify
+    if args.resubmit:
+        n = resubmit(args.output_dir, verify=verify, dry_run=args.dry_run,
+                     max_concurrent=args.max_concurrent)
+        return 0 if n == 0 else 1
+    return 0 if not report(args.output_dir, verify) else 1
+
+
 def submit(argv=None):
     """Submit processing jobs to Slurm."""
     parser = argparse.ArgumentParser(prog="suep-submit",
@@ -175,23 +208,25 @@ def submit(argv=None):
     )
 
 
-_COMMANDS = {"run": run, "plot": plot, "submit": submit, "reweight": reweight}
+_COMMANDS = {"run": run, "plot": plot, "submit": submit, "status": status,
+             "reweight": reweight}
 
 
 def main(argv=None):
     """Subcommand dispatcher for ``python -m suep_plot.cli``."""
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
-        print("usage: python -m suep_plot.cli {run,plot,submit,reweight} [options]")
+        print("usage: python -m suep_plot.cli {run,plot,submit,status,reweight} [options]")
         print("       (or use the console scripts suep-run / suep-plot / "
-              "suep-submit / suep-reweight)")
+              "suep-submit / suep-status / suep-reweight)")
         return 0 if argv and argv[0] in ("-h", "--help") else 2
     cmd, rest = argv[0], argv[1:]
     if cmd not in _COMMANDS:
         print(f"unknown command '{cmd}'. choose from: {', '.join(_COMMANDS)}")
         return 2
-    _COMMANDS[cmd](rest)
-    return 0
+    # subcommands that report a condition (suep-status) return an exit code
+    rc = _COMMANDS[cmd](rest)
+    return rc if isinstance(rc, int) else 0
 
 
 if __name__ == "__main__":

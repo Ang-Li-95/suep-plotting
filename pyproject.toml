@@ -26,6 +26,7 @@ dev = ["pytest", "ruff"]
 suep-run = "suep_plot.cli:run"
 suep-plot = "suep_plot.cli:plot"
 suep-submit = "suep_plot.cli:submit"
+suep-status = "suep_plot.cli:status"
 suep-reweight = "suep_plot.cli:reweight"
 
 [tool.setuptools.packages.find]
