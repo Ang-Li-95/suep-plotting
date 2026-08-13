@@ -82,8 +82,8 @@ RPC_EC_ZMIN, RPC_EC_ZMAX, RPC_EC_RMAX = 600.0, 1020.0, 660.0  # endcap; barrel =
 # dR radius with $MDS_CLUSTER_EPS (default 0.2, all three systems), to study
 # their effect without editing the config; RPC min_samples stays at 10
 # (sparse system).
-_CSC_DT_MIN_SAMPLES = int(os.environ.get("MDS_CLUSTER_MIN_SAMPLES", "50"))
-_EPS = float(os.environ.get("MDS_CLUSTER_EPS", "0.2"))
+_CSC_DT_MIN_SAMPLES = int(os.environ.get("MDS_CLUSTER_MIN_SAMPLES", "10"))
+_EPS = float(os.environ.get("MDS_CLUSTER_EPS", "0.4"))
 DBSCAN_PARAMS = {
     "csc": (_EPS, _CSC_DT_MIN_SAMPLES),
     "dt": (_EPS, _CSC_DT_MIN_SAMPLES),
