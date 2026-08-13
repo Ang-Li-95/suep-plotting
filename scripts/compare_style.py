@@ -35,9 +35,13 @@ LEGEND_FONTSIZE = 18
 DPI = 150
 
 
-def cms_label(ax, lumi=None):
-    """CMS 'Preliminary' header at 13.6 TeV (simulation-only by default)."""
-    _cms_label(ax, lumi=lumi)
+def cms_label(ax, lumi=None, has_data=False):
+    """CMS 'Preliminary' header at 13.6 TeV (simulation-only by default).
+
+    Pass ``has_data`` when one of the overlaid samples is real data, so the
+    header drops "Simulation".
+    """
+    _cms_label(ax, lumi=lumi, has_data=has_data)
 
 
 def palette() -> list[str]:

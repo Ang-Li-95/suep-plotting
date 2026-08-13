@@ -108,6 +108,40 @@ suep-submit -c configs_mds -o output_mds \
 bash output_mds/slurm/merge_and_plot.sh -j 8
 ```
 
+### Checking a run finished, and redoing what didn't
+
+`merge_and_plot.sh` sums whatever pickles it finds, so a run that lost array
+tasks merges into a quietly incomplete sample rather than an error. Check
+before merging:
+
+```bash
+suep-status -o output_mds
+```
+
+It reads `slurm/task_list.txt` — the authority on what the run *should* have
+produced — and reports per sample how many tasks landed. A task counts as done
+only if its pickle can be read back, so a file left truncated by a killed job
+is reported as `unreadable` instead of being merged in. Exit code is 0 when
+complete, 1 otherwise, so it can gate the merge:
+
+```bash
+suep-status -o output_mds && bash output_mds/slurm/merge_and_plot.sh -j 8
+```
+
+To redo just the incomplete tasks — same shard boundaries, same input files,
+resubmitted as an `sbatch --array` list over the run's own `job.sh`:
+
+```bash
+suep-status -o output_mds --resubmit
+```
+
+Add `--dry-run` to see the `sbatch` command without running it, or
+`--no-verify` to skip reading the pickles back (faster on large runs, but it
+will not catch a truncated file). **Export the same `MDS_CLUSTER_*` knobs the
+run was submitted with** — the rerun inherits them from your shell, and mixing
+values inside one output directory is invisible in the merged result;
+`--resubmit` warns when `job.sh` does not pin them.
+
 ### Variant (min cluster size 10)
 
 Only difference: export the knob before submitting so it propagates to the tasks.

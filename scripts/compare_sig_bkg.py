@@ -11,8 +11,14 @@ match and the two can be drawn on one canvas without refilling anything.
 
 Each figure is unit-area normalized, so it compares shapes rather than yields,
 and follows the same CMS style, sample labels/colors, and png+pdf output as
-``suep-plot``.  The separation quoted per plot is the total-variation distance
-between the two shapes: 0 = identical, 1 = no overlap.
+``suep-plot``.  Data samples are drawn as points, everything else as a fill
+(background) or a step curve (signal, honouring the sample's ``linestyle``);
+``-c`` re-reads label/color/linestyle from a config so styling can be iterated
+without reprocessing.
+
+Each plot's separation -- the total-variation distance from the first
+background, 0 = identical, 1 = no overlap -- is reported in ``separation.txt``
+and orders the gallery, but is kept out of the legend.
 """
 import argparse
 import os
@@ -53,7 +59,50 @@ def collect(entries, base_or_key, hist_cfg):
     return out
 
 
-def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest):
+def sig_tag(suffix: str) -> str:
+    """How to describe the signal population in legends and headings."""
+    if suffix == "_matched":
+        return "gen-matched"
+    return suffix.lstrip("_").replace("_", " ") or "all clusters"
+
+
+def _headroom(ax, n_entries: int) -> None:
+    """Grow the y-axis so the legend clears the tallest curve.
+
+    The legend needs roughly one line height per entry plus a margin; on a log
+    axis that is a factor per decade, on a linear one a fraction of the range.
+    """
+    lo, hi = ax.get_ylim()
+    if ax.get_yscale() == "log":
+        if lo <= 0 or hi <= lo:
+            return
+        span = np.log10(hi / lo)                       # decades currently drawn
+        added = min(0.42 * n_entries, 0.9 * span)      # never more than ~half the axis
+        ax.set_ylim(lo, hi * 10 ** added)
+    else:
+        ax.set_ylim(lo, lo + (hi - lo) * (1.0 + min(0.17 * n_entries, 1.0)))
+
+
+def _restyle(sample_defs: dict, config_dirs) -> None:
+    """Refresh plot-only sample keys (label, color, linestyle) from configs.
+
+    The pickles carry the sample definitions as they were at fill time, so
+    without this a legend fix would need the samples reprocessed.
+    """
+    from suep_plot.processor import load_samples
+
+    for cdir in config_dirs or []:
+        path = os.path.join(cdir, "samples.yaml")
+        if not os.path.exists(path):
+            raise SystemExit(f"--config-dir: no samples.yaml in {cdir}")
+        for name, cfg in load_samples(path).items():
+            if name in sample_defs:
+                sample_defs[name].update(
+                    {k: v for k, v in cfg.items()
+                     if k in ("label", "color", "linestyle", "group", "is_data")})
+
+
+def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag):
     """One canvas per variable: every signal (line) over every background (fill).
 
     Returns the mean separation of the signals from the first background.
@@ -61,26 +110,39 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest):
     fig, ax = plt.subplots(figsize=style.FIGSIZE)
     colors = style.palette()
 
+    def is_data(sample):
+        return bool(sample_defs.get(sample, {}).get("is_data", False))
+
     for i, (sample, sh) in enumerate(bkg_slices):
-        color = sample_defs.get(sample, {}).get("color", colors[i % len(colors)])
+        cfg = sample_defs.get(sample, {})
+        color = cfg.get("color", colors[i % len(colors)])
         label = f"{style.sample_label(sample_defs, sample)}: all clusters"
-        hep.histplot(sh, ax=ax, histtype="fill", color=color, alpha=0.25,
-                     edgecolor=color, linewidth=2, label=label)
+        if is_data(sample):
+            # data reads as points, so it never blends into an MC fill behind it
+            hep.histplot(sh, ax=ax, histtype="errorbar", color=color, label=label,
+                         markersize=5, elinewidth=1.5, yerr=np.sqrt(sh.variances()))
+        else:
+            hep.histplot(sh, ax=ax, histtype="fill", color=color, alpha=0.25,
+                         edgecolor=color, linewidth=2, label=label)
 
     seps = []
     ref = bkg_slices[0][1].values() if bkg_slices else None
     for i, (sample, sh) in enumerate(sig_slices):
         sep = 0.5 * np.abs(sh.values() - ref).sum() if ref is not None else np.nan
         seps.append(sep)
-        color = sample_defs.get(sample, {}).get("color",
-                                                colors[(i + len(bkg_slices)) % len(colors)])
-        label = f"{style.sample_label(sample_defs, sample)}: gen-matched (sep {sep:.2f})"
-        hep.histplot(sh, ax=ax, histtype="step", linewidth=2, color=color,
-                     label=label, yerr=np.sqrt(sh.variances()))
+        cfg = sample_defs.get(sample, {})
+        color = cfg.get("color", colors[(i + len(bkg_slices)) % len(colors)])
+        label = f"{style.sample_label(sample_defs, sample)}: {tag}"
+        if is_data(sample):
+            hep.histplot(sh, ax=ax, histtype="errorbar", color=color, label=label,
+                         markersize=5, elinewidth=1.5, yerr=np.sqrt(sh.variances()))
+        else:
+            hep.histplot(sh, ax=ax, histtype="step", linewidth=2, color=color,
+                         linestyle=cfg.get("linestyle", "-"),
+                         label=label, yerr=np.sqrt(sh.variances()))
 
     ax.set_xlabel(style.x_label(hist_cfg, base))
     ax.set_ylabel("Normalized")
-    ax.legend(fontsize=style.LEGEND_FONTSIZE, loc="best")
     if hist_cfg.get("log_x"):
         ax.set_xscale("log")
 
@@ -88,8 +150,12 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest):
                            for _, sh in bkg_slices + sig_slices])
     if allv.size and allv.min() / allv.max() < 1e-2:
         ax.set_yscale("log")
+    _headroom(ax, len(bkg_slices) + len(sig_slices))
+    ax.legend(fontsize=style.LEGEND_FONTSIZE, loc="upper right")
 
-    style.cms_label(ax)
+    has_data = any(sample_defs.get(s, {}).get("is_data", False)
+                   for s, _ in bkg_slices + sig_slices)
+    style.cms_label(ax, has_data=has_data)
     style.save(fig, dest, base)
     return float(np.nanmean(seps)) if seps else None
 
@@ -103,6 +169,9 @@ def main():
                    help="signal histogram suffix to pair with the inclusive one")
     p.add_argument("--sig-samples", nargs="*", default=None)
     p.add_argument("--bkg-samples", nargs="*", default=None)
+    p.add_argument("-c", "--config-dir", nargs="*", default=None,
+                   help="config dir(s) whose samples.yaml re-supplies label / color / "
+                        "linestyle at plot time, overriding what the pickles stored")
     args = p.parse_args()
 
     sig_all = style.load_samples(args.sig_out, args.sig_samples)
@@ -119,15 +188,26 @@ def main():
     for data in list(sig_all.values()) + list(bkg_all.values()):
         sample_defs.update(data.get("samples", {}))
         hist_defs.update(data.get("hist_defs", {}))
+    _restyle(sample_defs, args.config_dir)
 
     dest = args.dest
     os.makedirs(dest, exist_ok=True)
 
+    sig_keys = sorted(next(iter(sig_all.values()))["histograms"])
+    # An empty suffix pairs each signal histogram with the identically named
+    # background one (for runs whose config defines no gen-matched histograms).
+    keys = [k for k in sig_keys if k.endswith(args.suffix)] if args.suffix else sig_keys
+    if not keys:
+        raise SystemExit(
+            f"no signal histogram ends with '{args.suffix}' in {args.sig_out} "
+            f"({len(sig_keys)} histograms found).\n"
+            "That run's config defines no gen-matched histograms -- either process it "
+            "with a config that does (e.g. configs_mds_llp), or pass --suffix '' to "
+            "compare the inclusive signal histograms with the background ones.")
+
     seps = {}
-    for key in sorted(next(iter(sig_all.values()))["histograms"]):
-        if not key.endswith(args.suffix):
-            continue
-        base = key[: -len(args.suffix)]
+    for key in keys:
+        base = key[: len(key) - len(args.suffix)] if args.suffix else key
         # the inclusive config carries the axis label; fall back to the matched one
         hist_cfg = hist_defs.get(base, hist_defs.get(key, {}))
         sig_entries = [(n, d, key) for n, d in sig_all.items()]
@@ -136,7 +216,8 @@ def main():
         bkg_slices = collect(bkg_entries, base, hist_cfg)
         if not sig_slices or not bkg_slices:
             continue
-        sep = draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest)
+        sep = draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest,
+                   sig_tag(args.suffix))
         if sep is not None:
             seps[base] = sep
 
@@ -149,7 +230,7 @@ def main():
         for base, sep in ranked:
             fh.write(f"{sep:7.4f}  {base}\n")
     gallery = style.write_gallery(
-        dest, f"Gen-matched signal ({sig_list}) vs all clusters ({bkg_list})",
+        dest, f"Signal {sig_tag(args.suffix)} ({sig_list}) vs all clusters ({bkg_list})",
         "Unit-area normalized, sorted by separation.", ranked, "separation")
     print(f"{len(ranked)} plots -> {gallery}")
     for base, sep in ranked[:10]:

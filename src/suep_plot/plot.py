@@ -147,11 +147,18 @@ def _fold_flow(sh: hist.Hist) -> hist.Hist:
 
 
 def _prep_1d(sh: hist.Hist, hist_cfg: dict) -> hist.Hist:
-    """Apply plot-time transforms (rebin, overflow folding) to a 1D slice."""
+    """Apply plot-time transforms (rebin, overflow folding) to a 1D slice.
+
+    Under/overflow is folded into the first/last visible bin by default, so
+    every entry is on the canvas and normalized curves are normalized over the
+    same population even when samples spill out of the axis range by different
+    amounts.  ``flow: none`` in the histogram config opts out and drops the
+    out-of-range entries instead.
+    """
     rebin = int(hist_cfg.get("rebin") or 0)
     if rebin > 1:
         sh = sh[:: hist.rebin(rebin)]
-    if hist_cfg.get("flow") == "sum":
+    if str(hist_cfg.get("flow", "sum")).lower() not in ("none", "omit", "drop"):
         sh = _fold_flow(sh)
     return sh
 
@@ -221,11 +228,12 @@ def plot_histogram(
             # Stacking unit-area histograms is meaningless, so in shape mode
             # each background is normalized on its own and overlaid as a step,
             # directly comparable with the signal curves below.
-            for bh, label, color in zip(bkg_hists, bkg_labels, bkg_colors):
+            bkg_ls = [sample_defs.get(s, {}).get("linestyle", "-") for s in bkg_samples]
+            for bh, label, color, ls in zip(bkg_hists, bkg_labels, bkg_colors, bkg_ls):
                 if bh.sum().value > 0:
                     bh = bh * (1.0 / bh.sum().value)
                 hep.histplot(bh, ax=ax, histtype="step", label=label,
-                             color=color, linewidth=2,
+                             color=color, linewidth=2, linestyle=ls,
                              yerr=np.sqrt(bh.variances()))
         else:
             hep.histplot(
@@ -262,6 +270,7 @@ def plot_histogram(
             # draw large upper limits on every empty bin of a weighted hist.
             hep.histplot(sh, ax=ax, histtype="step", label=label,
                          color=cfg.get("color", "red"), linewidth=2,
+                         linestyle=cfg.get("linestyle", "-"),
                          yerr=np.sqrt(sh.variances()))
 
     for s, dh in zip(data_samples, data_hists):
