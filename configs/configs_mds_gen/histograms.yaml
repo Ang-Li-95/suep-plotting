@@ -7,9 +7,8 @@
 #   events.llp                              one entry per generated LLP
 #   events.<sys>Rechits.{matchedLLP,drLLP}  per-rechit truth match + dR
 #
-# Because nothing here touches events.<sys>Cluster, this config can run
-# with MDS_SKIP_CLUSTERING=1, which drops the DBSCAN step (~35% of the
-# processing time).
+# Because nothing here touches events.<sys>Cluster, this config's
+# columns.yaml leaves out the DBSCAN steps (~35% of the processing time).
 
 # ── (1) LLP multiplicity ──────────────────────────────────────────
 llp_n:

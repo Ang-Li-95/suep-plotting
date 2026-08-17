@@ -1,0 +1,15 @@
+# custom/columns.py settings for this config set (see that module's docstring
+# and the README's "Derived-column settings" section).
+#
+# These are the module defaults, written out explicitly: this config set is the
+# reference point of the cluster study, so its clustering must not depend on
+# what the submitting shell happened to export.  Copy the directory and edit
+# the numbers here for a variation (output_mds_minpts50, ...).
+parameters:
+  cluster_eps: 0.4
+  cluster_min_samples: 10
+  rpc_min_samples: 10
+  match_min_hits: 10
+  llpidx_convention: genpart
+
+steps: [clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]

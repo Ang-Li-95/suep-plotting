@@ -15,10 +15,10 @@
 # Signal points to Gen3 (2026-08-05); Gen2 kept below for the G4 comparison.
 #
 # The Gen3 grid is ggH, mMed=125, ctau=5 m, scanned in (mDark, temperature):
-# mDark = 2 / 5 / 12 GeV x T = 1 / 2.  The mDark=2 points keep their original
-# names suep_temp1 / suep_temp2 (referenced by every existing config); the
-# other four follow suep_mDark<M>_temp<T>.
-suep_temp1:
+# mDark = 2 / 5 / 12 GeV x T = 1 / 2, all named suep_mDark<M>_temp<T>.
+# The mDark=2 points were called suep_temp1 / suep_temp2 until 2026-08-13;
+# configs still using the old names fail to load (see the list in README_mds).
+suep_mDark2_temp1:
   files:
   - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
   tree: Events
@@ -28,7 +28,7 @@ suep_temp1:
   color: tab:blue
   linestyle: '-'
   group: signal
-suep_temp2:
+suep_mDark2_temp2:
   files:
   - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
   tree: Events

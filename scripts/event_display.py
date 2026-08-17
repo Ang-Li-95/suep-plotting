@@ -5,7 +5,8 @@ the chamber layout (:func:`drawRZ`), hits belonging to the same DBSCAN cluster
 share a colour, hits DBSCAN calls noise are light grey.  The clustering is the
 one the analysis uses (``custom/columns.py``: dR metric in eta-phi, same eps /
 min_samples), so the shapes on the display are the objects the cluster
-histograms are filled from.  RPC is not drawn.
+histograms are filled from -- pass ``-c <config set>`` to pick up that set's
+``columns.yaml`` parameters.  RPC is not drawn.
 
     conda activate mds
     export X509_USER_PROXY=$HOME/private/.proxy
@@ -40,8 +41,8 @@ from sklearn.cluster import DBSCAN
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from custom.columns import DBSCAN_PARAMS, MATCH_MIN_HITS  # noqa: E402
-from suep_plot.processor import _resolve_files  # noqa: E402
+import custom.columns as columns  # noqa: E402
+from suep_plot.processor import _resolve_files, load_columns_config  # noqa: E402
 
 OUTDIR = Path("/groups/hephy/cms/ang.li/suep_plots/event_display")
 
@@ -80,7 +81,7 @@ def read_event(arrays, i, systems):
         if f"{coll}_llpIdx" in arrays.fields:
             hits.update({b: ak.to_numpy(arrays[f"{coll}_{b}"][i])
                          for b in TRUTH_BRANCHES})
-        eps, min_samples = DBSCAN_PARAMS[sys_]
+        eps, min_samples = columns._dbscan_params(sys_)
         hits["label"] = cluster_labels(hits["Eta"], hits["Phi"], eps, min_samples)
         out[sys_] = hits
     return out
@@ -98,7 +99,8 @@ def cluster_summary(hits):
             if len(idx):
                 uniq, cnt = np.unique(idx, return_counts=True)
                 best, nbest = int(uniq[cnt.argmax()]), int(cnt.max())
-        summary.append((k, int(m.sum()), best if nbest >= MATCH_MIN_HITS else -1))
+        summary.append((k, int(m.sum()),
+                        best if nbest >= columns.PARAMS["match_min_hits"] else -1))
     return summary
 
 
@@ -280,7 +282,17 @@ def main():
                    help="add an eta-phi panel next to the r-z one")
     p.add_argument("-o", "--out", default=str(OUTDIR),
                    help=f"output directory (default: {OUTDIR})")
+    p.add_argument("-c", "--config-dir", default=None,
+                   help="config set whose columns.yaml sets the clustering "
+                        "parameters (default: the module defaults)")
     args = p.parse_args()
+
+    # Cluster exactly like the histograms of that config set were filled.
+    if args.config_dir:
+        columns.configure(load_columns_config(Path(args.config_dir) / "columns.yaml"))
+    eps, min_samples = columns._dbscan_params("csc")
+    print(f"DBSCAN: eps={eps}, min_samples={min_samples} (CSC/DT), "
+          f"match_min_hits={columns.PARAMS['match_min_hits']}")
 
     systems = [s.strip() for s in args.systems.split(",") if s.strip()]
     unknown = set(systems) - set(SYSTEMS)

@@ -1,0 +1,9 @@
+# custom/columns.py settings for this config set (see that module's docstring).
+#
+# Gen-level only: no DBSCAN, so no `clusters`/`cluster_isolation`/`llp_reco`
+# (~35% of derive()).  events.<sys>Cluster and llp.reco* are deliberately
+# absent, so a config that references them fails at expression validation.
+steps: [llp, llp_hits, llp_shape]
+
+parameters:
+  llpidx_convention: genpart

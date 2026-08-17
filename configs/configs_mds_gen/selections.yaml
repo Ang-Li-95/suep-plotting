@@ -1,6 +1,6 @@
 # ── Selections for the gen-level LLP / rechit study ───────────────
 # Truth-only masks on events.llp and the rechit collections; no cluster
-# (reco) selections, so this config runs with MDS_SKIP_CLUSTERING=1.
+# (reco) selections, so columns.yaml here enables no DBSCAN steps.
 
 # LLP decay volume flags (geometry defined in custom/columns.py)
 llp_in_csc:

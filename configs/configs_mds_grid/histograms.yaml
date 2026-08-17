@@ -1303,27 +1303,33 @@ dt_cluster_nstation_unmatched:
 dt_cluster_nlayer:
   expression: "events.dtCluster.nLayer"
   per_object: true
-  bins: 12
+  # a DT cluster spans several chambers, so nLayer runs past the 12 layers
+  # of a single chamber; the old 0-12 range overflowed ~99% of the entries
+  bins: 60
   lo: 0
-  hi: 12
+  hi: 60
   label: 'DT cluster $N_{\mathrm{layers}}$'
 
 dt_cluster_nlayer_matched:
   expression: "events.dtCluster.nLayer"
   per_object: true
   selections: [dt_cluster_matched]
-  bins: 12
+  # a DT cluster spans several chambers, so nLayer runs past the 12 layers
+  # of a single chamber; the old 0-12 range overflowed ~99% of the entries
+  bins: 60
   lo: 0
-  hi: 12
+  hi: 60
   label: 'matched DT cluster $N_{\mathrm{layers}}$'
 
 dt_cluster_nlayer_unmatched:
   expression: "events.dtCluster.nLayer"
   per_object: true
   selections: [dt_cluster_unmatched]
-  bins: 12
+  # a DT cluster spans several chambers, so nLayer runs past the 12 layers
+  # of a single chamber; the old 0-12 range overflowed ~99% of the entries
+  bins: 60
   lo: 0
-  hi: 12
+  hi: 60
   label: 'unmatched DT cluster $N_{\mathrm{layers}}$'
 
 rpc_cluster_size_unmatched:

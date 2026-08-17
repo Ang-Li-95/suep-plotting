@@ -212,9 +212,11 @@ csc_cluster_nlayer:
 dt_cluster_nlayer:
   expression: "events.dtCluster.nLayer"
   per_object: true
-  bins: 12
+  # a DT cluster spans several chambers, so nLayer runs past the 12 layers
+  # of a single chamber; the old 0-12 range overflowed ~99% of the entries
+  bins: 60
   lo: 0
-  hi: 12
+  hi: 60
   label: 'DT cluster $N_{\mathrm{layers}}$'
 
 rpc_cluster_nlayer:

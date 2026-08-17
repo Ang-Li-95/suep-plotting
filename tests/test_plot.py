@@ -8,6 +8,7 @@ import pytest
 
 from suep_plot.plot import (
     _fold_flow,
+    _prep_1d,
     _plot_efficiency,
     apply_xs_scaling,
     merge_results,
@@ -41,6 +42,14 @@ def test_fold_flow():
     sh = _fold_flow(h[{"dataset": "s"}])
     assert list(sh.view().value) == [2.0, 3.0]         # under->first, over->last
     assert sh.sum(flow=True).value == sh.sum().value   # flow bins emptied
+
+
+def test_prep_1d_folds_flow_by_default():
+    """Every entry lands on the canvas unless the config opts out."""
+    sh = make_hist("s", [-10, 25, 75, 150, 200])[{"dataset": "s"}]
+    assert list(_prep_1d(sh, {}).view().value) == [2.0, 3.0]
+    assert list(_prep_1d(sh, {"flow": "sum"}).view().value) == [2.0, 3.0]
+    assert list(_prep_1d(sh, {"flow": "none"}).view().value) == [1.0, 1.0]
 
 
 def test_apply_xs_scaling():
@@ -116,3 +125,54 @@ def test_write_cutflow(tmp_path):
     csv = (tmp_path / "cutflow.csv").read_text().strip().splitlines()
     assert csv[0] == "sample,selection,raw,weighted"
     assert csv[2].startswith("sig,baseline,40,")
+
+
+# ── suep-status: completion check and targeted resubmission ──────
+
+
+def _fake_run(tmp_path, tasks, written):
+    """A run directory as suep-submit leaves it, with *written* pickles present."""
+    slurm = tmp_path / "slurm"
+    (slurm / "filelists").mkdir(parents=True)
+    lines = []
+    for sample, part in tasks:
+        fl = slurm / "filelists" / f"{sample}{'.part' + str(part) if part != '' else ''}.txt"
+        fl.write_text("/some/file.root\n")
+        lines.append(f"{sample}\t{fl}\t{part}")
+    (slurm / "task_list.txt").write_text("\n".join(lines) + "\n")
+    (slurm / "job.sh").write_text("#!/bin/bash\nconda activate mds\n")
+    for name in written:
+        with open(tmp_path / name, "wb") as f:
+            pickle.dump({"histograms": {}}, f)
+    return tmp_path
+
+
+def test_status_reports_missing_tasks(tmp_path):
+    from suep_plot.status import check
+
+    out = _fake_run(tmp_path, [("sig", 0), ("sig", 1), ("bkg", "")],
+                    written=["sig.part0.pkl", "bkg.pkl"])
+    done, missing, corrupt = check(str(out))
+    assert [t.pkl_name for t in done] == ["sig.part0.pkl", "bkg.pkl"]
+    assert [t.index for t in missing] == [1]          # array index, not sample index
+    assert corrupt == []
+
+
+def test_status_flags_truncated_pickle(tmp_path):
+    """A task killed mid-write leaves a file that exists but cannot be read."""
+    from suep_plot.status import check
+
+    out = _fake_run(tmp_path, [("sig", 0)], written=["sig.part0.pkl"])
+    data = (out / "sig.part0.pkl").read_bytes()
+    (out / "sig.part0.pkl").write_bytes(data[: len(data) // 2])
+
+    assert [t.index for t in check(str(out))[2]] == [0]      # corrupt
+    assert check(str(out), verify=False)[0]                  # existence-only: "done"
+
+
+def test_status_array_ranges_are_contiguous():
+    from suep_plot.status import _format_ranges
+
+    assert _format_ranges([0, 1, 2, 5, 7, 8]) == "0-2,5,7-8"
+    assert _format_ranges([3]) == "3"
+    assert _format_ranges([]) == ""

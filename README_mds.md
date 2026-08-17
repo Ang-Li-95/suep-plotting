@@ -18,8 +18,8 @@ Two configurations are produced:
 
 | folder | DBSCAN min cluster size (CSC/DT) | how |
 | --- | --- | --- |
-| `output_mds/` | 50 (standard MDS) | default |
-| `output_mds_minpts10/` | 10 | `MDS_CLUSTER_MIN_SAMPLES=10` |
+| `output_mds/` | 10 | `configs_mds/columns.yaml` |
+| `output_mds_minpts50/` | 50 (standard MDS) | copy of that config with `cluster_min_samples: 50` |
 
 RPC clustering is always `min_samples=10` (sparse system). **Never pass `--lumi`** —
 `xs=1.0` in `configs_mds/samples.yaml` is a placeholder and lumi scaling would
@@ -51,23 +51,24 @@ bash reproduce.sh
 Or run the steps by hand:
 
 ```bash
-# default — DBSCAN min cluster size = 50  -> output_mds/
+# clustering as configured in configs_mds/columns.yaml  -> output_mds/
 suep-run  -c configs_mds -o output_mds --chunk-size 10000 --workers 8
 suep-plot output_mds -o output_mds/plots -c configs_mds -j 8
 
-# variant — DBSCAN min cluster size = 10  -> output_mds_minpts10/
-MDS_CLUSTER_MIN_SAMPLES=10 \
-  suep-run  -c configs_mds -o output_mds_minpts10 --chunk-size 10000 --workers 8
-suep-plot output_mds_minpts10 -o output_mds_minpts10/plots -c configs_mds -j 8
+# variant — DBSCAN min cluster size = 50: a copy of the config, one line changed
+cp -r configs_mds configs_mds_minpts50
+sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs_mds_minpts50/columns.yaml
+suep-run  -c configs_mds_minpts50 -o output_mds_minpts50 --chunk-size 10000 --workers 8
+suep-plot output_mds_minpts50 -o output_mds_minpts50/plots -c configs_mds_minpts50 -j 8
 
 # gen-level LLP / matched-rechit plots only -> output_mds_gen/
-MDS_SKIP_CLUSTERING=1 \
-  suep-run  -c configs_mds_gen -o output_mds_gen --chunk-size 10000 --workers 8
+# (configs_mds_gen/columns.yaml drops the DBSCAN steps; nothing to export)
+suep-run  -c configs_mds_gen -o output_mds_gen --chunk-size 10000 --workers 8
 suep-plot output_mds_gen -o output_mds_gen/plots -c configs_mds_gen -j 8
 ```
 
 Each `suep-run` reads all 50 files over xrootd and takes ~8–9 min/sample with 8
-workers; `configs_mds_gen` with `MDS_SKIP_CLUSTERING=1` needs ~3.5 min/sample.
+workers; `configs_mds_gen`, which runs no DBSCAN, needs ~3.5 min/sample.
 Galleries land at `<output>/plots/index.html`.
 
 ### Re-style only (no reprocessing)
@@ -78,11 +79,11 @@ pickles — seconds, no xrootd:
 
 ```bash
 suep-plot output_mds          -o output_mds/plots          -c configs_mds -j 8
-suep-plot output_mds_minpts10 -o output_mds_minpts10/plots -c configs_mds -j 8
+suep-plot output_mds_minpts50 -o output_mds_minpts50/plots -c configs_mds_minpts50 -j 8
 ```
 
 Reprocess (`suep-run`) only for **fill-time** changes: `custom/columns.py`,
-`MDS_CLUSTER_MIN_SAMPLES`, or a histogram's `bins`/`edges`/`selections`/`expression`.
+`columns.yaml`, or a histogram's `bins`/`edges`/`selections`/`expression`.
 
 ---
 
@@ -90,8 +91,9 @@ Reprocess (`suep-run`) only for **fill-time** changes: `custom/columns.py`,
 
 `suep-submit` writes one array task per sample (plus a merge+plot script) under
 `<output>/slurm/` and submits it. Slurm's default `--export=ALL` carries your
-**submit-shell** environment to the tasks, so `X509_USER_PROXY` and
-`MDS_CLUSTER_MIN_SAMPLES` must be exported *before* you submit.
+**submit-shell** environment to the tasks, so `X509_USER_PROXY` must be
+exported *before* you submit. The clustering knobs need no exporting: they live
+in the config directory's `columns.yaml`, which the tasks read.
 
 ```bash
 conda activate mds
@@ -137,22 +139,23 @@ suep-status -o output_mds --resubmit
 
 Add `--dry-run` to see the `sbatch` command without running it, or
 `--no-verify` to skip reading the pickles back (faster on large runs, but it
-will not catch a truncated file). **Export the same `MDS_CLUSTER_*` knobs the
-run was submitted with** — the rerun inherits them from your shell, and mixing
-values inside one output directory is invisible in the merged result;
-`--resubmit` warns when `job.sh` does not pin them.
+will not catch a truncated file). The rerun re-reads the config directory's
+`columns.yaml`, so it clusters like its neighbours as long as that file has not
+changed since the run — mixing settings inside one output directory is invisible
+in the merged result, so `--resubmit` warns when that file is newer than the
+submission.
 
-### Variant (min cluster size 10)
+### Variant (min cluster size 50)
 
-Only difference: export the knob before submitting so it propagates to the tasks.
+Only difference: its own config directory, one line changed.
 
 ```bash
-export MDS_CLUSTER_MIN_SAMPLES=10
-suep-submit -c configs_mds -o output_mds_minpts10 \
+cp -r configs_mds configs_mds_minpts50
+sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs_mds_minpts50/columns.yaml
+suep-submit -c configs_mds_minpts50 -o output_mds_minpts50 \
     --partition c --time 02:00:00 --mem 16000 --workers 8 --chunk-size 10000
 
-bash output_mds_minpts10/slurm/merge_and_plot.sh -j 8
-unset MDS_CLUSTER_MIN_SAMPLES     # so later default submissions use 50
+bash output_mds_minpts50/slurm/merge_and_plot.sh -j 8
 ```
 
 ### Splitting samples by files (more nodes in flight)
@@ -201,7 +204,8 @@ Notes:
 - [`configs_mds_llp/histograms.yaml`](configs_mds_llp/histograms.yaml) — all truth fills + efficiency num/den pairs; LLP η is signed (60 bins, −3..3), not |η|.
 - [`configs_mds_llp/selections.yaml`](configs_mds_llp/selections.yaml) — object/event masks (fiducial, ≥10 hits, matched cluster).
 - [`configs_mds_llp/derived_plots.yaml`](configs_mds_llp/derived_plots.yaml) — efficiency plots incl. the factorized chain and detector-station bands, matched fractions, sig-vs-bkg overlays.
-- [`custom/columns.py`](custom/columns.py) — `derive()`: LLP + cluster collections, matching, `MDS_CLUSTER_MIN_SAMPLES` / `MDS_SKIP_CLUSTERING` knobs.
+- [`custom/columns.py`](custom/columns.py) — `derive()`: LLP + cluster collections, matching; parameters and optional steps come from each config's `columns.yaml`.
+- [`configs_mds/columns.yaml`](configs_mds/columns.yaml) — clustering parameters of the reference run; [`configs_mds_gen/columns.yaml`](configs_mds_gen/columns.yaml) is the gen-level (no-DBSCAN) step list.
 - [`configs_mds_gen/`](configs_mds_gen) — gen-level-only subset (LLPs + matched rechits), → `output_mds_gen/`.
 
 ---
@@ -210,9 +214,9 @@ Notes:
 
 [`scripts/event_display.py`](scripts/event_display.py) draws one figure per
 event with every CSC/DT rechit at its global (|z|, r), coloured by DBSCAN
-cluster — the same clustering `derive()` uses (`DBSCAN_PARAMS` is imported from
-`custom/columns.py`, so `MDS_CLUSTER_MIN_SAMPLES` / `MDS_CLUSTER_EPS` change the
-display exactly as they change the histograms). One colour per cluster (CSC and
+cluster — the same clustering `derive()` uses (`-c <config set>` reads that
+set's `columns.yaml`, so the display clusters exactly as its histograms were
+filled). One colour per cluster (CSC and
 DT are told apart by position, not by colour or marker) and the marker is the
 hit-level truth: `o` for a rechit carrying an `llpIdx`, `x` for one that does
 not, so the LLP shower and the activity DBSCAN swept up with it stay visible
@@ -225,7 +229,7 @@ folded to |z| and a −z cluster lands on the same picture as a +z one.
 ```bash
 conda activate mds
 export X509_USER_PROXY=$HOME/private/.proxy
-python scripts/event_display.py -d suep_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
+python scripts/event_display.py -c configs_mds -d suep_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
 ```
 
 Figures land in `/groups/hephy/cms/ang.li/suep_plots/event_display/` as
@@ -247,9 +251,10 @@ LLP gen kinematics, per-LLP matched-rechit counts, the ΔR plots below, and 2D
 maps of CSC nHits and ΔR₉₀ against |η| / pT / energy / boost (sections `4d`–`4f`;
 their `profile_x` curves are in `derived_plots.yaml`), and nothing else (68
 histograms against 237, signal samples only, since the background has no
-`SUEPGenPart`). It touches no cluster collection, so run it with
-`MDS_SKIP_CLUSTERING=1` to skip DBSCAN (~35 % of `derive()`). Under that flag
-`events.<sys>Cluster` and `llp.reco*` are deliberately *not* attached, so a
+`SUEPGenPart`). It touches no cluster collection, so its
+[`columns.yaml`](configs_mds_gen/columns.yaml) enables only the
+`llp`/`llp_hits`/`llp_shape` steps and skips DBSCAN (~35 % of `derive()`).
+`events.<sys>Cluster` and `llp.reco*` are then deliberately *not* attached, so a
 config that needs them fails at expression validation instead of quietly
 filling empty histograms. `configs_mds/` + `configs_mds_llp/` keep the full
 reconstruction study (clusters, efficiencies) and do not repeat these

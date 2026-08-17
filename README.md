@@ -22,7 +22,7 @@ re-run.
 4. [Quick start](#quick-start)
 5. [The commands](#the-commands) — `suep-run`, `suep-plot`, `suep-submit`, `suep-status`, `suep-reweight`
 6. [Config sets in this repo](#config-sets-in-this-repo)
-7. [Environment knobs](#environment-knobs)
+7. [Derived-column settings](#derived-column-settings-columnsyaml)
 8. [Configuration reference](#configuration-reference)
    - [samples.yaml](#samplesyaml)
    - [histograms.yaml](#histogramsyaml)
@@ -47,13 +47,14 @@ re-run.
 suep-plotting/
 ├── pyproject.toml                   # package metadata, dependencies, console scripts
 ├── datasets.yaml                    # central dataset registry (paths, xs, labels)
-├── configs/                         # a "config set" = these six files
+├── configs/                         # a "config set" = these files
 │   ├── samples.yaml                 # which datasets to run, cross sections, styling
 │   ├── histograms.yaml              # histogram definitions (NanoEvents expressions)
 │   ├── selections.yaml              # named event-/object-level cuts
 │   ├── corrections.yaml             # correctionlib scale-factor definitions
 │   ├── reweights.yaml               # event-/object-level reweighting (expressions & maps)
-│   └── derived_plots.yaml           # profiles/projections/efficiency/ratio at plot time
+│   ├── derived_plots.yaml           # profiles/projections/efficiency/ratio at plot time
+│   └── columns.yaml                 # optional: parameters + enabled steps of derive()
 ├── configs_mds/  configs_mds_llp/  configs_mds_gen/  …
 │                                    # the analysis config sets (see "Config sets")
 ├── custom/
@@ -349,7 +350,7 @@ see the same datasets and differ only in what they fill.
 | [`configs/`](configs/) | Generic template/example set (jets, muons, MET) — the starting point for a new study. | no |
 | [`configs_mds/`](configs_mds/) | Reco-only DBSCAN CSC/DT/RPC cluster properties and shower shapes, ΔR to nearest muon/jet. Fills identically on samples without truth branches. | no |
 | [`configs_mds_llp/`](configs_mds_llp/) | Superset of the above plus everything truth-dependent: LLP collection, matched/unmatched cluster splits, efficiency chain, sig-vs-bkg overlays. | yes |
-| [`configs_mds_gen/`](configs_mds_gen/) | Gen-level only: LLP kinematics, per-LLP matched-rechit counts, ΔR₉₀ maps. Run with `MDS_SKIP_CLUSTERING=1`. | yes |
+| [`configs_mds_gen/`](configs_mds_gen/) | Gen-level only: LLP kinematics, per-LLP matched-rechit counts, ΔR₉₀ maps. Its `columns.yaml` skips DBSCAN. | yes |
 | [`configs_mds_data/`](configs_mds_data/) | The same cluster plots on collision data / ZeroBias. | no |
 | [`configs_mds_grid/`](configs_mds_grid/) | Signal mass/cτ grid scan. | yes |
 | [`configs_mds_sigonly/`](configs_mds_sigonly/) | Signal samples only — quick turnaround. | yes |
@@ -381,30 +382,69 @@ version of it end to end.
 
 ---
 
-## Environment knobs
+## Derived-column settings (`columns.yaml`)
 
-`custom/columns.py` reads a few environment variables. They change what
-`derive()` computes, so **they are part of a run's identity** — a directory
-filled with different values in different tasks is silently inconsistent.
-Export them in the same shell you run or submit from.
+The knobs of `custom/columns.py` belong in the config directory, next to
+`histograms.yaml`, as an optional `columns.yaml`:
+
+```yaml
+parameters:
+  cluster_eps: 0.4            # DBSCAN eps — the ΔR radius in η–φ, all systems
+  cluster_min_samples: 10     # DBSCAN min_samples for CSC/DT (50 = standard MDS)
+  rpc_min_samples: 10         # DBSCAN min_samples for RPC (sparse system)
+  match_min_hits: 10          # cluster ↔ LLP truth-match threshold
+  dr_quantiles: [0.5, 0.8, 0.9]   # → llp.dr50/dr80/dr90
+  pair_max_hits: 2000
+  llpidx_convention: genpart  # or 'ordinal' (pre-Geant4-fix files)
+steps: [clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]
+```
+
+Both blocks are optional; anything left out keeps the default shown above.
+The file is part of the run's identity — `suep-run` treats it like the other
+configs for the up-to-date check, so editing it reprocesses.
+
+`steps` selects which of the optional helpers `derive()` runs (the default is
+all of them):
+
+| Step | Attaches | Needs |
+|------|----------|-------|
+| `clusters` | `events.<sys>Cluster` (DBSCAN, ~35 % of `derive()`) | — |
+| `cluster_isolation` | `drMuon` / `drJet` on the clusters | `clusters` |
+| `llp` | `events.llp`: kinematics, decay vertex, volume flags | — |
+| `llp_hits` | `llp.nHits{CSC,DT,RPC,Total}` | `llp` |
+| `llp_reco` | `llp.reco*`, `nRecoCluster*`, `clusterHitFrac*` | `clusters`, `llp_hits` |
+| `llp_shape` | `llp.dr*` / `drPair*`, rechit `matchedLLP` / `drLLP` | `llp` |
+
+A step you leave out means its fields are *absent*, so a config referencing
+them fails at expression validation instead of quietly filling empty
+histograms. Unknown keys, unknown steps and unmet dependencies are fatal.
+See [`configs_mds_gen/columns.yaml`](configs_mds_gen/columns.yaml) for the
+gen-level-only set.
+
+### Environment knobs
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `MDS_CLUSTER_MIN_SAMPLES` | `10` | DBSCAN `min_samples` for CSC/DT (`50` = standard MDS). RPC is always 10. |
-| `MDS_CLUSTER_EPS` | `0.4` | DBSCAN `eps` — the ΔR radius in η–φ. |
-| `MDS_SKIP_CLUSTERING` | `0` | `1` skips DBSCAN (~35 % of `derive()`); `events.<sys>Cluster` and `llp.reco*` are then deliberately absent, so a config needing them fails at expression validation. Use with `configs_mds_gen`. |
-| `MDS_LLPIDX_CONVENTION` | `genpart` | How rechit `llpIdx` is interpreted: `genpart` (index into `SUEPGenPart`) or `ordinal` (n-th LLP). |
 | `X509_USER_PROXY` | — | Grid proxy for xrootd reads (see [Setup](#2-grid-proxy-for-xrootd-inputs)). |
 | `CORRECTIONLIB_DATA` | — | Searched first for `auto:` correction payloads, before cvmfs jsonpog-integration. |
 | `MPLBACKEND` | set to `Agg` | Forced headless by the CLI unless you override it. |
 
-```bash
-MDS_CLUSTER_MIN_SAMPLES=50 MDS_CLUSTER_EPS=0.2 \
-  suep-run -c configs_mds -o output_mds_minpts50_dr02 --chunk-size 10000
-```
+Nothing about `derive()` is settable from the environment: the derived-column
+settings live in the config set, so a run is reproducible from its config
+directory alone and nothing has to be exported before `suep-run` or
+`suep-submit`. (The `MDS_CLUSTER_MIN_SAMPLES` / `MDS_CLUSTER_EPS` /
+`MDS_SKIP_CLUSTERING` / `MDS_LLPIDX_CONVENTION` variables older runs used are
+gone — put the values in `columns.yaml`. Output directories filled before the
+switch used the defaults above unless their command line says otherwise.)
+Because a rerun re-reads the config, `suep-status --resubmit` warns if
+`columns.yaml` was edited after the run was submitted.
 
-`suep-status --resubmit` warns when `job.sh` does not pin these, because the
-rerun would otherwise inherit whatever your current shell has.
+```bash
+# a variation on an existing config set: copy it, edit columns.yaml
+cp -r configs_mds configs_mds_minpts50
+sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs_mds_minpts50/columns.yaml
+suep-run -c configs_mds_minpts50 -o output_mds_minpts50 --chunk-size 10000
+```
 
 ---
 
@@ -688,9 +728,9 @@ suep-run -c configs -o output --force
 # process + plot in one go
 suep-run --plot --lumi 38.5 --log
 
-# MDS config sets: small chunks (DBSCAN per chunk), pinned clustering knobs
-MDS_CLUSTER_MIN_SAMPLES=50 \
-  suep-run -c configs_mds -o output_mds_minpts50 --chunk-size 10000 --workers 8
+# MDS config sets: small chunks (DBSCAN runs per chunk); clustering knobs
+# come from configs_mds/columns.yaml
+suep-run -c configs_mds -o output_mds --chunk-size 10000 --workers 8
 ```
 
 Local runs are for one sample, a few files, or a styling iteration. Anything
@@ -723,8 +763,7 @@ The full cycle:
 ```bash
 conda activate mds
 export X509_USER_PROXY=$HOME/private/.proxy      # jobs inherit this
-export MDS_CLUSTER_MIN_SAMPLES=10                # and these — pin them explicitly
-export MDS_CLUSTER_EPS=0.4
+# clustering knobs need no exporting: they live in configs_mds/columns.yaml
 
 suep-submit -c configs_mds -o output_mds --conda-env mds \
     --time 08:00:00 --mem 8000 --partition c \
@@ -792,6 +831,43 @@ Resubmitting by hand also works; the task index is the line number − 1 in
 sbatch --array=3,7 output_mds/slurm/job.sh
 ```
 
+### Adding up the per-task outputs
+
+There is no separate merge step to run: `suep-plot` sums whatever pickles it is
+given. Each `hist.Hist` carries a `dataset` string axis, so adding pickles keeps
+samples apart, while several pickles of the *same* sample accumulate into the
+same bin:
+
+```bash
+bash output_mds/slurm/merge_and_plot.sh        # = suep-plot output_mds -o output_mds/plots -c configs_mds
+suep-plot output_mds -o output_mds/plots -c configs_mds -j 8      # the same, by hand
+```
+
+`merge_results()` globs `*.pkl` from the directory and sums the histograms
+together with each sample's `sumw`, `nevents` and cutflow counts. So a
+`--files-per-job` run's `suep_temp1.part0.pkl … part4.pkl` become one
+`suep_temp1` with correct `--lumi` normalization and a correct cutflow — no
+renaming or concatenating needed. Pickles from *different* runs merge just as
+well (`suep-plot output_a output_b -o cmp`), as long as the histogram axes agree.
+
+**Check completeness first.** A missing or truncated part is not an error at
+merge time, it just undercounts that sample — which is why `suep-status`
+verifies each pickle unpickles:
+
+```bash
+suep-status -o output_mds && bash output_mds/slurm/merge_and_plot.sh
+```
+
+To get one merged object outside the plotter, use `--save-root merged.root`
+(`<histogram>/<sample>` TH1Ds) or call the same helper:
+
+```python
+from suep_plot.plot import merge_results, _resolve_inputs
+data = merge_results(_resolve_inputs("output_mds"))
+h = data["histograms"]["csc_cluster_size"][{"dataset": "suep_temp1"}]
+print(data["sumw"], data["nevents"])
+```
+
 ### What `suep-submit` writes
 
 ```
@@ -835,13 +911,14 @@ python scripts/compare_sig_bkg.py output_mds_llp output_mds_data sigbkg_dir \
 ```
 
 **Event display** — r–z picture of every CSC/DT rechit, coloured by DBSCAN
-cluster, using the analysis's own clustering (so `MDS_CLUSTER_*` change the
-display exactly as they change the histograms):
+cluster, using the analysis's own clustering (`-c <config set>` reads that
+set's `columns.yaml`, so the display clusters exactly as its histograms were
+filled):
 
 ```bash
 conda activate mds
 export X509_USER_PROXY=$HOME/private/.proxy
-python scripts/event_display.py -d suep_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
+python scripts/event_display.py -c configs_mds -d suep_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
 ```
 
 Useful flags: `--zoom` (crop to the clustered hits), `--with-etaphi` (add the
@@ -1058,8 +1135,9 @@ hundreds.  Local directories work the same way.  Listing happens each time
 | Local run dies with process/fork errors | Login-node process cap — drop `--workers`, or submit with `suep-submit`. |
 | Killed for memory | Lower `--chunk-size` (10000 is right for the MDS configs, where DBSCAN runs per chunk), or raise `--mem` on Slurm. |
 | Warning listing expressions that failed the check | Typo or missing branch. The processor validates every expression once on a small slice with `derive()` applied — fix the expression, or the histogram fills empty. |
-| `configs_mds_gen` fails at validation on `events.<sys>Cluster` | Expected under `MDS_SKIP_CLUSTERING=1`, which deliberately omits the cluster collections. Use a config set that doesn't reference them, or unset the flag. |
-| Merged output looks inconsistent | Shards filled with different `MDS_*` knobs. Export the same values everywhere, and keep one output directory per (config set × clustering). |
+| `configs_mds_gen` fails at validation on `events.<sys>Cluster` | Expected: its `columns.yaml` omits the `clusters` step, so the cluster collections are deliberately absent. Use a config set that doesn't reference them, or add the step. |
+| `ERROR in columns.yaml: ...` | Unknown key/parameter/step, or a step whose dependency is not enabled — see the table in [Derived-column settings](#derived-column-settings-columnsyaml). Fatal by design: a typo here would mean silently different histograms. |
+| Merged output looks inconsistent | Shards filled with different derived-column settings. Keep the knobs in the config set's `columns.yaml` (not in `$MDS_*`) and one output directory per (config set × clustering). |
 | Plots have no labels / wrong colors | `suep-plot` was called without `-c <config set>`, so styling fell back to defaults. |
 | Empty or truncated pickles after a Slurm run | `suep-status -o <dir>` finds them; `--resubmit` reruns exactly those tasks. |
 | Efficiency plots look distorted | `--lumi` was passed to an MDS config set (placeholder `xs: 1.0`). Drop it. |

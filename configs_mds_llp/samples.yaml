@@ -1,6 +1,0 @@
-# Datasets come from the central registry; see ../datasets.yaml.
-_include: ../datasets.yaml
-
-suep_temp1:
-suep_temp2:
-dy_2mu_50to120:
