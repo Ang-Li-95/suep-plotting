@@ -1,9 +1,9 @@
-# Datasets come from the central registry; see ../datasets.yaml.
+# Datasets come from the central registry; see ../../datasets.yaml.
 #
 # Same fills as configs_mds/, with ZeroBias data added: the reco-only cluster
 # histograms of this study need no truth branches, so data fills them exactly
 # like the MC (clusters are unmatched, hasTruth False).
-_include: ../datasets.yaml
+_include: ../../datasets.yaml
 
 suep_mDark2_temp1:
 suep_mDark2_temp2:

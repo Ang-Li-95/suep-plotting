@@ -1,8 +1,8 @@
 """Overlay gen-matched signal clusters against all background clusters.
 
 The two populations live in different output directories: the signal's
-``<var>_matched`` histograms come from a configs_mds_llp run (truth needed),
-the background's inclusive ``<var>`` from a configs_mds run (the background has
+``<var>_matched`` histograms come from a configs/configs_mds_grid run (truth needed),
+the background's inclusive ``<var>`` from a configs/configs_mds run (the background has
 no truth branches, so *all* its clusters are the fake/pile-up reference).
 Because both configs define the inclusive histograms identically, the axes
 match and the two can be drawn on one canvas without refilling anything.
@@ -162,8 +162,8 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("sig_out", help="output dir of the configs_mds_llp run")
-    p.add_argument("bkg_out", help="output dir of the configs_mds run")
+    p.add_argument("sig_out", help="output dir of the configs/configs_mds_grid run")
+    p.add_argument("bkg_out", help="output dir of the configs/configs_mds run")
     p.add_argument("dest", help="directory for the comparison figures")
     p.add_argument("--suffix", default="_matched",
                    help="signal histogram suffix to pair with the inclusive one")
@@ -202,7 +202,7 @@ def main():
             f"no signal histogram ends with '{args.suffix}' in {args.sig_out} "
             f"({len(sig_keys)} histograms found).\n"
             "That run's config defines no gen-matched histograms -- either process it "
-            "with a config that does (e.g. configs_mds_llp), or pass --suffix '' to "
+            "with a config that does (e.g. configs/configs_mds_grid), or pass --suffix '' to "
             "compare the inclusive signal histograms with the background ones.")
 
     seps = {}

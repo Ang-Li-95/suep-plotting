@@ -259,8 +259,8 @@ def draw_event(event, meta, out_path, zoom=False, with_etaphi=False,
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("-d", "--dataset", default="suep_temp1",
-                   help="dataset name in datasets.yaml (default: suep_temp1)")
+    p.add_argument("-d", "--dataset", default="suep_mDark2_temp1",
+                   help="dataset name in datasets.yaml (default: suep_mDark2_temp1)")
     p.add_argument("-f", "--files", nargs="+",
                    help="explicit ROOT file(s), overrides --dataset")
     p.add_argument("--nfiles", type=int, default=1,

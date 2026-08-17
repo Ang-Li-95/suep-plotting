@@ -24,11 +24,32 @@ def _parse_formats(spec: str) -> tuple[str, ...]:
     return formats or ("png", "pdf")
 
 
+def _is_config_set(path: str) -> bool:
+    """A config set is a directory holding the YAML files, not a parent of them.
+
+    ``configs/`` holds one directory per study (``configs/configs_mds``, ...),
+    so the directory name alone doesn't say whether it can be used as ``-c``.
+    """
+    return os.path.isfile(os.path.join(path, "histograms.yaml"))
+
+
+def _check_config_dir(path: str) -> str:
+    """Fail with the list of available sets instead of a FileNotFoundError."""
+    if _is_config_set(path):
+        return path
+    sets = sorted(d for d in os.listdir(path) if _is_config_set(os.path.join(path, d))) \
+        if os.path.isdir(path) else []
+    hint = ("\n  available sets: " + ", ".join(os.path.join(path, s) for s in sets)
+            if sets else "")
+    raise SystemExit(
+        f"ERROR: {path} is not a config set (no histograms.yaml).{hint}")
+
+
 def run(argv=None):
     """Process samples and fill histograms (one output file per sample)."""
     parser = argparse.ArgumentParser(prog="suep-run",
                                      description="Process MDSNano samples and fill histograms.")
-    parser.add_argument("-c", "--config-dir", default="configs", help="Directory with YAML configs (default: configs)")
+    parser.add_argument("-c", "--config-dir", default="configs", help="Config set: directory with the six YAML files (e.g. configs/configs_mds)")
     parser.add_argument("-o", "--output-dir", default="output", help="Output directory for per-sample pickle files (default: output)")
     parser.add_argument("-s", "--samples", nargs="*", default=None, help="Process only these samples (default: all)")
     parser.add_argument("--chunk-size", type=int, default=100_000, help="Events per chunk")
@@ -43,6 +64,8 @@ def run(argv=None):
     parser.add_argument("--formats", default="png,pdf", help="(with --plot) comma-separated figure formats")
     parser.add_argument("-j", "--jobs", type=int, default=0, help="(with --plot) parallel rendering processes (0 = auto)")
     args = parser.parse_args(argv)
+
+    _check_config_dir(args.config_dir)
 
     from .processor import run_all
     run_all(args.config_dir, args.output_dir, args.samples, args.chunk_size,
@@ -73,8 +96,8 @@ def plot(argv=None):
     parser.add_argument("input", nargs="+", help="Pickle file(s) or directory containing .pkl files")
     parser.add_argument("-o", "--output-dir", default="plots", help="Output directory for figures")
     parser.add_argument("-c", "--config-dir", default=None,
-                        help="Config directory for derived_plots.yaml and plot-time styling "
-                             "overrides (default: ./configs when it exists)")
+                        help="Config set for derived_plots.yaml and plot-time styling "
+                             "overrides (e.g. configs/configs_mds)")
     parser.add_argument("--normalize", action="store_true", help="Normalize signal histograms to unit area")
     parser.add_argument("--log", action="store_true", help="Logarithmic y-axis")
     parser.add_argument("--lumi", type=float, default=None,
@@ -90,8 +113,10 @@ def plot(argv=None):
                         help="Additionally export all histograms to a ROOT file")
     args = parser.parse_args(argv)
 
-    if args.config_dir is None and os.path.isdir("configs"):
+    if args.config_dir is None and _is_config_set("configs"):
         args.config_dir = "configs"
+    elif args.config_dir is not None:
+        _check_config_dir(args.config_dir)
 
     os.environ.setdefault("MPLBACKEND", "Agg")
     from .plot import plot_all
@@ -106,11 +131,11 @@ def reweight(argv=None):
     parser = argparse.ArgumentParser(
         prog="suep-reweight",
         description="Generate a binned reweight map = <num>/<den> of a processed "
-                    "histogram, ready to use via 'file:' in configs/reweights.yaml.",
+                    "histogram, ready to use via 'file:' in a set's reweights.yaml.",
         epilog="Example:\n"
                "  suep-reweight output/ --hist ht --num data_2024 --den qcd \\\n"
-               "      -o configs/ht_reweight.yaml\n"
-               "  # then in configs/reweights.yaml:\n"
+               "      -o configs/configs_mds/ht_reweight.yaml\n"
+               "  # then in configs/configs_mds/reweights.yaml:\n"
                "  #   ht_dataMC:\n"
                "  #     file: ht_reweight.yaml\n"
                "  #     apply_to: [background]\n",
@@ -171,7 +196,7 @@ def submit(argv=None):
     """Submit processing jobs to Slurm."""
     parser = argparse.ArgumentParser(prog="suep-submit",
                                      description="Submit histogram-filling jobs to Slurm.")
-    parser.add_argument("-c", "--config-dir", default="configs", help="Directory with YAML configs")
+    parser.add_argument("-c", "--config-dir", default="configs", help="Config set: directory with the six YAML files (e.g. configs/configs_mds)")
     parser.add_argument("-o", "--output-dir", default="output", help="Output directory for per-job pickles")
     parser.add_argument("-s", "--samples", nargs="*", default=None,
                         help="Submit only these samples (default: all)")
@@ -189,6 +214,8 @@ def submit(argv=None):
                              "(default: one task per sample); parts are summed by suep-plot")
     parser.add_argument("--dry-run", action="store_true", help="Generate scripts without submitting")
     args = parser.parse_args(argv)
+
+    _check_config_dir(args.config_dir)
 
     from .slurm import submit_jobs
     submit_jobs(

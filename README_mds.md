@@ -8,21 +8,21 @@ sets by whether they need gen information:
 
 | config | contents | output |
 | --- | --- | --- |
-| [`configs_mds/`](configs_mds/) | reco-only DBSCAN cluster properties and shower shapes, incl. ΔR to the closest muon / jet — fills identically on samples without truth branches | `output_mds*/` |
-| [`configs_mds_llp/`](configs_mds_llp/) | everything truth-dependent: the LLP collection, the truth-matched/unmatched cluster splits, the efficiency chain, the matched fractions and the signal-vs-background overlays | `output_mds_llp/` |
+| [`configs/configs_mds/`](configs/configs_mds/) | reco-only DBSCAN cluster properties and shower shapes, incl. ΔR to the closest muon / jet — fills identically on samples without truth branches | `output_mds*/` |
+| [`configs/configs_mds_grid/`](configs/configs_mds_grid/) | everything truth-dependent: the LLP collection, the truth-matched/unmatched cluster splits, the efficiency chain, the matched fractions and the signal-vs-background overlays; runs the full (mDark, T) grid | `output_mds_grid/` |
 
-Both run over the same samples and the same `derive()`, so pick the config set
-by which plots you want; `configs_mds_llp/` is the superset of the fills.
+Both use the same `derive()`, so pick the config set
+by which plots you want; `configs/configs_mds_grid/` is the superset of the fills.
 
 Two configurations are produced:
 
 | folder | DBSCAN min cluster size (CSC/DT) | how |
 | --- | --- | --- |
-| `output_mds/` | 10 | `configs_mds/columns.yaml` |
+| `output_mds/` | 10 | `configs/configs_mds/columns.yaml` |
 | `output_mds_minpts50/` | 50 (standard MDS) | copy of that config with `cluster_min_samples: 50` |
 
 RPC clustering is always `min_samples=10` (sparse system). **Never pass `--lumi`** —
-`xs=1.0` in `configs_mds/samples.yaml` is a placeholder and lumi scaling would
+`xs=1.0` in `configs/configs_mds/samples.yaml` is a placeholder and lumi scaling would
 distort the Clopper–Pearson efficiency intervals.
 
 ---
@@ -51,35 +51,35 @@ bash reproduce.sh
 Or run the steps by hand:
 
 ```bash
-# clustering as configured in configs_mds/columns.yaml  -> output_mds/
-suep-run  -c configs_mds -o output_mds --chunk-size 10000 --workers 8
-suep-plot output_mds -o output_mds/plots -c configs_mds -j 8
+# clustering as configured in configs/configs_mds/columns.yaml  -> output_mds/
+suep-run  -c configs/configs_mds -o output_mds --chunk-size 10000 --workers 8
+suep-plot output_mds -o output_mds/plots -c configs/configs_mds -j 8
 
 # variant — DBSCAN min cluster size = 50: a copy of the config, one line changed
-cp -r configs_mds configs_mds_minpts50
-sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs_mds_minpts50/columns.yaml
-suep-run  -c configs_mds_minpts50 -o output_mds_minpts50 --chunk-size 10000 --workers 8
-suep-plot output_mds_minpts50 -o output_mds_minpts50/plots -c configs_mds_minpts50 -j 8
+cp -r configs/configs_mds configs/configs_mds_minpts50
+sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs/configs_mds_minpts50/columns.yaml
+suep-run  -c configs/configs_mds_minpts50 -o output_mds_minpts50 --chunk-size 10000 --workers 8
+suep-plot output_mds_minpts50 -o output_mds_minpts50/plots -c configs/configs_mds_minpts50 -j 8
 
 # gen-level LLP / matched-rechit plots only -> output_mds_gen/
-# (configs_mds_gen/columns.yaml drops the DBSCAN steps; nothing to export)
-suep-run  -c configs_mds_gen -o output_mds_gen --chunk-size 10000 --workers 8
-suep-plot output_mds_gen -o output_mds_gen/plots -c configs_mds_gen -j 8
+# (configs/configs_mds_gen/columns.yaml drops the DBSCAN steps; nothing to export)
+suep-run  -c configs/configs_mds_gen -o output_mds_gen --chunk-size 10000 --workers 8
+suep-plot output_mds_gen -o output_mds_gen/plots -c configs/configs_mds_gen -j 8
 ```
 
 Each `suep-run` reads all 50 files over xrootd and takes ~8–9 min/sample with 8
-workers; `configs_mds_gen`, which runs no DBSCAN, needs ~3.5 min/sample.
+workers; `configs/configs_mds_gen`, which runs no DBSCAN, needs ~3.5 min/sample.
 Galleries land at `<output>/plots/index.html`.
 
 ### Re-style only (no reprocessing)
 
 If you change **plot-time** keys only (labels, `rebin`, `log_*`, `spans`, or
-anything in `configs_mds/derived_plots.yaml`), re-run `suep-plot` on the existing
+anything in `configs/configs_mds/derived_plots.yaml`), re-run `suep-plot` on the existing
 pickles — seconds, no xrootd:
 
 ```bash
-suep-plot output_mds          -o output_mds/plots          -c configs_mds -j 8
-suep-plot output_mds_minpts50 -o output_mds_minpts50/plots -c configs_mds_minpts50 -j 8
+suep-plot output_mds          -o output_mds/plots          -c configs/configs_mds -j 8
+suep-plot output_mds_minpts50 -o output_mds_minpts50/plots -c configs/configs_mds_minpts50 -j 8
 ```
 
 Reprocess (`suep-run`) only for **fill-time** changes: `custom/columns.py`,
@@ -103,7 +103,7 @@ export X509_USER_PROXY=$HOME/private/.proxy   # ensure the proxy is valid (voms-
 ### Default (min cluster size 50)
 
 ```bash
-suep-submit -c configs_mds -o output_mds \
+suep-submit -c configs/configs_mds -o output_mds \
     --partition c --time 02:00:00 --mem 16000 --workers 8 --chunk-size 10000
 
 # after all array tasks finish:
@@ -150,9 +150,9 @@ submission.
 Only difference: its own config directory, one line changed.
 
 ```bash
-cp -r configs_mds configs_mds_minpts50
-sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs_mds_minpts50/columns.yaml
-suep-submit -c configs_mds_minpts50 -o output_mds_minpts50 \
+cp -r configs/configs_mds configs/configs_mds_minpts50
+sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs/configs_mds_minpts50/columns.yaml
+suep-submit -c configs/configs_mds_minpts50 -o output_mds_minpts50 \
     --partition c --time 02:00:00 --mem 16000 --workers 8 --chunk-size 10000
 
 bash output_mds_minpts50/slurm/merge_and_plot.sh -j 8
@@ -164,7 +164,7 @@ By default one array task = one whole sample (2 tasks here). Add
 `--files-per-job N` to shard each sample's file list into tasks of N files:
 
 ```bash
-suep-submit -c configs_mds -o output_mds \
+suep-submit -c configs/configs_mds -o output_mds \
     --partition c --time 01:00:00 --mem 16000 --workers 8 --chunk-size 10000 \
     --files-per-job 5          # 25 files/sample -> 5 tasks/sample -> 10 array tasks
 
@@ -198,15 +198,15 @@ Notes:
 
 ## What lives where
 
-- [`configs_mds/samples.yaml`](configs_mds/samples.yaml) — the two samples, 25 xrootd URLs each (identical in `configs_mds_llp/`).
-- [`configs_mds/histograms.yaml`](configs_mds/histograms.yaml) — reco-only cluster fills, incl. `<sys>_cluster_dr_muon` / `_dr_jet`.
-- [`configs_mds/selections.yaml`](configs_mds/selections.yaml) — reco-only event masks (`has_<sys>_cluster`).
-- [`configs_mds_llp/histograms.yaml`](configs_mds_llp/histograms.yaml) — all truth fills + efficiency num/den pairs; LLP η is signed (60 bins, −3..3), not |η|.
-- [`configs_mds_llp/selections.yaml`](configs_mds_llp/selections.yaml) — object/event masks (fiducial, ≥10 hits, matched cluster).
-- [`configs_mds_llp/derived_plots.yaml`](configs_mds_llp/derived_plots.yaml) — efficiency plots incl. the factorized chain and detector-station bands, matched fractions, sig-vs-bkg overlays.
+- [`configs/configs_mds/samples.yaml`](configs/configs_mds/samples.yaml) — the mDark=2 pair; `configs/configs_mds_grid/samples.yaml` pulls in the full six-point grid instead.
+- [`configs/configs_mds/histograms.yaml`](configs/configs_mds/histograms.yaml) — reco-only cluster fills, incl. `<sys>_cluster_dr_muon` / `_dr_jet`.
+- [`configs/configs_mds/selections.yaml`](configs/configs_mds/selections.yaml) — reco-only event masks (`has_<sys>_cluster`).
+- [`configs/configs_mds_grid/histograms.yaml`](configs/configs_mds_grid/histograms.yaml) — all truth fills + efficiency num/den pairs; LLP η is signed (60 bins, −3..3), not |η|.
+- [`configs/configs_mds_grid/selections.yaml`](configs/configs_mds_grid/selections.yaml) — object/event masks (fiducial, ≥10 hits, matched cluster).
+- [`configs/configs_mds_grid/derived_plots.yaml`](configs/configs_mds_grid/derived_plots.yaml) — efficiency plots incl. the factorized chain and detector-station bands, matched fractions, sig-vs-bkg overlays.
 - [`custom/columns.py`](custom/columns.py) — `derive()`: LLP + cluster collections, matching; parameters and optional steps come from each config's `columns.yaml`.
-- [`configs_mds/columns.yaml`](configs_mds/columns.yaml) — clustering parameters of the reference run; [`configs_mds_gen/columns.yaml`](configs_mds_gen/columns.yaml) is the gen-level (no-DBSCAN) step list.
-- [`configs_mds_gen/`](configs_mds_gen) — gen-level-only subset (LLPs + matched rechits), → `output_mds_gen/`.
+- [`configs/configs_mds/columns.yaml`](configs/configs_mds/columns.yaml) — clustering parameters of the reference run; [`configs/configs_mds_gen/columns.yaml`](configs/configs_mds_gen/columns.yaml) is the gen-level (no-DBSCAN) step list.
+- [`configs/configs_mds_gen/`](configs/configs_mds_gen) — gen-level-only subset (LLPs + matched rechits), → `output_mds_gen/`.
 
 ---
 
@@ -229,7 +229,7 @@ folded to |z| and a −z cluster lands on the same picture as a +z one.
 ```bash
 conda activate mds
 export X509_USER_PROXY=$HOME/private/.proxy
-python scripts/event_display.py -c configs_mds -d suep_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
+python scripts/event_display.py -c configs/configs_mds -d suep_mDark2_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
 ```
 
 Figures land in `/groups/hephy/cms/ang.li/suep_plots/event_display/` as
@@ -246,17 +246,17 @@ have no truth branches, so every cluster is labelled "unmatched".
 
 ## Gen-level rechit spread of one LLP
 
-These plots live only in `configs_mds_gen/`, a trimmed, self-contained config —
+These plots live only in `configs/configs_mds_gen/`, a trimmed, self-contained config —
 LLP gen kinematics, per-LLP matched-rechit counts, the ΔR plots below, and 2D
 maps of CSC nHits and ΔR₉₀ against |η| / pT / energy / boost (sections `4d`–`4f`;
 their `profile_x` curves are in `derived_plots.yaml`), and nothing else (68
 histograms against 237, signal samples only, since the background has no
 `SUEPGenPart`). It touches no cluster collection, so its
-[`columns.yaml`](configs_mds_gen/columns.yaml) enables only the
+[`columns.yaml`](configs/configs_mds_gen/columns.yaml) enables only the
 `llp`/`llp_hits`/`llp_shape` steps and skips DBSCAN (~35 % of `derive()`).
 `events.<sys>Cluster` and `llp.reco*` are then deliberately *not* attached, so a
 config that needs them fails at expression validation instead of quietly
-filling empty histograms. `configs_mds/` + `configs_mds_llp/` keep the full
+filling empty histograms. `configs/configs_mds/` + `configs/configs_mds_grid/` keep the full
 reconstruction study (clusters, efficiencies) and do not repeat these
 rechit-spread plots.
 

@@ -89,6 +89,7 @@ def test_load_columns_config(tmp_path):
 def test_shipped_configs_are_valid():
     """Every columns.yaml in the repo must load and configure cleanly."""
     repo = Path(__file__).resolve().parent.parent
-    found = sorted(repo.glob("configs*/columns.yaml"))
+    found = sorted(repo.glob("configs/*/columns.yaml"))
+    assert found, "no columns.yaml found -- has the config layout moved again?"
     for path in found:
         columns.configure(yaml.safe_load(path.read_text()) or {})
