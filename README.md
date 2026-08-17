@@ -18,20 +18,26 @@ re-run.
 
 1. [Repository layout](#repository-layout)
 2. [Requirements](#requirements)
-3. [Quick start](#quick-start)
-4. [Configuration reference](#configuration-reference)
+3. [Setup](#setup) — [install](#1-install-the-package), [grid proxy](#2-grid-proxy-for-xrootd-inputs), [tests](#3-check-the-install)
+4. [Quick start](#quick-start)
+5. [The commands](#the-commands) — `suep-run`, `suep-plot`, `suep-submit`, `suep-status`, `suep-reweight`
+6. [Config sets in this repo](#config-sets-in-this-repo)
+7. [Environment knobs](#environment-knobs)
+8. [Configuration reference](#configuration-reference)
    - [samples.yaml](#samplesyaml)
    - [histograms.yaml](#histogramsyaml)
    - [selections.yaml](#selectionsyaml)
    - [corrections.yaml](#correctionsyaml)
    - [reweights.yaml](#reweightsyaml)
    - [derived_plots.yaml](#derived_plotsyaml)
-5. [Expression language](#expression-language)
-6. [Running locally](#running-locally)
-7. [Running on Slurm](#running-on-slurm)
-8. [How it works internally](#how-it-works-internally)
-9. [Corrections & the scipy compat shim](#corrections--the-scipy-compat-shim)
-10. [Recipes](#recipes)
+9. [Expression language](#expression-language)
+10. [Running locally](#running-locally)
+11. [Running on Slurm](#running-on-slurm)
+12. [Helper scripts](#helper-scripts)
+13. [How it works internally](#how-it-works-internally)
+14. [Corrections & the scipy compat shim](#corrections--the-scipy-compat-shim)
+15. [Recipes](#recipes)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -39,16 +45,29 @@ re-run.
 
 ```
 suep-plotting/
-├── pyproject.toml                   # package metadata & dependencies
-├── configs/
-│   ├── samples.yaml                 # input file paths, cross sections, labels
+├── pyproject.toml                   # package metadata, dependencies, console scripts
+├── datasets.yaml                    # central dataset registry (paths, xs, labels)
+├── configs/                         # a "config set" = these six files
+│   ├── samples.yaml                 # which datasets to run, cross sections, styling
 │   ├── histograms.yaml              # histogram definitions (NanoEvents expressions)
 │   ├── selections.yaml              # named event-/object-level cuts
 │   ├── corrections.yaml             # correctionlib scale-factor definitions
 │   ├── reweights.yaml               # event-/object-level reweighting (expressions & maps)
 │   └── derived_plots.yaml           # profiles/projections/efficiency/ratio at plot time
+├── configs_mds/  configs_mds_llp/  configs_mds_gen/  …
+│                                    # the analysis config sets (see "Config sets")
 ├── custom/
-│   └── columns.py                   # optional derive(events) -> events hook
+│   └── columns.py                   # derive(events) -> events hook: LLP + DBSCAN
+│                                    #   cluster collections, cluster<->LLP matching
+├── scripts/                         # standalone plotting/inspection tools
+│   ├── compare_eps.py               # overlay two DBSCAN-eps processings
+│   ├── compare_sig_bkg.py           # matched signal clusters vs background clusters
+│   ├── compare_style.py             # shared suep-plot styling for the above
+│   └── event_display.py             # r-z rechit event display, coloured by cluster
+├── studies/                         # written-up one-off studies (own READMEs)
+├── tests/                           # pytest unit tests (no ROOT files needed)
+├── reproduce.sh                     # one-shot local reproduction of the MDS plots
+├── README_mds.md                    # the MDS LLP cluster study, step by step
 └── src/suep_plot/
     ├── _compat.py                   # scipy shim so coffea.lookup_tools imports
     ├── processor.py                 # SuepProcessor(ProcessorABC) + Runner driver
@@ -58,9 +77,14 @@ suep-plotting/
     ├── jme.py                       # jet energy corrections (JEC) + JER smearing
     ├── plot.py                      # mplhep CMS-style plotting (stack, overlay, data)
     ├── slurm.py                     # generates Slurm array job scripts
-    ├── cli.py                       # entry points (run/plot/submit/reweight)
+    ├── status.py                    # completion check + resubmission of failed tasks
+    ├── cli.py                       # entry points (run/plot/submit/status/reweight)
     └── cli_worker.py                # single-sample worker invoked by each Slurm task
 ```
+
+Everything below assumes you run from the repo root
+(`/users/ang.li/public/SUEP/suep-plotting`), since config-set and output paths
+in the examples are relative to it.
 
 ---
 
@@ -83,30 +107,8 @@ conda activate mds
 | `scipy` | Clopper–Pearson intervals for efficiency plots |
 | `pyyaml` | YAML config parsing |
 
-Install once into the env (editable), which puts the console scripts
-`suep-run` / `suep-plot` / `suep-submit` / `suep-reweight` on your `PATH`:
-
-```bash
-conda activate mds
-cd suep-plotting
-pip install -e .
-```
-
-The `-e` (editable) install points at this source tree, so code and config
-edits take effect immediately, and `custom/columns.py` stays discoverable.
-Uninstall anytime with `pip uninstall suep-plot`.
-
-Without installing, the same commands work as
-`PYTHONPATH=src python -m suep_plot.cli {run,plot,submit,reweight} …` from the
-repo root.
-
-Run the unit tests (fill logic, reweighting, plot helpers — no ROOT files
-needed) with:
-
-```bash
-pip install -e ".[dev]"
-pytest tests/
-```
+`scikit-learn` is additionally needed for the MDS config sets (`custom/columns.py`
+runs DBSCAN); it is present in the `mds` env.
 
 > **Note on corrections:** coffea's `lookup_tools` package (which contains
 > `correctionlib_wrapper`) eagerly imports Rochester/double-Crystal-Ball modules
@@ -117,13 +119,70 @@ pytest tests/
 
 ---
 
+## Setup
+
+### 1. Install the package
+
+Install once into the env (editable), which puts the console scripts
+`suep-run` / `suep-plot` / `suep-submit` / `suep-status` / `suep-reweight` on
+your `PATH`:
+
+```bash
+conda activate mds
+cd /users/ang.li/public/SUEP/suep-plotting
+pip install -e .
+```
+
+The `-e` (editable) install points at this source tree, so code and config
+edits take effect immediately, and `custom/columns.py` stays discoverable.
+Uninstall anytime with `pip uninstall suep-plot`.
+
+Without installing, the same commands work as
+`PYTHONPATH=src python -m suep_plot.cli {run,plot,submit,status,reweight} …`
+from the repo root — this is also what the generated Slurm scripts do, so jobs
+need no install.
+
+### 2. Grid proxy (for xrootd inputs)
+
+Most `samples.yaml` entries read `root://eos.grid.vbc.ac.at//...`, which needs a
+valid VOMS proxy. Point `X509_USER_PROXY` at it in every shell that runs the
+tools (including before `suep-submit`, since the jobs inherit it):
+
+```bash
+export X509_USER_PROXY=$HOME/private/.proxy
+voms-proxy-info -exists -valid 0:10 || \
+  voms-proxy-init -voms cms --valid 192:00 --vomslife 192:0 -out $HOME/private/.proxy
+```
+
+Purely local inputs need no proxy.
+
+### 3. Check the install
+
+Unit tests cover fill logic, reweighting and the plot helpers — no ROOT files
+needed:
+
+```bash
+pip install -e ".[dev]"
+pytest tests/
+```
+
+A cheap end-to-end smoke test is a one-sample, few-chunk run:
+
+```bash
+suep-run -c configs_mds -o /tmp/smoke -s suep_temp1 --chunk-size 10000
+suep-plot /tmp/smoke -o /tmp/smoke/plots -c configs_mds
+```
+
+---
+
 ## Quick start
 
 ### One command: process + plot
 
 ```bash
 conda activate mds
-cd suep-plotting
+cd /users/ang.li/public/SUEP/suep-plotting
+export X509_USER_PROXY=$HOME/private/.proxy      # only if inputs are on xrootd
 suep-run --plot
 ```
 
@@ -131,6 +190,18 @@ This reads every sample in `configs/samples.yaml`, fills every histogram in
 `configs/histograms.yaml` (applying selections and corrections), writes **one
 pickle file per sample** plus a cutflow table to `output/`, and renders all
 figures to `output/plots/`.
+
+The real analysis picks a [config set](#config-sets-in-this-repo) and an output
+directory explicitly — the MDS cluster study, locally, is:
+
+```bash
+suep-run  -c configs_mds -o output_mds --chunk-size 10000 --workers 8
+suep-plot output_mds -o output_mds/plots -c configs_mds -j 8
+# open output_mds/plots/index.html
+```
+
+and [`reproduce.sh`](reproduce.sh) runs that (plus the clustering variants and the
+truth-level set) in one go.
 
 Runs are **incremental**: a sample is skipped when its pickle is newer than
 the configs, `custom/columns.py`, and its input files, so re-running after
@@ -186,8 +257,154 @@ counts.
 ```bash
 suep-submit -c configs -o output --dry-run   # inspect
 suep-submit -c configs -o output             # submit
+suep-status -o output                        # what finished, what didn't
 bash output/slurm/merge_and_plot.sh          # after jobs finish
 ```
+
+> **On the login node**, keep local runs small. Many-worker `suep-run` jobs hit
+> the per-user process cap and get killed — use `suep-submit` for anything
+> beyond a few files per sample.
+
+---
+
+## The commands
+
+Five console scripts; every one takes `-h`. `-c/--config-dir` selects a
+[config set](#config-sets-in-this-repo), `-o/--output-dir` the output directory.
+
+| Command | What it does |
+|---------|--------------|
+| `suep-run` | Read samples, fill histograms, write one pickle per sample (`--plot` to plot straight after). |
+| `suep-plot` | Turn pickles into CMS-style figures + cutflow + `index.html` gallery. No reprocessing. |
+| `suep-submit` | Write and submit a Slurm array job — one task per sample (or per file shard). |
+| `suep-status` | Check a submitted run for missing/truncated pickles; `--resubmit` reruns exactly those tasks. |
+| `suep-reweight` | Derive a binned reweight map (ratio of two samples' histograms) from processed pickles. |
+
+### suep-run
+
+```bash
+suep-run -c <config dir> -o <output dir> [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-c` / `--config-dir` | `configs` | Directory holding the six YAML files. |
+| `-o` / `--output-dir` | `output` | Where per-sample pickles are written. |
+| `-s` / `--samples` | all | Process only these sample names. |
+| `--chunk-size` | `100000` | Events per chunk (use ~10000 for MDS configs — DBSCAN is memory-hungry). |
+| `--workers` | `1` | Local worker processes (coffea `FuturesExecutor`); `1` = iterative. |
+| `-f` / `--force` | off | Reprocess even if a pickle looks up to date. |
+| `--plot` | off | Run `suep-plot` on the output afterwards, into `<output>/plots`. |
+| `--lumi` / `--log` / `--normalize` / `--formats` / `-j` | — | Forwarded to the plotting step (only with `--plot`). |
+
+Runs are **incremental**: a sample is skipped when its pickle is newer than the
+configs, `custom/columns.py`, and its input files. Python code under
+`src/suep_plot/` is *not* tracked — after editing it, pass `--force`.
+
+### suep-plot
+
+```bash
+suep-plot <pickles or output dir…> -o <figure dir> [-c <config dir>] [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-o` / `--output-dir` | `plots` | Figure directory (also gets `cutflow.txt/.csv` and `index.html`). |
+| `-c` / `--config-dir` | `./configs` if present | Re-read plot-time styling and `derived_plots.yaml` from here. |
+| `--lumi` | — | Luminosity [fb⁻¹]: CMS label **and** `xs × lumi × 1000 / sumw` MC scaling. |
+| `--log` / `--normalize` | off | Log y-axis / normalize signal to unit area. |
+| `--no-ratio` | off | Suppress the Data/MC ratio panel. |
+| `--formats` | `png,pdf` | Comma-separated output formats (`png` alone is much faster). |
+| `-j` / `--jobs` | auto | Parallel rendering processes. |
+| `--save-root` | — | Also export merged, scaled histograms to a ROOT file. |
+
+Always pass the `-c` of the config set the pickles came from: labels, colors,
+axis labels, `rebin`, `blind`, `log_*` and the derived plots are read at plot
+time, so styling iterations never touch the ROOT files.
+
+### suep-submit / suep-status
+
+See [Running on Slurm](#running-on-slurm) for the full flag tables and the
+resubmission workflow.
+
+### suep-reweight
+
+```bash
+suep-reweight <output dir> --hist <name> --num <sample> --den <sample> -o <map.yaml>
+```
+
+Writes a binned map (default: shape-only, clamped) to be referenced from
+`reweights.yaml`; see [reweights.yaml](#reweightsyaml).
+
+---
+
+## Config sets in this repo
+
+A *config set* is one directory with the six YAML files. Samples are pulled from
+the shared registry [`datasets.yaml`](datasets.yaml) via `_include`, so all sets
+see the same datasets and differ only in what they fill.
+
+| Config set | What it fills | Needs truth? |
+|---|---|---|
+| [`configs/`](configs/) | Generic template/example set (jets, muons, MET) — the starting point for a new study. | no |
+| [`configs_mds/`](configs_mds/) | Reco-only DBSCAN CSC/DT/RPC cluster properties and shower shapes, ΔR to nearest muon/jet. Fills identically on samples without truth branches. | no |
+| [`configs_mds_llp/`](configs_mds_llp/) | Superset of the above plus everything truth-dependent: LLP collection, matched/unmatched cluster splits, efficiency chain, sig-vs-bkg overlays. | yes |
+| [`configs_mds_gen/`](configs_mds_gen/) | Gen-level only: LLP kinematics, per-LLP matched-rechit counts, ΔR₉₀ maps. Run with `MDS_SKIP_CLUSTERING=1`. | yes |
+| [`configs_mds_data/`](configs_mds_data/) | The same cluster plots on collision data / ZeroBias. | no |
+| [`configs_mds_grid/`](configs_mds_grid/) | Signal mass/cτ grid scan. | yes |
+| [`configs_mds_sigonly/`](configs_mds_sigonly/) | Signal samples only — quick turnaround. | yes |
+| [`configs_mds_trigger/`](configs_mds_trigger/) | HLT/L1 MDS trigger studies. | yes |
+| [`configs_mds_shape/`](configs_mds_shape/) | Cluster shower-shape variables (`_debug` / `_local` are small variants). | yes |
+| [`configs_g4compare/`](configs_g4compare/) | Geant4 / generator comparison of the shower simulation. | yes |
+
+Pick a set by which plots you want, then keep one output directory per
+(config set × clustering) combination — the pickles carry no record of which
+env knobs produced them. The convention in use:
+
+```
+/groups/hephy/cms/ang.li/suep_output/<config>_<gen>_<clustering>/   # suep-run pickles
+/groups/hephy/cms/ang.li/suep_plots/<study>_<gen>_<clustering>/     # suep-plot figures
+```
+
+e.g. `suep_output/configs_mds_gen3_minpts10_dr04`. Anything matching
+`output_*/` in the repo is git-ignored, so local scratch output directories are
+fine too.
+
+**Never pass `--lumi` to the MDS config sets:** `xs: 1.0` there is a
+placeholder, and lumi scaling would distort the Clopper–Pearson efficiency
+intervals.
+
+For the full, step-by-step reproduction of the MDS LLP cluster study (which
+samples, which figures, what the plots mean) see
+[**README_mds.md**](README_mds.md); [`reproduce.sh`](reproduce.sh) runs the local
+version of it end to end.
+
+---
+
+## Environment knobs
+
+`custom/columns.py` reads a few environment variables. They change what
+`derive()` computes, so **they are part of a run's identity** — a directory
+filled with different values in different tasks is silently inconsistent.
+Export them in the same shell you run or submit from.
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `MDS_CLUSTER_MIN_SAMPLES` | `10` | DBSCAN `min_samples` for CSC/DT (`50` = standard MDS). RPC is always 10. |
+| `MDS_CLUSTER_EPS` | `0.4` | DBSCAN `eps` — the ΔR radius in η–φ. |
+| `MDS_SKIP_CLUSTERING` | `0` | `1` skips DBSCAN (~35 % of `derive()`); `events.<sys>Cluster` and `llp.reco*` are then deliberately absent, so a config needing them fails at expression validation. Use with `configs_mds_gen`. |
+| `MDS_LLPIDX_CONVENTION` | `genpart` | How rechit `llpIdx` is interpreted: `genpart` (index into `SUEPGenPart`) or `ordinal` (n-th LLP). |
+| `X509_USER_PROXY` | — | Grid proxy for xrootd reads (see [Setup](#2-grid-proxy-for-xrootd-inputs)). |
+| `CORRECTIONLIB_DATA` | — | Searched first for `auto:` correction payloads, before cvmfs jsonpog-integration. |
+| `MPLBACKEND` | set to `Agg` | Forced headless by the CLI unless you override it. |
+
+```bash
+MDS_CLUSTER_MIN_SAMPLES=50 MDS_CLUSTER_EPS=0.2 \
+  suep-run -c configs_mds -o output_mds_minpts50_dr02 --chunk-size 10000
+```
+
+`suep-status --resubmit` warns when `job.sh` does not pin these, because the
+rerun would otherwise inherit whatever your current shell has.
 
 ---
 
@@ -470,7 +687,15 @@ suep-run -c configs -o output --force
 
 # process + plot in one go
 suep-run --plot --lumi 38.5 --log
+
+# MDS config sets: small chunks (DBSCAN per chunk), pinned clustering knobs
+MDS_CLUSTER_MIN_SAMPLES=50 \
+  suep-run -c configs_mds -o output_mds_minpts50 --chunk-size 10000 --workers 8
 ```
+
+Local runs are for one sample, a few files, or a styling iteration. Anything
+larger belongs on Slurm: the login node's per-user process cap kills
+many-worker `suep-run` jobs, and a full sample over xrootd takes hours.
 
 Plotting is cheap and re-runnable (figures render in parallel; `-j 1` for
 serial):
@@ -493,12 +718,25 @@ acceptance checks and tables).
 One array task per sample; each writes a per-sample pickle. The generated scripts
 export `PYTHONPATH=<repo>/src`, so no install is needed inside the job.
 
+The full cycle:
+
 ```bash
-suep-submit \
-    -c configs -o output --conda-env mds \
-    --time 08:00:00 --mem 8000 --partition c --max-concurrent 50
-# after jobs finish:
-bash output/slurm/merge_and_plot.sh
+conda activate mds
+export X509_USER_PROXY=$HOME/private/.proxy      # jobs inherit this
+export MDS_CLUSTER_MIN_SAMPLES=10                # and these — pin them explicitly
+export MDS_CLUSTER_EPS=0.4
+
+suep-submit -c configs_mds -o output_mds --conda-env mds \
+    --time 08:00:00 --mem 8000 --partition c \
+    --chunk-size 10000 --files-per-job 5 --max-concurrent 50 --dry-run   # inspect
+suep-submit -c configs_mds -o output_mds --conda-env mds \
+    --time 08:00:00 --mem 8000 --partition c \
+    --chunk-size 10000 --files-per-job 5 --max-concurrent 50             # submit
+
+squeue -u $USER                                  # watch
+suep-status -o output_mds                         # missing / truncated pickles
+suep-status -o output_mds --resubmit              # rerun exactly those tasks
+bash output_mds/slurm/merge_and_plot.sh            # once complete -> output_mds/plots
 ```
 
 | Flag | Default | Description |
@@ -509,8 +747,13 @@ bash output/slurm/merge_and_plot.sh
 | `--partition` / `--account` | — | Slurm partition / account. |
 | `--chunk-size` | `100000` | Events per chunk. |
 | `--workers` | `1` | Worker processes per job (also sets `--cpus-per-task`). |
+| `--files-per-job` | — | Split each sample into tasks of this many files; parts (`<sample>.part<k>.pkl`) are summed by `suep-plot`. |
 | `--max-concurrent` | — | Cap on simultaneous array tasks (`%N`). |
 | `--dry-run` | off | Generate scripts without submitting. |
+
+`--files-per-job` is how you put more nodes in flight on a big sample: 25 files
+with `--files-per-job 5` becomes 5 tasks instead of 1. The parts merge
+automatically at plot time, so nothing downstream changes.
 
 Sample files are resolved **once, at submission time**: each task's files are
 written to `slurm/filelists/<sample>[.part<k>].txt` and the task reads that list
@@ -518,11 +761,99 @@ instead of expanding `files:` itself. So a directory that gains files after
 submission cannot shift shard boundaries, tasks don't re-list storage, and a
 resubmission reruns exactly the same inputs. To pick up new files, submit again.
 
-Resubmit failures by task index (line number − 1 in `slurm/task_list.txt`):
-`sbatch --array=3,7 output/slurm/job.sh`. Slurm jobs always reprocess their
-sample (`--force`); the incremental skip only applies to local `suep-run`.
-`merge_and_plot.sh` forwards extra arguments to `suep-plot`
-(e.g. `bash output/slurm/merge_and_plot.sh --lumi 38.5 --log`).
+Slurm jobs always reprocess their sample (`--force`); the incremental skip only
+applies to local `suep-run`.
+
+### Checking a run, and redoing what failed
+
+A task counts as done only when its pickle exists **and unpickles** — a task
+killed mid-write leaves a truncated file that would otherwise be summed into the
+merge as a silently incomplete sample. `suep-status` checks both against
+`slurm/task_list.txt` (the authority on what should exist):
+
+```bash
+suep-status -o output_mds                    # report only
+suep-status -o output_mds --no-verify        # existence check only (fast, large runs)
+suep-status -o output_mds --resubmit --dry-run
+suep-status -o output_mds --resubmit --max-concurrent 50
+```
+
+`--resubmit` runs `sbatch --array=<missing indices>` over the *original*
+`job.sh`, so the redone tasks own exactly the same input files and shard
+boundaries as the first attempt. Export the same
+[environment knobs](#environment-knobs) you submitted with — `job.sh` inherits
+the calling shell, and `suep-status` warns when they are not pinned in the
+script.
+
+Resubmitting by hand also works; the task index is the line number − 1 in
+`slurm/task_list.txt`:
+
+```bash
+sbatch --array=3,7 output_mds/slurm/job.sh
+```
+
+### What `suep-submit` writes
+
+```
+<output>/slurm/
+├── job.sh                  # the array script (exports PYTHONPATH=<repo>/src)
+├── task_list.txt           # one line per array index: sample, file list, part
+├── filelists/<sample>[.part<k>].txt
+├── logs/                   # stdout/stderr per task
+└── merge_and_plot.sh       # suep-plot over the finished pickles
+```
+
+`merge_and_plot.sh` already carries the run's `-c <config dir>` and
+`-o <output>/plots`, and forwards any extra arguments to `suep-plot`
+(`bash …/merge_and_plot.sh --log --formats png`).
+
+---
+
+## Helper scripts
+
+Standalone tools under `scripts/`. They read the same pickles `suep-plot` reads
+and reuse its styling helpers (`compare_style.py`), so figures come out with the
+same CMS style, labels and png+pdf gallery.
+
+**Compare two clustering settings** — one figure per 1D histogram per sample:
+unit-normalized shapes for both settings, ratio (b/a) underneath, yields in the
+legend:
+
+```bash
+python scripts/compare_eps.py output_mds_dr02 output_mds_dr04 compare_dr02_vs_dr04 "dR=0.2" "dR=0.4"
+```
+
+**Signal (truth-matched) clusters vs background clusters** — the signal's
+`<var>_matched` histograms come from a `configs_mds_llp` run, the background's
+inclusive `<var>` from a `configs_mds` run; both configs define the inclusive
+histograms identically, so the axes match and nothing needs refilling. Also
+writes `separation.txt` (total-variation distance per variable):
+
+```bash
+python scripts/compare_sig_bkg.py output_mds_llp output_mds_data sigbkg_dir \
+    --suffix _matched -c configs_mds_llp
+```
+
+**Event display** — r–z picture of every CSC/DT rechit, coloured by DBSCAN
+cluster, using the analysis's own clustering (so `MDS_CLUSTER_*` change the
+display exactly as they change the histograms):
+
+```bash
+conda activate mds
+export X509_USER_PROXY=$HOME/private/.proxy
+python scripts/event_display.py -d suep_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
+```
+
+Useful flags: `--zoom` (crop to the clustered hits), `--with-etaphi` (add the
+η–φ panel the clustering runs in), `--matched-only` / `--min-size` (pick
+interesting events), `--systems csc`, and `-f <file.root> --entries 3 7` for
+specific entries. It works on background/data too — those have no truth
+branches, so every cluster is labelled "unmatched". See
+[README_mds.md](README_mds.md#event-display-rz-rechit-picture-of-the-clusters)
+for what the markers mean.
+
+`studies/` holds written-up one-off analyses (each with its own README and
+scripts) that are not part of the config-driven flow.
 
 ---
 
@@ -715,3 +1046,21 @@ on the server and walked recursively for `*.root`, or a wildcard on the file
 name (`…/MDSNANO/nano_*.root`) — so a whole dataset is one line instead of
 hundreds.  Local directories work the same way.  Listing happens each time
 `suep-run`/`suep-slurm` starts, so files added later are picked up automatically.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `suep-run` reports "up to date" and does nothing | Incremental skip: only configs, `custom/columns.py` and input files are tracked, not `src/suep_plot/` code. Pass `--force`. |
+| xrootd errors / "no such file" on `root://eos.grid.vbc.ac.at` | Expired or unset proxy. `export X509_USER_PROXY=$HOME/private/.proxy` and re-run `voms-proxy-init` (see [Setup](#2-grid-proxy-for-xrootd-inputs)). Don't force `XrdSecPROTOCOL`. |
+| Local run dies with process/fork errors | Login-node process cap — drop `--workers`, or submit with `suep-submit`. |
+| Killed for memory | Lower `--chunk-size` (10000 is right for the MDS configs, where DBSCAN runs per chunk), or raise `--mem` on Slurm. |
+| Warning listing expressions that failed the check | Typo or missing branch. The processor validates every expression once on a small slice with `derive()` applied — fix the expression, or the histogram fills empty. |
+| `configs_mds_gen` fails at validation on `events.<sys>Cluster` | Expected under `MDS_SKIP_CLUSTERING=1`, which deliberately omits the cluster collections. Use a config set that doesn't reference them, or unset the flag. |
+| Merged output looks inconsistent | Shards filled with different `MDS_*` knobs. Export the same values everywhere, and keep one output directory per (config set × clustering). |
+| Plots have no labels / wrong colors | `suep-plot` was called without `-c <config set>`, so styling fell back to defaults. |
+| Empty or truncated pickles after a Slurm run | `suep-status -o <dir>` finds them; `--resubmit` reruns exactly those tasks. |
+| Efficiency plots look distorted | `--lumi` was passed to an MDS config set (placeholder `xs: 1.0`). Drop it. |
+| `ImportError: _lazywhere` from `coffea.lookup_tools` | `suep_plot` was bypassed — import `suep_plot` (or the shim) first; see [the compat shim](#corrections--the-scipy-compat-shim). |

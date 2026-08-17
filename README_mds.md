@@ -206,6 +206,40 @@ Notes:
 
 ---
 
+## Event display (r–z rechit picture of the clusters)
+
+[`scripts/event_display.py`](scripts/event_display.py) draws one figure per
+event with every CSC/DT rechit at its global (|z|, r), coloured by DBSCAN
+cluster — the same clustering `derive()` uses (`DBSCAN_PARAMS` is imported from
+`custom/columns.py`, so `MDS_CLUSTER_MIN_SAMPLES` / `MDS_CLUSTER_EPS` change the
+display exactly as they change the histograms). One colour per cluster (CSC and
+DT are told apart by position, not by colour or marker) and the marker is the
+hit-level truth: `o` for a rechit carrying an `llpIdx`, `x` for one that does
+not, so the LLP shower and the activity DBSCAN swept up with it stay visible
+separately. Noise hits are light grey dots, the grey boxes are the ME/MB
+chambers and the solenoid (`drawRZ()`, DT drawn from |z| = 0), and an open star
+marks the truth shower position (`llpSim*`) of each truth-matched cluster.
+RPC is not drawn. The chamber layout is a z > 0 quarter view, so the display is
+folded to |z| and a −z cluster lands on the same picture as a +z one.
+
+```bash
+conda activate mds
+export X509_USER_PROXY=$HOME/private/.proxy
+python scripts/event_display.py -d suep_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
+```
+
+Figures land in `/groups/hephy/cms/ang.li/suep_plots/event_display/` as
+`evd_<dataset>_<file>_ev<entry>.png`. Useful flags: `--zoom` crops to the
+clustered hits (a shower is a few tens of cm across, the full view is mostly
+empty), `--with-etaphi` adds the η–φ panel the clustering actually runs in,
+`--matched-only` / `--min-size` pick interesting events, `--systems csc`
+restricts to one system, and `-f <file.root> --entries 3 7` draws specific
+entries of a specific file. It
+works on background/data too (`-d dy_2mu_50to120`, `-d zerobias_2024C`); those
+have no truth branches, so every cluster is labelled "unmatched".
+
+---
+
 ## Gen-level rechit spread of one LLP
 
 These plots live only in `configs_mds_gen/`, a trimmed, self-contained config —

@@ -152,7 +152,7 @@ def report(output_dir: str, verify: bool = True) -> list[Task]:
 # rest of the run was filled with, or the directory ends up self-inconsistent.
 _CLUSTER_ENV = ("MDS_CLUSTER_MIN_SAMPLES", "MDS_CLUSTER_EPS",
                 "MDS_SKIP_CLUSTERING", "MDS_LLPIDX_CONVENTION")
-_CLUSTER_DEFAULTS = {"MDS_CLUSTER_MIN_SAMPLES": "50", "MDS_CLUSTER_EPS": "0.2",
+_CLUSTER_DEFAULTS = {"MDS_CLUSTER_MIN_SAMPLES": "10", "MDS_CLUSTER_EPS": "0.4",
                      "MDS_SKIP_CLUSTERING": "0", "MDS_LLPIDX_CONVENTION": "genpart"}
 
 
