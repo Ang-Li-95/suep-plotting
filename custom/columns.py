@@ -35,7 +35,7 @@ this module attaches four derived collections:
 ``events.cscCluster`` / ``events.dtCluster`` / ``events.rpcCluster``
     DBSCAN clusters of the muon-system rechits (per system, dR metric in
     eta-phi with proper phi wrap-around).  A cluster is truth-matched to an
-    LLP when at least ``MATCH_MIN_HITS`` of its rechits carry that LLP's
+    LLP when at least ``match_min_hits`` of its rechits carry that LLP's
     ``llpIdx``.  On samples without the truth branches (central background
     MDSNano, e.g. DY) clustering still runs; ``matched`` is always False and
     ``hasTruth`` is False, so ``matched | ~hasTruth`` selects "signal-like"
@@ -59,11 +59,52 @@ Note: ``SUEPGenPart`` is the *full unpruned* genParticles collection; the
 rechit ``llpIdx`` branches index into it.  NanoAODSchema attaches no physics
 behaviours to it (unknown collection), so energy and mother/daughter relations
 are computed by hand.
+
+Per-config settings (``columns.yaml``)
+-------------------------------------
+Everything above is optional and tunable per config directory: drop a
+``columns.yaml`` next to ``histograms.yaml`` and the processor passes it to
+:func:`configure` before the first chunk::
+
+    parameters:
+      cluster_eps: 0.4            # DBSCAN eps (dR in eta-phi), all systems
+      cluster_min_samples: 10     # DBSCAN min_samples, CSC and DT
+      rpc_min_samples: 10         # DBSCAN min_samples, RPC (sparse system)
+      match_min_hits: 10          # cluster <-> LLP truth-match threshold
+      dr_quantiles: [0.5, 0.8, 0.9]   # -> llp.dr50/dr80/dr90 fields
+      pair_max_hits: 2000
+      llpidx_convention: genpart  # or 'ordinal' (pre-Geant4-fix files)
+    steps: [llp, llp_hits, llp_shape]   # gen-level only, no DBSCAN
+
+Each entry of ``steps`` is one of the optional helpers below; the default is
+all of them, in this order:
+
+``clusters``
+    DBSCAN the three rechit systems -> ``events.<sys>Cluster``.
+``cluster_isolation``
+    ``drMuon`` / ``drJet`` on the clusters (needs ``clusters``).
+``llp``
+    The ``events.llp`` collection: kinematics, decay vertex, volume flags.
+``llp_hits``
+    Per-LLP truth rechit counts ``nHits{CSC,DT,RPC,Total}`` (needs ``llp``).
+``llp_reco``
+    ``llp.reco*``, ``nRecoCluster*``, ``clusterHitFrac*`` (needs ``clusters``
+    and ``llp_hits``).
+``llp_shape``
+    Per-LLP rechit spread (``dr*``, ``drPair*``) and the rechit-level
+    ``matchedLLP`` / ``drLLP`` fields (needs ``llp``).
+
+Omitting a step means the fields it attaches are *absent*, so a config that
+references them fails loudly at expression validation instead of quietly
+filling empty histograms.  Dropping ``clusters`` saves ~35 % of ``derive()``
+(measured on the 2024 signal: 8.8 s -> 5.7 s per 1000 events).
+
+With no ``columns.yaml``, the defaults below apply.  Nothing here reads the
+environment: the settings are part of the config set, so a run is reproducible
+from its config directory alone.
 """
 
 from __future__ import annotations
-
-import os
 
 import awkward as ak
 import numpy as np
@@ -77,44 +118,112 @@ CSC_ZMIN, CSC_ZMAX, CSC_RMAX = 400.0, 1100.0, 695.5
 DT_RMIN, DT_RMAX, DT_ZMAX = 380.0, 738.0, 650.0
 RPC_EC_ZMIN, RPC_EC_ZMAX, RPC_EC_RMAX = 600.0, 1020.0, 660.0  # endcap; barrel = DT volume
 
-# DBSCAN (eps in dR, min_samples) per system.  The CSC/DT minimum cluster
-# size can be overridden with $MDS_CLUSTER_MIN_SAMPLES (default 50) and the
-# dR radius with $MDS_CLUSTER_EPS (default 0.2, all three systems), to study
-# their effect without editing the config; RPC min_samples stays at 10
-# (sparse system).
-_CSC_DT_MIN_SAMPLES = int(os.environ.get("MDS_CLUSTER_MIN_SAMPLES", "10"))
-_EPS = float(os.environ.get("MDS_CLUSTER_EPS", "0.4"))
-DBSCAN_PARAMS = {
-    "csc": (_EPS, _CSC_DT_MIN_SAMPLES),
-    "dt": (_EPS, _CSC_DT_MIN_SAMPLES),
-    "rpc": (_EPS, 10),
+# ── Tunable parameters ─────────────────────────────────────────────
+# Set per config set in columns.yaml (``parameters:``); see configure().
+#
+# ``cluster_eps`` / ``cluster_min_samples``: DBSCAN eps (dR radius in eta-phi)
+# and minimum cluster size for CSC and DT (50 = standard MDS analysis).  RPC
+# keeps its own, smaller ``rpc_min_samples`` (sparse system).
+# ``match_min_hits``: cluster <-> LLP truth matching, matched := (# rechits
+# sharing one llpIdx) >= this.
+# ``pair_max_hits``: an LLP with more matched rechits than this is strided down
+# before the O(N^2) pairwise dR matrix is built (hit multiplicities are far
+# below the cap in practice, so this never fires).
+# ``dr_quantiles``: containment fractions for the per-LLP cone radius (field
+# names dr50/dr80/...).
+# ``llpidx_convention``: how the rechit ``llpIdx`` branch is read — "genpart"
+# (llpIdx is the SUEPGenPart index, post-Geant4-fix files) or "ordinal"
+# (llpIdx is the ordinal LLP index within the event, pre-fix files).
+DEFAULT_PARAMS = {
+    "cluster_eps": 0.4,
+    "cluster_min_samples": 10,
+    "rpc_min_samples": 10,
+    "match_min_hits": 10,
+    "pair_max_hits": 2000,
+    "dr_quantiles": (0.5, 0.8, 0.9),
+    "llpidx_convention": "genpart",
 }
 
-# $MDS_SKIP_CLUSTERING=1 drops the DBSCAN step, ~35% of derive() (measured on
-# the 2024 signal: 8.8 s -> 5.7 s per 1000 events).
-# For gen-level-only configs (configs_mds_gen/): the cluster collections and
-# the llp.reco* flags are then NOT attached, so a config that needs them fails
-# at expression validation instead of quietly filling empty histograms.
-SKIP_CLUSTERING = os.environ.get("MDS_SKIP_CLUSTERING", "0") not in ("0", "", "false")
+# Optional helpers, in the order derive() runs them, each with the steps it
+# needs.  A config's ``steps:`` list selects a subset; the default is all.
+STEP_DEPS = {
+    "clusters": (),
+    "cluster_isolation": ("clusters",),
+    "llp": (),
+    "llp_hits": ("llp",),
+    "llp_reco": ("clusters", "llp_hits"),
+    "llp_shape": ("llp",),
+}
 
-# Cluster <-> LLP matching: matched := (# rechits sharing one llpIdx) >= MATCH_MIN_HITS
-MATCH_MIN_HITS = 10
+PARAMS = dict(DEFAULT_PARAMS)
+STEPS = tuple(STEP_DEPS)
 
-# Per-LLP rechit spread: an LLP with more than this many matched rechits is
-# strided down before the O(N^2) pairwise dR matrix is built (hit
-# multiplicities are far below the cap in practice, so this never fires).
-PAIR_MAX_HITS = 2000
 
-# Containment fractions for the per-LLP cone radius (field names dr50/dr80/...)
-DR_QUANTILES = (0.5, 0.8, 0.9)
+def configure(cfg=None):
+    """Apply a config directory's ``columns.yaml`` (``{}``/None = defaults).
 
-# Rechit ``llpIdx`` convention: "genpart" (default; llpIdx is the SUEPGenPart
-# index, post-Geant4-fix files) or "ordinal" (llpIdx is the ordinal LLP index
-# within the event, pre-fix files).  Override with $MDS_LLPIDX_CONVENTION.
-LLPIDX_CONVENTION = os.environ.get("MDS_LLPIDX_CONVENTION", "genpart")
-if LLPIDX_CONVENTION not in ("genpart", "ordinal"):
-    raise ValueError(
-        f"MDS_LLPIDX_CONVENTION must be 'genpart' or 'ordinal', got '{LLPIDX_CONVENTION}'")
+    Recognized keys: ``parameters`` (see :data:`DEFAULT_PARAMS`) and ``steps``
+    (see :data:`STEP_DEPS`).  Called by the processor once per run, before the
+    first chunk; unknown keys and unsatisfied step dependencies raise, since a
+    silently ignored typo here would mean silently wrong histograms.
+    """
+    cfg = cfg or {}
+    unknown = set(cfg) - {"parameters", "steps"}
+    if unknown:
+        raise ValueError(f"columns.yaml: unknown key(s) {sorted(unknown)}; "
+                         "expected 'parameters' and/or 'steps'")
+
+    params = cfg.get("parameters") or {}
+    unknown = set(params) - set(DEFAULT_PARAMS)
+    if unknown:
+        raise ValueError(f"columns.yaml parameters: unknown {sorted(unknown)}; "
+                         f"known: {sorted(DEFAULT_PARAMS)}")
+
+    global PARAMS, STEPS
+    PARAMS = dict(DEFAULT_PARAMS)
+    PARAMS.update(params)
+    if PARAMS["llpidx_convention"] not in ("genpart", "ordinal"):
+        raise ValueError("columns.yaml: llpidx_convention must be 'genpart' or "
+                         f"'ordinal', got '{PARAMS['llpidx_convention']}'")
+    for key in ("cluster_min_samples", "rpc_min_samples", "match_min_hits",
+                "pair_max_hits"):
+        if not isinstance(PARAMS[key], int) or PARAMS[key] < 1:
+            raise ValueError(f"columns.yaml: {key} must be a positive integer, "
+                             f"got {PARAMS[key]!r}")
+    if not PARAMS["cluster_eps"] > 0:
+        raise ValueError("columns.yaml: cluster_eps must be positive, got "
+                         f"{PARAMS['cluster_eps']!r}")
+    quantiles = PARAMS["dr_quantiles"]
+    if (isinstance(quantiles, str) or not hasattr(quantiles, "__iter__")
+            or not all(isinstance(q, (int, float)) and 0 < q <= 1 for q in quantiles)):
+        raise ValueError("columns.yaml: dr_quantiles must be a list of "
+                         f"containment fractions in (0, 1], got {quantiles!r}")
+    PARAMS["dr_quantiles"] = tuple(quantiles)
+
+    steps = list(cfg["steps"] or []) if "steps" in cfg else list(STEP_DEPS)
+    unknown = [s for s in steps if s not in STEP_DEPS]
+    if unknown:
+        raise ValueError(f"columns.yaml steps: unknown {unknown}; "
+                         f"known: {list(STEP_DEPS)}")
+    for step in steps:
+        missing = [d for d in STEP_DEPS[step] if d not in steps]
+        if missing:
+            raise ValueError(f"columns.yaml steps: '{step}' needs {missing}, "
+                             "which this config does not enable")
+    # Canonical order, so the list in the config is a set and not a schedule.
+    STEPS = tuple(s for s in STEP_DEPS if s in steps)
+    return PARAMS, STEPS
+
+
+def _dbscan_params(system):
+    """(eps, min_samples) for one rechit system."""
+    key = "rpc_min_samples" if system == "rpc" else "cluster_min_samples"
+    return PARAMS["cluster_eps"], PARAMS[key]
+
+
+# Defaults in place for a bare ``import custom.columns`` (notebooks, scripts)
+# that never calls configure().
+configure()
 
 
 def _llpidx_is_genpart_index(events):
@@ -126,8 +235,8 @@ def _llpidx_is_genpart_index(events):
     conventions keep ``llpIdx < nSUEPGenPart``, so indexing is always safe.
     Returns True (genpart-index convention) when no matched hits are present.
 
-    NOT called at runtime: the convention is taken from
-    ``$MDS_LLPIDX_CONVENTION`` (default "genpart").  Kept as a standalone
+    NOT called at runtime: the convention is taken from the
+    ``llpidx_convention`` parameter (default "genpart").  Kept as a standalone
     check for validating that setting on a new production.
     """
     idx = events.cscRechits.llpIdx
@@ -138,87 +247,147 @@ def _llpidx_is_genpart_index(events):
     return bool(ak.mean(matched_pdg == LLP_PDGID) > 0.5)
 
 
+class _Context:
+    """Work area the steps hand to each other (see :func:`derive`).
+
+    ``events`` and ``llp`` are rebuilt by ``ak.with_field``, so the steps
+    reassign them on the context rather than mutating arrays in place.
+    """
+
+    def __init__(self, events):
+        self.events = events
+        self.has_truth = "SUEPGenPart" in events.fields
+        self.clusters = {}
+        self.llp = None
+        # Per-event LLP identifiers the rechit ``llpIdx`` branches are compared
+        # against; set by the ``llp`` step (see _step_llp).
+        self.match_key = None
+
+
 def derive(events):
-    """Attach the MDS LLP/cluster collections (MDSNANO samples only)."""
+    """Attach the MDS LLP/cluster collections (MDSNANO samples only).
+
+    Runs the optional helpers selected by :func:`configure` (all of them by
+    default) and attaches whatever they produced.  Fields belonging to a
+    disabled step are deliberately absent, so a config referencing them fails
+    at expression validation rather than silently filling zeros.
+    """
     if "cscRechits" not in events.fields:
         return events
-    has_truth = "SUEPGenPart" in events.fields
 
-    clusters = {}
-    if not SKIP_CLUSTERING:
-        for sys, coll, timefield in (("csc", "cscRechits", "Tpeak"),
-                                     ("dt", "dtRecHits", None),
-                                     ("rpc", "rpcRecHits", "Time")):
-            eps, min_samples = DBSCAN_PARAMS[sys]
-            clusters[sys] = _cluster_system(events[coll], timefield, eps, min_samples)
-            for field, obj in (("drMuon", "Muon"), ("drJet", "Jet")):
-                if obj in events.fields:
-                    clusters[sys] = ak.with_field(
-                        clusters[sys], _dr_to_nearest(clusters[sys], events[obj]), field)
+    ctx = _Context(events)
+    for step in STEPS:
+        _STEP_FUNCS[step](ctx)
 
-    if has_truth:
-        llp = _build_llps(events)
+    events = ctx.events
+    if ctx.llp is not None:
+        events = ak.with_field(events, ctx.llp, "llp")
+    for sys, field in (("csc", "cscCluster"), ("dt", "dtCluster"),
+                       ("rpc", "rpcCluster")):
+        if sys in ctx.clusters:
+            events = ak.with_field(events, ctx.clusters[sys], field)
+    return events
 
-        # The rechit truth branch ``llpIdx`` uses one of two conventions
-        # depending on the producer: the SUEPGenPart index of the LLP
-        # (post-Geant4-fix, SUEPs_Gen2; the default) or the ordinal LLP index
-        # within the event (pre-fix, SUEPs_Gen; set
-        # MDS_LLPIDX_CONVENTION=ordinal).  Match against the LLP field in the
-        # same space.
-        match_key = llp.gidx if LLPIDX_CONVENTION == "genpart" else llp.lidx
 
-        # Per-LLP truth rechit counts and reconstruction flags
-        nhits = {}
-        for sys, coll in (("CSC", "cscRechits"), ("DT", "dtRecHits"), ("RPC", "rpcRecHits")):
-            nhits[sys] = ak.values_astype(
-                ak.sum(match_key[:, :, None] == events[coll].llpIdx[:, None, :], axis=2),
-                np.int64)
-        llp = ak.with_field(llp, nhits["CSC"], "nHitsCSC")
-        llp = ak.with_field(llp, nhits["DT"], "nHitsDT")
-        llp = ak.with_field(llp, nhits["RPC"], "nHitsRPC")
-        llp = ak.with_field(llp, nhits["CSC"] + nhits["DT"] + nhits["RPC"], "nHitsTotal")
+def _step_clusters(ctx):
+    """DBSCAN the three rechit systems (~35% of derive())."""
+    for sys, coll, timefield in (("csc", "cscRechits", "Tpeak"),
+                                 ("dt", "dtRecHits", None),
+                                 ("rpc", "rpcRecHits", "Time")):
+        eps, min_samples = _dbscan_params(sys)
+        ctx.clusters[sys] = _cluster_system(ctx.events[coll], timefield,
+                                            eps, min_samples)
 
-        if not SKIP_CLUSTERING:
-            reco = {}
-            for sys, SYS in (("csc", "CSC"), ("dt", "DT"), ("rpc", "RPC")):
-                # (ev, nLLP, nCluster) truth-match table: cluster's best-LLP
-                # index equals this LLP's.  Unmatched clusters carry -1, which
-                # never equals an LLP index (>= 0), so they drop out.
-                sel = match_key[:, :, None] == clusters[sys].matchedLLPIdx[:, None, :]
-                reco[sys] = ak.any(sel, axis=2)
-                # (2) number of DBSCAN clusters truth-matched to each LLP
-                nclu = ak.values_astype(ak.sum(sel, axis=2), np.int64)
-                llp = ak.with_field(llp, nclu, "nRecoCluster" + SYS)
-                # (3) fraction of the LLP's matched rechits captured by its best
-                # matched cluster: max over matched clusters of that cluster's
-                # matched-hit count, divided by the LLP's total matched rechits
-                # in the system.  NaN when the LLP has no matched rechit there.
-                hits_in = ak.where(sel, clusters[sys].nMatchedHits[:, None, :], 0)
-                best = ak.fill_none(ak.max(hits_in, axis=2), 0)
-                nh = llp["nHits" + SYS]
-                frac = ak.where(nh > 0, best / ak.where(nh > 0, nh, 1), np.nan)
-                llp = ak.with_field(llp, frac, "clusterHitFrac" + SYS)
-            llp = ak.with_field(llp, reco["csc"], "recoCSC")
-            llp = ak.with_field(llp, reco["dt"], "recoDT")
-            llp = ak.with_field(llp, reco["rpc"], "recoRPC")
-            llp = ak.with_field(llp, reco["csc"] | reco["dt"] | reco["rpc"], "reco")
 
-    else:
-        llp = _empty_llps(events)
+def _step_cluster_isolation(ctx):
+    """dR from each cluster centroid to the nearest reco muon / jet."""
+    for sys, clusters in ctx.clusters.items():
+        for field, obj in (("drMuon", "Muon"), ("drJet", "Jet")):
+            if obj in ctx.events.fields:
+                clusters = ak.with_field(
+                    clusters, _dr_to_nearest(clusters, ctx.events[obj]), field)
+        ctx.clusters[sys] = clusters
 
-    # Eta-phi spread of each LLP's truth-matched rechits, per system and for
-    # the three pooled ("Total", matching nHitsTotal).  The per-system passes
-    # also write each matched rechit's dR to its LLP's centroid back onto the
-    # rechit collection.  Samples without truth branches get the same fields
-    # (all NaN / False), so the configs evaluate on background as well.
+
+def _step_llp(ctx):
+    """The ``events.llp`` collection (empty on samples without truth)."""
+    if not ctx.has_truth:
+        ctx.llp = _empty_llps(ctx.events)
+        return
+    ctx.llp = _build_llps(ctx.events)
+    # The rechit truth branch ``llpIdx`` uses one of two conventions depending
+    # on the producer: the SUEPGenPart index of the LLP (post-Geant4-fix,
+    # SUEPs_Gen2; the default) or the ordinal LLP index within the event
+    # (pre-fix, SUEPs_Gen; llpidx_convention: ordinal).  Match against the LLP
+    # field in the same space.
+    ctx.match_key = (ctx.llp.gidx if PARAMS["llpidx_convention"] == "genpart"
+                     else ctx.llp.lidx)
+
+
+def _step_llp_hits(ctx):
+    """Per-LLP truth rechit counts, per system and pooled."""
+    if not ctx.has_truth:
+        return               # _empty_llps already carries the fields
+    nhits = {}
+    for sys, coll in (("CSC", "cscRechits"), ("DT", "dtRecHits"), ("RPC", "rpcRecHits")):
+        nhits[sys] = ak.values_astype(
+            ak.sum(ctx.match_key[:, :, None] == ctx.events[coll].llpIdx[:, None, :],
+                   axis=2),
+            np.int64)
+    llp = ctx.llp
+    llp = ak.with_field(llp, nhits["CSC"], "nHitsCSC")
+    llp = ak.with_field(llp, nhits["DT"], "nHitsDT")
+    llp = ak.with_field(llp, nhits["RPC"], "nHitsRPC")
+    ctx.llp = ak.with_field(llp, nhits["CSC"] + nhits["DT"] + nhits["RPC"], "nHitsTotal")
+
+
+def _step_llp_reco(ctx):
+    """Reconstruction flags: LLP has a truth-matched DBSCAN cluster."""
+    if not ctx.has_truth:
+        return               # _empty_llps already carries the fields
+    llp, reco = ctx.llp, {}
+    for sys, SYS in (("csc", "CSC"), ("dt", "DT"), ("rpc", "RPC")):
+        # (ev, nLLP, nCluster) truth-match table: cluster's best-LLP index
+        # equals this LLP's.  Unmatched clusters carry -1, which never equals
+        # an LLP index (>= 0), so they drop out.
+        sel = ctx.match_key[:, :, None] == ctx.clusters[sys].matchedLLPIdx[:, None, :]
+        reco[sys] = ak.any(sel, axis=2)
+        # (2) number of DBSCAN clusters truth-matched to each LLP
+        nclu = ak.values_astype(ak.sum(sel, axis=2), np.int64)
+        llp = ak.with_field(llp, nclu, "nRecoCluster" + SYS)
+        # (3) fraction of the LLP's matched rechits captured by its best
+        # matched cluster: max over matched clusters of that cluster's
+        # matched-hit count, divided by the LLP's total matched rechits
+        # in the system.  NaN when the LLP has no matched rechit there.
+        hits_in = ak.where(sel, ctx.clusters[sys].nMatchedHits[:, None, :], 0)
+        best = ak.fill_none(ak.max(hits_in, axis=2), 0)
+        nh = llp["nHits" + SYS]
+        frac = ak.where(nh > 0, best / ak.where(nh > 0, nh, 1), np.nan)
+        llp = ak.with_field(llp, frac, "clusterHitFrac" + SYS)
+    llp = ak.with_field(llp, reco["csc"], "recoCSC")
+    llp = ak.with_field(llp, reco["dt"], "recoDT")
+    llp = ak.with_field(llp, reco["rpc"], "recoRPC")
+    ctx.llp = ak.with_field(llp, reco["csc"] | reco["dt"] | reco["rpc"], "reco")
+
+
+def _step_llp_shape(ctx):
+    """Eta-phi spread of each LLP's truth-matched rechits.
+
+    Per system and for the three pooled ("Total", matching nHitsTotal).  The
+    per-system passes also write each matched rechit's dR to its LLP's centroid
+    back onto the rechit collection (``drLLP``, plus the ``matchedLLP`` flag).
+    Samples without truth branches get the same fields (all NaN / False), so
+    the configs evaluate on background as well.
+    """
+    events, llp = ctx.events, ctx.llp
     nllp = ak.num(llp.pt)
     for sys, coll in (("CSC", "cscRechits"), ("DT", "dtRecHits"),
                       ("RPC", "rpcRecHits")):
         rechits = events[coll]
         counts = ak.num(rechits.Eta)
         hit_dr = np.full(int(ak.sum(counts)), np.nan)
-        if has_truth:
-            for f, v in _llp_rechit_dr(events, [coll], match_key,
+        if ctx.has_truth:
+            for f, v in _llp_rechit_dr(events, [coll], ctx.match_key,
                                        hit_dr=hit_dr).items():
                 llp = ak.with_field(llp, ak.unflatten(v, nllp), f + sys)
         matched = (rechits.llpIdx >= 0 if "llpIdx" in rechits.fields
@@ -226,21 +395,22 @@ def derive(events):
         rechits = ak.with_field(rechits, ak.unflatten(hit_dr, counts), "drLLP")
         events = ak.with_field(events, ak.with_field(rechits, matched, "matchedLLP"),
                                coll)
-    if has_truth:
+    if ctx.has_truth:
         for f, v in _llp_rechit_dr(
-                events, ["cscRechits", "dtRecHits", "rpcRecHits"], match_key).items():
+                events, ["cscRechits", "dtRecHits", "rpcRecHits"], ctx.match_key).items():
             llp = ak.with_field(llp, ak.unflatten(v, nllp), f + "Total")
+    ctx.events, ctx.llp = events, llp
 
-    events = ak.with_field(events, llp, "llp")
-    if SKIP_CLUSTERING:
-        # Deliberately no events.<sys>Cluster and no llp.reco* fields: a config
-        # that needs them should fail loudly at expression validation rather
-        # than silently fill zeros.
-        return events
-    events = ak.with_field(events, clusters["csc"], "cscCluster")
-    events = ak.with_field(events, clusters["dt"], "dtCluster")
-    events = ak.with_field(events, clusters["rpc"], "rpcCluster")
-    return events
+
+_STEP_FUNCS = {
+    "clusters": _step_clusters,
+    "cluster_isolation": _step_cluster_isolation,
+    "llp": _step_llp,
+    "llp_hits": _step_llp_hits,
+    "llp_reco": _step_llp_reco,
+    "llp_shape": _step_llp_shape,
+}
+assert set(_STEP_FUNCS) == set(STEP_DEPS)
 
 
 def _dr_to_nearest(clusters, objects):
@@ -340,22 +510,27 @@ def _build_llps(events):
 def _empty_llps(events):
     """Zero-length llp collection (background samples without SUEPGenPart).
 
-    Same fields as the real collection, so llp expressions in the configs
-    evaluate to empty results instead of raising on background samples.
+    Same fields as the real collection — for the enabled steps only, so the
+    presence of a field means the same thing on signal and background.
     """
     counts = np.zeros(len(events), dtype=np.int64)
 
     def empty(dtype):
         return ak.unflatten(np.zeros(0, dtype=dtype), counts)
 
-    f64 = (("pt", "eta", "phi", "mass", "energy", "decayR", "decayZ",
-            "Llab", "betagamma", "ctau", "openingAngle",
-            "clusterHitFracCSC", "clusterHitFracDT", "clusterHitFracRPC")
-           + tuple(f + sys for sys in ("CSC", "DT", "RPC", "Total")
-                   for f in _dr_field_names()))
-    i64 = ("gidx", "lidx", "nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsTotal",
-           "nRecoClusterCSC", "nRecoClusterDT", "nRecoClusterRPC")
-    boo = ("inCSC", "inDT", "inRPC", "recoCSC", "recoDT", "recoRPC", "reco")
+    f64 = ["pt", "eta", "phi", "mass", "energy", "decayR", "decayZ",
+           "Llab", "betagamma", "ctau", "openingAngle"]
+    i64 = ["gidx", "lidx"]
+    boo = ["inCSC", "inDT", "inRPC"]
+    if "llp_hits" in STEPS:
+        i64 += ["nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsTotal"]
+    if "llp_reco" in STEPS:
+        f64 += ["clusterHitFracCSC", "clusterHitFracDT", "clusterHitFracRPC"]
+        i64 += ["nRecoClusterCSC", "nRecoClusterDT", "nRecoClusterRPC"]
+        boo += ["recoCSC", "recoDT", "recoRPC", "reco"]
+    if "llp_shape" in STEPS:
+        f64 += [f + sys for sys in ("CSC", "DT", "RPC", "Total")
+                for f in _dr_field_names()]
     fields = {f: empty(np.float64) for f in f64}
     fields.update({f: empty(np.int64) for f in i64})
     fields.update({f: empty(np.bool_) for f in boo})
@@ -365,7 +540,7 @@ def _empty_llps(events):
 def _dr_field_names():
     """Names of the per-LLP rechit-spread fields (without the system suffix)."""
     return ("drPairMin", "drPairMax", "drMax") + tuple(
-        f"dr{int(round(q * 100))}" for q in DR_QUANTILES)
+        f"dr{int(round(q * 100))}" for q in PARAMS["dr_quantiles"])
 
 
 def _llp_rechit_dr(events, coll_names, keys, hit_dr=None):
@@ -400,11 +575,12 @@ def _llp_rechit_dr(events, coll_names, keys, hit_dr=None):
     pair_min = np.full(n_llp, np.nan)
     pair_max = np.full(n_llp, np.nan)
     dr_max = np.full(n_llp, np.nan)
-    dr_q = np.full((len(DR_QUANTILES), n_llp), np.nan)
+    quantiles = PARAMS["dr_quantiles"]
+    dr_q = np.full((len(quantiles), n_llp), np.nan)
 
     def result():
         out = {"drPairMin": pair_min, "drPairMax": pair_max, "drMax": dr_max}
-        for t, q in enumerate(DR_QUANTILES):
+        for t, q in enumerate(quantiles):
             out[f"dr{int(round(q * 100))}"] = dr_q[t]
         return out
 
@@ -438,21 +614,24 @@ def _llp_rechit_dr(events, coll_names, keys, hit_dr=None):
     ev_off = np.searchsorted(evt[grp], np.arange(len(nllp) + 1)).astype(np.int64)
 
     _dr_kernel(ev_off, hit_eta, hit_phi, hit_idx, hit_src, keys_flat, llp_off,
-               np.asarray(DR_QUANTILES, dtype=np.float64),
+               np.asarray(quantiles, dtype=np.float64),
                pair_min, pair_max, dr_max, dr_q,
                hit_dr if hit_dr is not None else np.empty(0),
-               hit_dr is not None)
+               hit_dr is not None, int(PARAMS["pair_max_hits"]))
     return result()
 
 
 @njit(cache=True)
 def _dr_kernel(ev_off, hit_eta, hit_phi, hit_idx, hit_src, keys_flat, llp_off,
-               quantiles, pair_min, pair_max, dr_max, dr_q, hit_dr, do_hits):
+               quantiles, pair_min, pair_max, dr_max, dr_q, hit_dr, do_hits,
+               pair_max_hits):
     """Compiled inner loop of :func:`_llp_rechit_dr` (see it for definitions).
 
     Every array is flat and preallocated by the caller; the five output arrays
     are written in place.  ``ev_off`` slices the matched-hit arrays per event,
     ``llp_off`` slices ``keys_flat`` and the output rows per event.
+    ``pair_max_hits`` is passed in rather than read from :data:`PARAMS`, which
+    numba would freeze into the cached machine code at first compile.
 
     Compiled because the groups are tiny (~3 rechits per LLP): in numpy this
     loop was ~17x slower, spending almost all of it on per-call dispatch rather
@@ -521,7 +700,7 @@ def _dr_kernel(ev_off, hit_eta, hit_phi, hit_idx, hit_src, keys_flat, llp_off,
                     hit_dr[hit_src[a0 + order[a + t]]] = dr[t]
 
             if m >= 2:
-                step = 1 + (m - 1) // PAIR_MAX_HITS
+                step = 1 + (m - 1) // pair_max_hits
                 lo = np.inf
                 hi = -np.inf
                 for u in range(0, m, step):
@@ -587,6 +766,7 @@ def _cluster_system(rechits, timefield, eps, min_samples):
     """
     from sklearn.cluster import DBSCAN
 
+    match_min_hits = PARAMS["match_min_hits"]
     counts = np.asarray(ak.num(rechits.Eta))
     offsets = np.concatenate([[0], np.cumsum(counts)])
     eta = np.asarray(ak.flatten(rechits.Eta), dtype=np.float64)
@@ -638,10 +818,10 @@ def _cluster_system(rechits, timefield, eps, min_samples):
                 best, nbest = int(uniq[cnt.argmax()]), int(cnt.max())
                 # How many distinct LLPs clear the match threshold in this
                 # cluster (a cluster can overlap more than one LLP's shower).
-                nmatched_llp = int((cnt >= MATCH_MIN_HITS).sum())
+                nmatched_llp = int((cnt >= match_min_hits).sum())
             else:
                 best, nbest, nmatched_llp = -1, 0, 0
-            matched = nbest >= MATCH_MIN_HITS
+            matched = nbest >= match_min_hits
             out["size"].append(int(m.sum()))
             out["eta"].append(float(e[m].mean()))
             out["phi"].append(float(cphi))

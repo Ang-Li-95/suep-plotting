@@ -14,8 +14,8 @@ files the failed tasks owned, with the same shard boundaries.
 
 from __future__ import annotations
 
-import os
 import pickle
+import re
 import shutil
 import subprocess
 import sys
@@ -148,31 +148,29 @@ def report(output_dir: str, verify: bool = True) -> list[Task]:
     return redo
 
 
-# Knobs that change what derive() computes; a rerun must use the values the
-# rest of the run was filled with, or the directory ends up self-inconsistent.
-_CLUSTER_ENV = ("MDS_CLUSTER_MIN_SAMPLES", "MDS_CLUSTER_EPS",
-                "MDS_SKIP_CLUSTERING", "MDS_LLPIDX_CONVENTION")
-_CLUSTER_DEFAULTS = {"MDS_CLUSTER_MIN_SAMPLES": "10", "MDS_CLUSTER_EPS": "0.4",
-                     "MDS_SKIP_CLUSTERING": "0", "MDS_LLPIDX_CONVENTION": "genpart"}
+def _job_config_dir(script: str) -> Path | None:
+    """The ``--config-dir`` job.sh was written with, if it can be read off."""
+    m = re.search(r'--config-dir\s+"([^"]+)"', script)
+    return Path(m.group(1)) if m else None
 
 
-def _warn_unpinned_env(job_sh: Path) -> None:
-    """Warn when the rerun's clustering knobs come from the calling shell.
+def _warn_columns_changed(job_sh: Path) -> None:
+    """Warn when columns.yaml changed after the run was submitted.
 
-    job.sh inherits the submitting environment, so a rerun from a shell with
-    different MDS_* values would fill the redone shards with different
-    clustering than their neighbours -- invisible in the merged output.
+    The redone tasks re-read the config directory, so an edited columns.yaml
+    would fill them with different derived columns than their neighbours --
+    invisible in the merged output.
     """
-    script = job_sh.read_text()
-    if any(f"export {k}" in script for k in _CLUSTER_ENV):
+    config_dir = _job_config_dir(job_sh.read_text())
+    if config_dir is None:
         return
-    current = {k: os.environ.get(k, _CLUSTER_DEFAULTS[k]) for k in _CLUSTER_ENV}
-    print("\nWARNING: job.sh does not pin the clustering knobs, so this rerun "
-          "uses the current shell's:")
-    for k, v in current.items():
-        flag = "" if k in os.environ else "  (default, not exported)"
-        print(f"    {k}={v}{flag}")
-    print("  These must match the values the rest of the run was filled with.")
+    columns = config_dir / "columns.yaml"
+    if not columns.exists() or columns.stat().st_mtime <= job_sh.stat().st_mtime:
+        return
+    print(f"\nWARNING: {columns} was modified after this run was submitted, so "
+          "the redone tasks would use different derived-column settings than "
+          "the rest of the directory.\n  Restore it, or reprocess the whole run "
+          "(suep-run --force / a fresh suep-submit).")
 
 
 def resubmit(output_dir: str, verify: bool = True, dry_run: bool = False,
@@ -190,7 +188,7 @@ def resubmit(output_dir: str, verify: bool = True, dry_run: bool = False,
     if not job_sh.exists():
         sys.exit(f"ERROR: no job script at {job_sh}")
 
-    _warn_unpinned_env(job_sh)
+    _warn_columns_changed(job_sh)
 
     array = _format_ranges([t.index for t in redo])
     if max_concurrent:

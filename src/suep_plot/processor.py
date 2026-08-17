@@ -155,8 +155,29 @@ def _resolve_files(file_specs: list[str]) -> list[str]:
     return out
 
 
-def _load_custom_columns():
-    """Import custom/columns.py if present -> (derive_fn or None)."""
+def load_columns_config(path: str) -> dict:
+    """Read a config's optional ``columns.yaml`` -> settings for ``derive()``.
+
+    Missing file = ``{}`` = the module's own defaults.  The schema is the
+    custom-columns module's business (``parameters`` / ``steps`` for the MDS
+    module); it is only forwarded here.
+    """
+    path = Path(path)
+    if not path.exists():
+        return {}
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def _load_custom_columns(columns_cfg: dict | None = None):
+    """Import custom/columns.py if present -> (derive_fn or None).
+
+    When the module exposes ``configure()``, it is called with the config
+    directory's ``columns.yaml`` before any chunk is processed, so per-config
+    parameters and enabled steps take effect.  A bad columns.yaml is fatal: it
+    changes what the derived columns *mean*, so it must not degrade to a
+    warning and silently different histograms.
+    """
     repo_root = Path(__file__).resolve().parent.parent.parent
     if not (repo_root / "custom" / "columns.py").exists():
         return None
@@ -165,10 +186,23 @@ def _load_custom_columns():
     try:
         mod = importlib.import_module("custom.columns")
         importlib.reload(mod)
-        return getattr(mod, "derive", None)
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: could not load custom/columns.py: {e}")
         return None
+    derive_fn = getattr(mod, "derive", None)
+    if derive_fn is not None:
+        print("Custom columns: loaded derive()")
+    configure = getattr(mod, "configure", None)
+    if configure is not None:
+        try:
+            params, steps = configure(columns_cfg)
+        except Exception as e:  # noqa: BLE001
+            raise SystemExit(f"ERROR in columns.yaml: {e}")
+        print(f"                steps  {list(steps)}")
+        print(f"                params {dict(params)}")
+    elif columns_cfg:
+        print("WARNING: columns.yaml ignored: custom/columns.py has no configure()")
+    return derive_fn
 
 
 class SuepProcessor(processor.ProcessorABC):
@@ -324,7 +358,7 @@ def _inputs_mtime(files: list[str], config_dir: Path,
 
     paths = [config_dir / f for f in
              ("samples.yaml", "histograms.yaml", "selections.yaml",
-              "corrections.yaml", "reweights.yaml")]
+              "corrections.yaml", "reweights.yaml", "columns.yaml")]
     repo_root = Path(__file__).resolve().parent.parent.parent
     paths.append(repo_root / "custom" / "columns.py")
     paths.extend(Path(p) for p in extra_paths)
@@ -429,9 +463,7 @@ def run_all(
             print(f"WARNING: could not load corrections: {e}")
             print("         proceeding without corrections")
 
-    derive_fn = _load_custom_columns()
-    if derive_fn is not None:
-        print("Custom columns: loaded derive()")
+    derive_fn = _load_custom_columns(load_columns_config(config_dir / "columns.yaml"))
 
     proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
                          reweighters)
