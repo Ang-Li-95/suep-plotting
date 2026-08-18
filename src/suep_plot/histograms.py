@@ -22,9 +22,89 @@ import numpy as np
 import yaml
 
 
+def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
+    """Expand ``variants:`` into one histogram definition per variant.
+
+    A variant is the same fill under extra selections, so the whole matrix of
+    (variable x selection) is written once per variable::
+
+        _variant_sets:                    # reusable; '_' keys are not histograms
+          csc_match:
+            matched:   {selections: [csc_cluster_matched],   label_prefix: "matched "}
+            unmatched: {selections: [csc_cluster_unmatched], label_prefix: "unmatched "}
+
+        csc_cluster_size:
+          expression: "events.cscCluster.size"
+          per_object: true
+          bins: 50
+          lo: 0
+          hi: 500
+          label: 'CSC cluster $N_{\\mathrm{hits}}$'
+          variants: csc_match             # or an inline mapping of the same shape
+
+    yields ``csc_cluster_size``, ``csc_cluster_size_matched`` and
+    ``csc_cluster_size_unmatched``.  A variant's ``selections`` are *appended*
+    to the base ones (base cuts keep applying), ``label_prefix`` /
+    ``label_suffix`` decorate the base label, and any other key overrides the
+    base outright.  ``keep_base: false`` drops the unselected histogram.
+    """
+    variant_sets = raw.get("_variant_sets") or {}
+    out: dict = {}
+
+    def _fail(msg):
+        raise SystemExit(f"ERROR in {path}: {msg}")
+
+    for name, cfg in raw.items():
+        if name.startswith("_"):
+            continue
+        if not isinstance(cfg, dict) or "variants" not in cfg:
+            out[name] = cfg
+            continue
+
+        base = {k: v for k, v in cfg.items() if k not in ("variants", "keep_base")}
+        spec = cfg["variants"]
+        if isinstance(spec, str):
+            if spec not in variant_sets:
+                known = ", ".join(sorted(variant_sets)) or "(none defined)"
+                _fail(f"histogram '{name}': unknown variant set '{spec}'."
+                      f" Defined under _variant_sets: {known}")
+            spec = variant_sets[spec]
+        if not isinstance(spec, dict) or not spec:
+            _fail(f"histogram '{name}': 'variants' must name a variant set or be"
+                  " a non-empty mapping of suffix -> overrides")
+
+        if cfg.get("keep_base", True):
+            out[name] = base
+
+        for suffix, overrides in spec.items():
+            overrides = dict(overrides or {})
+            variant = dict(base)
+
+            selections = list(base.get("selections", [])) + \
+                list(overrides.pop("selections", []))
+            if selections:
+                variant["selections"] = selections
+
+            label = overrides.pop("label", variant.get("label"))
+            prefix = overrides.pop("label_prefix", "")
+            suffix_label = overrides.pop("label_suffix", "")
+            if label is not None:
+                variant["label"] = f"{prefix}{label}{suffix_label}"
+
+            variant.update(overrides)
+
+            key = f"{name}_{suffix}"
+            if key in out or key in raw:
+                _fail(f"histogram '{name}': variant '{suffix}' would overwrite"
+                      f" the existing histogram '{key}'")
+            out[key] = variant
+
+    return out
+
+
 def load_histogram_defs(path: str) -> dict:
     with open(path) as f:
-        return yaml.safe_load(f) or {}
+        return expand_variants(yaml.safe_load(f) or {}, str(path))
 
 
 def load_selection_defs(path: str) -> dict:

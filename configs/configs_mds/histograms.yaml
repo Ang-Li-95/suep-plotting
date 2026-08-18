@@ -457,8 +457,10 @@ rpc_cluster_max_layer_frac:
 # ── (8) Cluster isolation from prompt muons / jets ────────────────
 # events.<sys>Cluster.drMuon / .drJet: dR from the cluster centroid to the
 # closest reconstructed Muon / Jet in the event (custom/columns.py).  Events
-# with no muon (no jet) give NaN and drop out of the fill, so these are the
-# distributions over clusters that *have* something to be measured against.
+# with no muon (no jet) carry the sentinel NO_OBJECT_DR = 999, which overflows
+# the axis and is folded into the last bin ('flow: sum', the default): that bin
+# therefore counts the clusters with no prompt object to be measured against,
+# on top of the few genuine entries above the axis maximum.
 # Punch-through and muon-bremsstrahlung clusters pile up near 0; a displaced
 # decay has no prompt object pointing at it and populates the tail.
 

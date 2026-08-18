@@ -400,7 +400,18 @@ parameters:
   dr_quantiles: [0.5, 0.8, 0.9]   # → llp.dr50/dr80/dr90
   pair_max_hits: 2000
   llpidx_convention: genpart  # or 'ordinal' (pre-Geant4-fix files)
-steps: [clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]
+  # Which prompt objects the cluster ΔR is measured against
+  jerc: true                  # JEC (L1L2L3Res) on events.Jet + JER smearing on MC
+  jerc_era: 2024_Summer24     # jsonpog payload directory
+  jerc_algo: AK4PFPuppi
+  jerc_data_tag:              # null = the era's jec_tag_data from suep_plot.jme
+  iso_jet_pt: 30.0            # jet pT / |η| / ID for drJet
+  iso_jet_abseta: 2.4
+  iso_jet_id: tight           # 'tight' | 'tightlepveto' | 'none'
+  iso_muon_pt: 10.0           # muon pT / |η| / ID for drMuon
+  iso_muon_abseta: 2.4
+  iso_muon_id: loose          # 'loose' | 'medium' | 'tight' | 'none'
+steps: [jerc, clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]
 ```
 
 Both blocks are optional; anything left out keeps the default shown above.
@@ -412,8 +423,9 @@ all of them):
 
 | Step | Attaches | Needs |
 |------|----------|-------|
+| `jerc` | nothing — rescales `events.Jet` pT/mass in place (JEC on data and MC, JER smearing on MC) | — |
 | `clusters` | `events.<sys>Cluster` (DBSCAN, ~35 % of `derive()`) | — |
-| `cluster_isolation` | `drMuon` / `drJet` on the clusters | `clusters` |
+| `cluster_isolation` | `drMuon` / `drJet` on the clusters, measured against the selected muons/jets | `clusters` |
 | `llp` | `events.llp`: kinematics, decay vertex, volume flags | — |
 | `llp_hits` | `llp.nHits{CSC,DT,RPC,Total}` | `llp` |
 | `llp_reco` | `llp.reco*`, `nRecoCluster*`, `clusterHitFrac*` | `clusters`, `llp_hits` |
@@ -424,6 +436,32 @@ them fails at expression validation instead of quietly filling empty
 histograms. Unknown keys, unknown steps and unmet dependencies are fatal.
 See [`configs/configs_mds_gen/columns.yaml`](configs/configs_mds_gen/columns.yaml) for the
 gen-level-only set.
+
+#### Which muons and jets count as prompt activity
+
+`cluster_isolation` measures `drMuon` / `drJet` to the closest **selected**
+object, so a cluster sitting next to a muon that fails the ID counts as
+isolated rather than vetoed. Events with no selected muon (jet) at all get the
+sentinel `NO_OBJECT_DR = 999`, which passes any isolation cut and lands in the
+overflow of the ΔR histograms.
+
+Two details are specific to 2024 NanoAOD:
+
+- **`Jet_jetId` is not stored any more.** The ID is evaluated from the PF energy
+  fractions and multiplicities with the official jsonpog `jetid.json.gz`
+  (`AK4PUPPI_Tight` / `AK4PUPPI_TightLeptonVeto`), so the thresholds come from
+  the central payload instead of being copied into `custom/columns.py`.
+- **JEC/JER rescale pT and mass only** — η and φ are untouched — so `jerc`
+  reaches ΔR *only* through the `iso_jet_pt` threshold. (`correct_jets` re-sorts
+  jets by the new pT, so the ordering moves, but ΔR-to-nearest is
+  order-invariant.)
+- **Data is corrected too**, with the era's `*_DATA` tag — `L1L2L3Res` is where
+  the residual corrections that exist for data live. Only the JER smearing is
+  MC-only, and `correct_jets` already switches it off when `GenJet` is absent.
+  The 2024 DATA compound declares an extra `run` input: one payload covers the
+  whole year and picks the residual IOV per event, so no run-range map is
+  needed. MC vs data is decided by `genWeight` (`has_truth` is False for the
+  non-SUEP MC too, so it cannot be used for this).
 
 ### Environment knobs
 
@@ -531,6 +569,7 @@ Fill-time fields (changing them requires re-running `suep-run`):
 | `per_object` | no | `false` | If `true`, expression returns a jagged array (e.g. one value per jet); it is flattened, with per-event weights repeated per object. Otherwise it must return one value per event. |
 | `selections` | no | `[]` | Selection names from `selections.yaml`, AND-ed. |
 | `weight` | no | — | Extra per-event weight (× genWeight × corrections). |
+| `variants` | no | — | Repeat this histogram under extra selections — see [`variants`](#the-same-plot-under-several-selections-variants). |
 
 Plot-time fields (take effect on the next `suep-plot`, **no reprocessing**):
 
@@ -547,6 +586,46 @@ Plot-time fields (take effect on the next `suep-plot`, **no reprocessing**):
 `bins_x/lo_x/hi_x/bins_y/lo_y/hi_y` (or `edges_x`/`edges_y`) and
 `label_x/label_y`. They render as colz and can feed the derived
 profile/projection plots.
+
+#### The same plot under several selections (`variants`)
+
+Cluster studies usually want every variable under the same handful of cuts
+(matched / unmatched, in-time / out-of-time, per station …). Write the variable
+once and list the cuts — the loader expands the (variable × selection) matrix:
+
+```yaml
+_variant_sets:                  # reusable; top-level '_' keys are not histograms
+  csc_match:
+    matched:   {selections: [csc_cluster_matched],   label_prefix: "matched "}
+    unmatched: {selections: [csc_cluster_unmatched], label_prefix: "unmatched "}
+
+csc_cluster_size:
+  expression: "events.cscCluster.size"
+  per_object: true
+  selections: [has_csc_cluster]     # base cuts: kept by every variant
+  bins: 50
+  lo: 0
+  hi: 500
+  label: 'CSC cluster $N_{\mathrm{hits}}$'
+  variants: csc_match               # or an inline mapping of the same shape
+```
+
+That yields three histograms — `csc_cluster_size` (base cuts only),
+`csc_cluster_size_matched` and `csc_cluster_size_unmatched` — and adding a third
+cut to `csc_match` adds one plot to *every* variable that references it.
+
+| Variant key | Effect |
+|---|---|
+| `selections` | **Appended** to the base `selections`, so base cuts keep applying. |
+| `label_prefix` / `label_suffix` | Decorate the base `label` (legends and axis titles stay distinguishable). |
+| any other key | Overrides the base outright — e.g. `log_y: false`, a different `hi`. |
+| `keep_base: false` | *On the histogram, not the variant:* drop the unselected version and keep only the variants. |
+
+Expansion happens where the YAML is read, so variants behave exactly like
+hand-written entries: they appear in `cutflow.txt`, the `index.html` gallery and
+`derived_plots.yaml` under their expanded names (`<name>_<variant>`), and their
+selection names are validated the same way. A variant that would overwrite an
+existing histogram, or an unknown variant-set name, is a fatal config error.
 
 ### selections.yaml
 
@@ -1092,12 +1171,39 @@ def derive(events):
 ```
 
 Afterwards every `events.Jet` expression (HT, jet pT, `good_jets`, …) uses
-corrected jets. `suep_plot/jme.py` follows the JME prescription: undo
-`rawFactor`, apply the compound `L1L2L3Res` JEC from jsonpog
-`jet_jerc.json.gz`, then (MC) smear with the official `JERSmear` helper —
-gen-matched scaling within `dR < 0.2` and `3σ`, deterministic stochastic
-smearing (seeded from the event number) otherwise — and re-sort jets by the
-new pT. Systematics are one argument away:
+corrected jets. The **JEC** is coffea's `CorrectedJetsFactory`, fed the jsonpog
+`jet_jerc.json.gz` payloads through coffea's `correctionlib_adapters`. The
+**JER smearing** is the official `JERSmear` payload (`jer_smear.json.gz`, shipped
+with the package), evaluated per jet with the gen pT of jets matched within
+`dR < 0.2` and `3σ` — that is what switches it between gen-matched scaling and
+its deterministic, event-seeded stochastic mode; a non-finite or non-positive
+factor falls back to 1.0. `suep_plot/jme.py` supplies the wiring: the payload
+tags (including the run-dependent `*_DATA` compound), the per-jet
+`pt_raw`/`event_rho`/`run` columns, the Type-1 MET rebuild and the pT re-sort.
+
+**MET is rebuilt, not patched:** the Type-1 correction is recomputed from
+`RawPuppiMET` as the vector sum of `pT_L2L3Res − pT_L1` over the muon-subtracted
+jets of *both* collections — `Jet` and `CorrT1METJet`, the sub-15 GeV jets
+NanoAOD stores precisely for this — projected along `φ + muonSubtrDeltaPhi`,
+the axis of the jet once its muon is removed (bare `φ` when a dataset lacks that
+branch), with the standard `pT_corr > 15`,
+`|η| < 5.2`, `EM fraction < 0.9` selection, and with whatever the jets picked up
+beyond the nominal JEC (smearing, a JES variation) carried into the sum. Feeding
+the *production* jet pT through the same code reproduces the production Type-1
+term to 0.001 GeV — that closure is what validates it. Rebuilding with the
+current calibration lands ~6 GeV from the stored `PuppiMET`, because the JEC has
+moved since sample production (stored jets carry a mean factor of 1.58 versus
+1.25 for `Summer24Prompt24_V5`); that is the intended difference, not an error.
+
+Payloads come from the **CAT campaign directory** for the era —
+`/cvmfs/cms-griddata.cern.ch/cat/metadata/JME/<campaign>/latest` — which
+`suep_plot.jme.payload_path()` prefers over cvmfs jsonpog-integration
+(`$CORRECTIONLIB_DATA` still wins over both). This is not cosmetic: jsonpog's
+`2024_Summer24` only carries `Summer24Prompt24_V1`, while the 2024 recommendation
+is `V5` (`V3`→`V4` bumped the tag without updating the L2L3Residual payloads;
+`V5` is the fix). `custom/columns.py` resolves the jet ID through the same
+function, so the ID and the calibration cannot drift onto different campaigns.
+Systematics are one argument away:
 
 ```python
 events = correct_jets(events, variation="jec_up")    # jec_down / jer_up / jer_down

@@ -31,3 +31,8 @@ suep-reweight = "suep_plot.cli:reweight"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# The JERSmear payload is shipped with the package: it is tiny and jsonpog does
+# not distribute it per era, so jme.py reads it from next to the module.
+[tool.setuptools.package-data]
+suep_plot = ["*.json.gz"]

@@ -956,9 +956,9 @@ def plot_all(
     if config_dir:
         fresh_path = Path(config_dir) / "histograms.yaml"
         if fresh_path.exists():
-            with open(fresh_path) as f:
-                for name, cfg in (yaml.safe_load(f) or {}).items():
-                    hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
+            from .histograms import load_histogram_defs
+            for name, cfg in load_histogram_defs(fresh_path).items():
+                hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
 
     if lumi is not None:
         apply_xs_scaling(histograms, sample_defs, data.get("sumw", {}), lumi)

@@ -47,8 +47,8 @@ this module attaches four derived collections:
     ``maxStationFrac``), plus spatial spreads (``etaSpread``, ``phiSpread``,
     ``rSpread``, ``zSpread``).  Isolation from prompt activity: ``drMuon`` /
     ``drJet``, the dR from the cluster centroid to the closest reconstructed
-    muon / jet (NaN when the event has none, so those clusters simply drop out
-    of the histogram).  Two "layer" definitions are kept in parallel:
+    muon / jet, or :data:`NO_OBJECT_DR` (999) in events that have none, so an
+    isolation cut is a plain ``drMuon >= x`` with no special case.  Two "layer" definitions are kept in parallel:
     ``layer*`` fields use the stored segmentation (physical chamber for CSC,
     which has no in-chamber layer branch; the physical layer for DT/RPC),
     while ``zLayer*`` fields identify the layer plane from quantized global z
@@ -106,6 +106,8 @@ from its config directory alone.
 
 from __future__ import annotations
 
+import functools
+
 import awkward as ak
 import numpy as np
 from numba import njit
@@ -134,6 +136,20 @@ RPC_EC_ZMIN, RPC_EC_ZMAX, RPC_EC_RMAX = 600.0, 1020.0, 660.0  # endcap; barrel =
 # ``llpidx_convention``: how the rechit ``llpIdx`` branch is read — "genpart"
 # (llpIdx is the SUEPGenPart index, post-Geant4-fix files) or "ordinal"
 # (llpIdx is the ordinal LLP index within the event, pre-fix files).
+#
+# Cluster isolation (``cluster_isolation`` step): which reconstructed muons and
+# jets count as prompt activity for ``drMuon`` / ``drJet``.  Note JEC/JER
+# rescale pT and mass but leave eta/phi untouched, so corrections reach dR only
+# through which jets pass ``iso_jet_pt``.
+# ``jerc``: apply L1L2L3Res JEC to events.Jet before the jets are selected (the
+# ``jerc`` step), plus JER smearing on MC.  Data is corrected with the era's
+# ``*_DATA`` tag — L1L2L3Res is where the residual corrections live — and is
+# never smeared.  ``jerc_data_tag`` overrides that tag; None takes the era entry
+# from suep_plot.jme.DEFAULTS.
+# ``iso_jet_id`` / ``iso_muon_id``: working points.  2024 NanoAOD no longer
+# stores ``Jet_jetId``, so the jet ID is evaluated from the PF energy fractions
+# with the official jsonpog ``jetid.json.gz`` ("tight", "tightlepveto" or
+# "none").  Muon IDs are the stored flags ("loose", "medium", "tight", "none").
 DEFAULT_PARAMS = {
     "cluster_eps": 0.4,
     "cluster_min_samples": 10,
@@ -142,11 +158,30 @@ DEFAULT_PARAMS = {
     "pair_max_hits": 2000,
     "dr_quantiles": (0.5, 0.8, 0.9),
     "llpidx_convention": "genpart",
+    "jerc": True,
+    "jerc_era": "2024_Summer24",
+    "jerc_algo": "AK4PFPuppi",
+    "jerc_data_tag": None,
+    "iso_jet_pt": 30.0,
+    "iso_jet_abseta": 2.4,
+    "iso_jet_id": "tight",
+    "iso_muon_pt": 10.0,
+    "iso_muon_abseta": 2.4,
+    "iso_muon_id": "loose",
 }
+
+# drMuon / drJet in events with no reconstructed muon / jet at all.  Such a
+# cluster is maximally isolated, so the sentinel is larger than any physical dR
+# (which cannot exceed ~2*pi) and passes every isolation cut without the cut
+# expression needing an isnan leg.  It lands in the overflow of the dR
+# histograms, which fold it into their last bin ('flow: sum', the default), so
+# the count of clusters with no prompt object stays visible on the plot.
+NO_OBJECT_DR = 999.0
 
 # Optional helpers, in the order derive() runs them, each with the steps it
 # needs.  A config's ``steps:`` list selects a subset; the default is all.
 STEP_DEPS = {
+    "jerc": (),
     "clusters": (),
     "cluster_isolation": ("clusters",),
     "llp": (),
@@ -190,6 +225,15 @@ def configure(cfg=None):
         if not isinstance(PARAMS[key], int) or PARAMS[key] < 1:
             raise ValueError(f"columns.yaml: {key} must be a positive integer, "
                              f"got {PARAMS[key]!r}")
+    for key, allowed in (("iso_muon_id", ("loose", "medium", "tight", "none")),
+                         ("iso_jet_id", ("tight", "tightlepveto", "none"))):
+        if str(PARAMS[key]).lower() not in allowed:
+            raise ValueError(f"columns.yaml: {key} must be one of "
+                             f"{list(allowed)}, got {PARAMS[key]!r}")
+    for key in ("iso_muon_pt", "iso_jet_pt", "iso_muon_abseta", "iso_jet_abseta"):
+        if not isinstance(PARAMS[key], (int, float)) or PARAMS[key] < 0:
+            raise ValueError(f"columns.yaml: {key} must be a non-negative "
+                             f"number, got {PARAMS[key]!r}")
     if not PARAMS["cluster_eps"] > 0:
         raise ValueError("columns.yaml: cluster_eps must be positive, got "
                          f"{PARAMS['cluster_eps']!r}")
@@ -299,14 +343,121 @@ def _step_clusters(ctx):
                                             eps, min_samples)
 
 
+def _step_jerc(ctx):
+    """JEC on events.Jet, in place; plus JER smearing on MC.
+
+    JEC/JER rescale pT and mass and leave eta/phi alone, so this reaches the
+    cluster dR only through the ``iso_jet_pt`` threshold -- but the threshold is
+    exactly what the jet selection is for, so the correction has to come first.
+
+    Data is corrected too, with the era's ``*_DATA`` tag: ``L1L2L3Res`` carries
+    the residual corrections that exist precisely for data.  Only the JER
+    smearing is MC-only.  ``genWeight`` is the MC marker (``has_truth`` is False
+    for the non-SUEP MC too, so it cannot be used here).
+    """
+    if not PARAMS["jerc"] or "Jet" not in ctx.events.fields:
+        return
+
+    from suep_plot.jme import DEFAULTS, correct_jets
+
+    era, algo = PARAMS["jerc_era"], PARAMS["jerc_algo"]
+    if "genWeight" in ctx.events.fields:
+        ctx.events = correct_jets(ctx.events, era=era, algo=algo)
+        return
+
+    tag = PARAMS["jerc_data_tag"] or DEFAULTS.get(era, {}).get("jec_tag_data")
+    if tag is None:
+        raise ValueError(
+            f"columns.yaml: jerc is on and this is data, but era '{era}' has no "
+            "jec_tag_data in suep_plot.jme.DEFAULTS -- set jerc_data_tag "
+            "explicitly, or jerc: false to leave data jets uncorrected.")
+    ctx.events = correct_jets(ctx.events, era=era, algo=algo,
+                              jec_tag=tag, smear=False)
+
+
 def _step_cluster_isolation(ctx):
-    """dR from each cluster centroid to the nearest reco muon / jet."""
+    """dR from each cluster centroid to the nearest selected muon / jet.
+
+    "Selected" means the pT / |eta| / ID requirements in :data:`DEFAULT_PARAMS`:
+    a cluster is only counted as non-isolated if the nearby object is one the
+    analysis would actually call a prompt muon or jet.
+    """
+    objects = {
+        "drMuon": _selected_muons(ctx.events),
+        "drJet": _selected_jets(ctx.events),
+    }
     for sys, clusters in ctx.clusters.items():
-        for field, obj in (("drMuon", "Muon"), ("drJet", "Jet")):
-            if obj in ctx.events.fields:
+        for field, objs in objects.items():
+            if objs is not None:
                 clusters = ak.with_field(
-                    clusters, _dr_to_nearest(clusters, ctx.events[obj]), field)
+                    clusters, _dr_to_nearest(clusters, objs), field)
         ctx.clusters[sys] = clusters
+
+
+def _selected_muons(events):
+    """Muons passing the isolation-veto requirements, or None if absent."""
+    if "Muon" not in events.fields:
+        return None
+    muons = events.Muon
+    keep = ((muons.pt > PARAMS["iso_muon_pt"])
+            & (abs(muons.eta) < PARAMS["iso_muon_abseta"]))
+    flag = {"loose": "looseId", "medium": "mediumId",
+            "tight": "tightId", "none": None}[str(PARAMS["iso_muon_id"]).lower()]
+    if flag is not None:
+        keep = keep & muons[flag]
+    return muons[keep]
+
+
+def _selected_jets(events):
+    """Jets passing the isolation-veto requirements, or None if absent."""
+    if "Jet" not in events.fields:
+        return None
+    jets = events.Jet
+    keep = ((jets.pt > PARAMS["iso_jet_pt"])
+            & (abs(jets.eta) < PARAMS["iso_jet_abseta"]))
+    level = str(PARAMS["iso_jet_id"]).lower()
+    if level != "none":
+        keep = keep & _jet_id(jets, level, PARAMS["jerc_era"])
+    return jets[keep]
+
+
+@functools.lru_cache(maxsize=None)
+def _jet_id_evaluator(era, algo, level):
+    """The official jsonpog jet-ID evaluator (cached; opening the gz is slow)."""
+    import correctionlib
+
+    from suep_plot.jme import payload_path
+
+    key = {"tight": f"{algo}_Tight",
+           "tightlepveto": f"{algo}_TightLeptonVeto"}[level]
+    # Same resolution as the JEC, so the ID and the calibration come from one
+    # campaign directory rather than drifting apart.
+    return correctionlib.CorrectionSet.from_file(
+        payload_path(era, "jetid.json.gz"))[key]
+
+
+def _jet_id(jets, level, era, algo="AK4PUPPI"):
+    """Per-jet ID decision as a jagged boolean.
+
+    2024 NanoAOD dropped ``Jet_jetId``; the JME prescription is to recompute it
+    from the PF energy fractions and multiplicities, which the official
+    ``jetid.json.gz`` does -- so the thresholds live in the central payload
+    rather than being copied into this file.
+    """
+    counts = ak.num(jets)
+    flat = {name: ak.to_numpy(ak.flatten(jets[field]))
+            for name, field in (("eta", "eta"), ("chHEF", "chHEF"),
+                                ("neHEF", "neHEF"), ("chEmEF", "chEmEF"),
+                                ("neEmEF", "neEmEF"), ("muEF", "muEF"),
+                                ("chMultiplicity", "chMultiplicity"),
+                                ("neMultiplicity", "neMultiplicity"),
+                                ("multiplicity", "nConstituents"))}
+    for key in ("chMultiplicity", "neMultiplicity", "multiplicity"):
+        flat[key] = flat[key].astype(np.int32)
+
+    evaluator = _jet_id_evaluator(era, algo, level)
+    passed = evaluator.evaluate(*[flat[i.name] for i in evaluator.inputs])
+    return ak.unflatten(passed.astype(bool), counts)
 
 
 def _step_llp(ctx):
@@ -403,6 +554,7 @@ def _step_llp_shape(ctx):
 
 
 _STEP_FUNCS = {
+    "jerc": _step_jerc,
     "clusters": _step_clusters,
     "cluster_isolation": _step_cluster_isolation,
     "llp": _step_llp,
@@ -416,13 +568,17 @@ assert set(_STEP_FUNCS) == set(STEP_DEPS)
 def _dr_to_nearest(clusters, objects):
     """dR from each cluster centroid to the closest object in the event.
 
-    NaN in events with no such object (``ak.min`` over an empty list), which the
-    fill drops.  Written out by hand because the cluster collection is a plain
-    record array with no vector behaviour, so ``.nearest()`` is unavailable.
+    :data:`NO_OBJECT_DR` in events with no such object (``ak.min`` over an empty
+    list): a cluster with no muon in the event is maximally isolated, so the
+    sentinel is deliberately larger than any real dR and passes every isolation
+    cut.  It overflows the dR axis, and those histograms keep the default
+    ``flow: sum``, so it shows up in their last bin.  Written out by hand
+    because the cluster collection is a plain record array with no vector
+    behaviour, so ``.nearest()`` is unavailable.
     """
     deta = clusters.eta[:, :, None] - objects.eta[:, None, :]
     dphi = (clusters.phi[:, :, None] - objects.phi[:, None, :] + np.pi) % (2 * np.pi) - np.pi
-    return ak.fill_none(ak.min(np.sqrt(deta ** 2 + dphi ** 2), axis=2), np.nan)
+    return ak.fill_none(ak.min(np.sqrt(deta ** 2 + dphi ** 2), axis=2), NO_OBJECT_DR)
 
 
 def _build_llps(events):

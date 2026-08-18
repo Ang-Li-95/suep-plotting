@@ -1,10 +1,10 @@
 # custom/columns.py settings for this config set (see that module's docstring
 # and the README's "Derived-column settings" section).
 #
-# These are the module defaults, written out explicitly: this config set is the
-# reference point of the cluster study, so its clustering must not depend on
-# what the submitting shell happened to export.  Copy the directory and edit
-# the numbers here for a variation (output_mds_minpts50, ...).
+# Pinned to the same values as configs_mds/columns.yaml, not left to the module
+# defaults: this set and configs_mds_data/ are overlaid against each other, so
+# the clustering and the isolation-object definitions have to be identical by
+# construction rather than by both happening to inherit today's defaults.
 parameters:
   cluster_eps: 0.4
   cluster_min_samples: 10
@@ -20,4 +20,5 @@ parameters:
   iso_muon_abseta: 2.4
   iso_muon_id: loose         # Muon_looseId
 
+# Everything: this is the truth superset of the study.
 steps: [jerc, clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]
