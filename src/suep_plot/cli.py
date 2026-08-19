@@ -202,9 +202,16 @@ def submit(argv=None):
                         help="Submit only these samples (default: all)")
     parser.add_argument("--partition", default=None, help="Slurm partition")
     parser.add_argument("--account", default=None, help="Slurm account")
+    parser.add_argument("--qos", default=None,
+                        help="Slurm QOS; needed for --time over the default "
+                             "QOS's cap (on CLIP c_short caps at 8h, "
+                             "c_medium at 2 days, c_long at 14 days)")
     parser.add_argument("--time", default="04:00:00", help="Wall time per job")
     parser.add_argument("--mem", default="8000", help="Memory in MB per job")
     parser.add_argument("--conda-env", default="mds", help="Conda environment to activate in jobs")
+    parser.add_argument("--proxy", default=None,
+                        help="Grid proxy to bake into job.sh "
+                             "(default: $X509_USER_PROXY, else ~/private/.proxy)")
     parser.add_argument("--chunk-size", type=int, default=100_000, help="Events per chunk")
     parser.add_argument("--workers", type=int, default=1,
                         help="Worker processes per job (also sets --cpus-per-task)")
@@ -224,6 +231,8 @@ def submit(argv=None):
         samples_filter=args.samples,
         partition=args.partition,
         account=args.account,
+        qos=args.qos,
+        proxy=args.proxy,
         time_limit=args.time,
         mem=args.mem,
         conda_env=args.conda_env,

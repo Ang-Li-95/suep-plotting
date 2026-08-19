@@ -18,6 +18,8 @@ def submit_jobs(
     mem: str,
     conda_env: str,
     chunk_size: int,
+    qos: str | None = None,
+    proxy: str | None = None,
     workers: int = 1,
     max_concurrent: int | None = None,
     files_per_job: int | None = None,
@@ -95,6 +97,11 @@ def submit_jobs(
             f.write(f"{name}\t{file_list}\t{'' if task_part is None else task_part}\n")
 
     repo_root = Path(__file__).resolve().parent.parent.parent
+    proxy_path = proxy or os.environ.get("X509_USER_PROXY") \
+        or str(Path.home() / "private" / ".proxy")
+    if not Path(proxy_path).exists():
+        print(f"  WARNING: grid proxy {proxy_path} does not exist; "
+              "jobs reading root:// samples will fail to authenticate")
 
     array_spec = f"0-{n_jobs - 1}"
     if max_concurrent:
@@ -109,6 +116,8 @@ def submit_jobs(
         f"#SBATCH --cpus-per-task={max(workers, 1)}",
         f"#SBATCH --array={array_spec}",
     ]
+    if qos:
+        directives.append(f"#SBATCH --qos={qos}")
     if partition:
         directives.append(f"#SBATCH --partition={partition}")
     if account:
@@ -145,6 +154,11 @@ conda activate {conda_env}
 
 cd "{repo_root}"
 export PYTHONPATH="{repo_root}/src:$PYTHONPATH"
+# Baked in, not inherited: Slurm --export=ALL hands the submitting
+# shell's proxy to the first submit, but a later resubmit from a clean
+# shell would leave the workers with no grid auth and every xrootd open
+# would fail with "Operation not permitted".
+export X509_USER_PROXY="${{X509_USER_PROXY:-{proxy_path}}}"
 
 python -m suep_plot.cli_worker \\
     --config-dir "{config_dir}" \\
