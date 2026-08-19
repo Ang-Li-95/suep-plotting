@@ -1161,13 +1161,16 @@ csc_cluster_station_span:
   label: 'CSC cluster station span (max-min)'
   variants: csc_variants
 
+# First-hit chamber code (see _flat_chamber_code in custom/columns.py):
+# station*10 + ring for CSC, station*10 + |wheel| for DT,
+# station*10 + ring (+100 in the endcap) for RPC.
 csc_cluster_first_chamber:
   expression: "events.cscCluster.firstChamber"
   per_object: true
   bins: 50
   lo: -0.5
   hi: 49.5
-  label: 'CSC cluster first-hit chamber (station$\times$10 + ring)'
+  label: 'CSC cluster first-hit chamber (ME station/ring)'
   variants: csc_variants
 
 csc_cluster_first_station:
@@ -1315,7 +1318,7 @@ dt_cluster_first_chamber:
   bins: 50
   lo: -0.5
   hi: 49.5
-  label: 'DT cluster first-hit chamber (station$\times$10 + |wheel|)'
+  label: 'DT cluster first-hit chamber (MB station/wheel)'
   variants: dt_variants
 
 dt_cluster_first_station:
@@ -1416,7 +1419,7 @@ rpc_cluster_first_chamber:
   bins: 150
   lo: -0.5
   hi: 149.5
-  label: 'RPC cluster first-hit chamber (100$\times$|region| + station$\times$10 + ring)'
+  label: 'RPC cluster first-hit chamber (+100 endcap)'
   variants: rpc_variants
 
 rpc_cluster_first_station:

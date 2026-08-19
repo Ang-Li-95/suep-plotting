@@ -109,12 +109,15 @@ def _clear_legend(fig, ax, legend, y_max: float, tries: int = 6) -> None:
         _headroom(ax, 2)
 
 
-def _restyle(sample_defs: dict, config_dirs) -> None:
-    """Refresh plot-only sample keys (label, color, linestyle) from configs.
+def _restyle(sample_defs: dict, hist_defs: dict, config_dirs) -> None:
+    """Refresh plot-only sample and histogram keys from configs.
 
-    The pickles carry the sample definitions as they were at fill time, so
-    without this a legend fix would need the samples reprocessed.
+    The pickles carry both definitions as they were at fill time, so without
+    this an axis-label or legend fix would need the samples reprocessed.  Only
+    keys that cannot change what was filled are taken -- the binning and the
+    expression stay as the pickle recorded them.
     """
+    from suep_plot.histograms import load_histogram_defs
     from suep_plot.processor import load_samples
 
     for cdir in config_dirs or []:
@@ -126,6 +129,14 @@ def _restyle(sample_defs: dict, config_dirs) -> None:
                 sample_defs[name].update(
                     {k: v for k, v in cfg.items()
                      if k in ("label", "color", "linestyle", "group", "is_data")})
+
+        hpath = os.path.join(cdir, "histograms.yaml")
+        if os.path.exists(hpath):
+            for name, cfg in load_histogram_defs(hpath).items():
+                if name in hist_defs:
+                    hist_defs[name].update(
+                        {k: v for k, v in cfg.items()
+                         if k in ("label", "label_x", "log_x", "log_y")})
 
 
 def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag):
@@ -229,7 +240,7 @@ def main():
     for data in list(sig_all.values()) + list(bkg_all.values()):
         sample_defs.update(data.get("samples", {}))
         hist_defs.update(data.get("hist_defs", {}))
-    _restyle(sample_defs, args.config_dir)
+    _restyle(sample_defs, hist_defs, args.config_dir)
 
     dest = args.dest
     os.makedirs(dest, exist_ok=True)

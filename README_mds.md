@@ -82,7 +82,7 @@ suep-plot output_mds          -o output_mds/plots          -c configs/configs_md
 suep-plot output_mds_minpts50 -o output_mds_minpts50/plots -c configs/configs_mds_minpts50 -j 8
 ```
 
-Reprocess (`suep-run`) only for **fill-time** changes: `custom/columns.py`,
+Reprocess (`suep-run`) only for **fill-time** changes: anything under `custom/`,
 `columns.yaml`, or a histogram's `bins`/`edges`/`selections`/`expression`.
 
 ---
@@ -204,7 +204,7 @@ Notes:
 - [`configs/configs_mds_grid/histograms.yaml`](configs/configs_mds_grid/histograms.yaml) — all truth fills + efficiency num/den pairs; LLP η is signed (60 bins, −3..3), not |η|.
 - [`configs/configs_mds_grid/selections.yaml`](configs/configs_mds_grid/selections.yaml) — object/event masks (fiducial, ≥10 hits, matched cluster).
 - [`configs/configs_mds_grid/derived_plots.yaml`](configs/configs_mds_grid/derived_plots.yaml) — efficiency plots incl. the factorized chain and detector-station bands, matched fractions, sig-vs-bkg overlays.
-- [`custom/columns.py`](custom/columns.py) — `derive()`: LLP + cluster collections, matching; parameters and optional steps come from each config's `columns.yaml`.
+- [`custom/columns.py`](custom/columns.py) — `derive()`: the step pipeline that attaches the LLP + cluster collections; parameters and optional steps come from each config's `columns.yaml`.  Its helpers sit next to it, one file per topic: [`params.py`](custom/params.py) (constants, defaults, the `columns.yaml` reader), [`clustering.py`](custom/clustering.py) (DBSCAN), [`llp.py`](custom/llp.py) (`events.llp` and the per-LLP rechit spread), [`isolation.py`](custom/isolation.py) (cluster→prompt-object dR).  Everything stays reachable through `custom.columns`.
 - [`configs/configs_mds/columns.yaml`](configs/configs_mds/columns.yaml) — clustering parameters of the reference run; [`configs/configs_mds_gen/columns.yaml`](configs/configs_mds_gen/columns.yaml) is the gen-level (no-DBSCAN) step list.
 - [`configs/configs_mds_gen/`](configs/configs_mds_gen) — gen-level-only subset (LLPs + matched rechits), → `output_mds_gen/`.
 

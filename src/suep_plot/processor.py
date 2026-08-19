@@ -185,6 +185,16 @@ def _load_custom_columns(columns_cfg: dict | None = None):
         sys.path.insert(0, str(repo_root))
     try:
         mod = importlib.import_module("custom.columns")
+        # columns.py imports its helpers from sibling modules, so reload the
+        # whole package: reloading columns.py alone would re-bind its names to
+        # the already-cached submodules and an edit there would be ignored.
+        # In dependency order -- params.py owns the settings objects the other
+        # modules import, so it goes first and columns.py last.
+        helpers = sorted(n for n in sys.modules if n.startswith("custom.")
+                         and n not in ("custom.columns", "custom.params"))
+        for name in ["custom.params", *helpers]:
+            if name in sys.modules:
+                importlib.reload(sys.modules[name])
         importlib.reload(mod)
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: could not load custom/columns.py: {e}")
@@ -360,7 +370,9 @@ def _inputs_mtime(files: list[str], config_dir: Path,
              ("samples.yaml", "histograms.yaml", "selections.yaml",
               "corrections.yaml", "reweights.yaml", "columns.yaml")]
     repo_root = Path(__file__).resolve().parent.parent.parent
-    paths.append(repo_root / "custom" / "columns.py")
+    # Every module of the custom-columns package, not just columns.py: the
+    # helpers live in sibling files and editing one changes the fills too.
+    paths.extend(sorted((repo_root / "custom").glob("*.py")))
     paths.extend(Path(p) for p in extra_paths)
 
     newest = 0.0

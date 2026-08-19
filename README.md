@@ -58,9 +58,12 @@ suep-plotting/
 │   │   └── columns.yaml             # optional: parameters + enabled steps of derive()
 │   └── configs_mds_grid/  configs_mds_gen/  configs_mds_data/  …
 │                                    # the other config sets (see "Config sets")
-├── custom/
-│   └── columns.py                   # derive(events) -> events hook: LLP + DBSCAN
-│                                    #   cluster collections, cluster<->LLP matching
+├── custom/                          # derive(events) -> events hook: LLP + DBSCAN
+│   ├── columns.py                   #   derive() itself + the step pipeline
+│   ├── params.py                    #   constants, defaults, columns.yaml reader
+│   ├── clustering.py                #   DBSCAN of one rechit system
+│   ├── llp.py                       #   events.llp + per-LLP rechit spread
+│   └── isolation.py                 #   cluster dR to the nearest prompt object
 ├── scripts/                         # standalone plotting/inspection tools
 │   ├── compare_eps.py               # overlay two DBSCAN-eps processings
 │   ├── compare_sig_bkg.py           # matched signal clusters vs background clusters
@@ -210,7 +213,7 @@ and [`reproduce.sh`](reproduce.sh) runs that (plus the clustering variants and t
 truth-level set) in one go.
 
 Runs are **incremental**: a sample is skipped when its pickle is newer than
-the configs, `custom/columns.py`, and its input files, so re-running after
+the configs, the `custom/` modules, and its input files, so re-running after
 adding one sample or histogram only processes what changed. Use `--force`
 (`-f`) to reprocess everything (needed after *code* changes, which are not
 tracked).
@@ -304,7 +307,7 @@ suep-run -c <config dir> -o <output dir> [options]
 | `--lumi` / `--log` / `--normalize` / `--formats` / `-j` | — | Forwarded to the plotting step (only with `--plot`). |
 
 Runs are **incremental**: a sample is skipped when its pickle is newer than the
-configs, `custom/columns.py`, and its input files. Python code under
+configs, the `custom/` modules, and its input files. Python code under
 `src/suep_plot/` is *not* tracked — after editing it, pass `--force`.
 
 ### suep-plot
@@ -1227,12 +1230,14 @@ For data pass the run-specific tag and disable smearing:
 `correct_jets(events, jec_tag="Summer24Prompt24_RunX_V1_DATA", smear=False)`.
 Payload files resolve from `$CORRECTIONLIB_DATA`, then cvmfs
 jsonpog-integration. `pt`/`mass`/MET are replaced in place (re-run with the
-example removed to get uncorrected values — `custom/columns.py` edits are
+example removed to get uncorrected values — `custom/` edits are
 tracked, so affected samples re-run automatically).
 
 **Custom derived columns** — edit `custom/columns.py`; `derive(events)` returns the
 (augmented) events array. Attach fields with `ak.with_field(events, value, "name")`
-and reference them as `events.name` in any expression.
+and reference them as `events.name` in any expression. Its helpers are split by
+topic over `custom/params.py`, `clustering.py`, `llp.py` and `isolation.py`, all
+re-exported from `custom.columns`.
 
 **xrootd files** — list `root://host//store/…` URLs under `files:`; coffea/uproot
 handle them natively (ensure a valid grid proxy / kerberos token).  An entry may
@@ -1248,7 +1253,7 @@ hundreds.  Local directories work the same way.  Listing happens each time
 
 | Symptom | Cause / fix |
 |---|---|
-| `suep-run` reports "up to date" and does nothing | Incremental skip: only configs, `custom/columns.py` and input files are tracked, not `src/suep_plot/` code. Pass `--force`. |
+| `suep-run` reports "up to date" and does nothing | Incremental skip: only configs, the `custom/` modules and input files are tracked, not `src/suep_plot/` code. Pass `--force`. |
 | xrootd errors / "no such file" on `root://eos.grid.vbc.ac.at` | Expired or unset proxy. `export X509_USER_PROXY=$HOME/private/.proxy` and re-run `voms-proxy-init` (see [Setup](#2-grid-proxy-for-xrootd-inputs)). Don't force `XrdSecPROTOCOL`. |
 | Local run dies with process/fork errors | Login-node process cap — drop `--workers`, or submit with `suep-submit`. |
 | Killed for memory | Lower `--chunk-size` (10000 is right for the MDS configs, where DBSCAN runs per chunk), or raise `--mem` on Slurm. |

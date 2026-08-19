@@ -458,3 +458,22 @@ def test_first_hit_is_the_one_closest_to_the_interaction_point():
     assert len(clusters[0]) == 1
     assert clusters[0].firstChamber[0] == 11
     assert clusters[0].firstStation[0] == 1
+
+
+def test_the_helper_modules_see_the_configured_settings():
+    """One settings object, shared by every module of the package.
+
+    ``configure()`` mutates ``params.PARAMS`` / ``params.STEPS`` in place rather
+    than rebinding them, which is what lets clustering.py, llp.py and
+    isolation.py hold a plain reference.  Rebinding would leave them reading the
+    previous run's parameters -- silently, and only in the helpers.
+    """
+    from custom import clustering, isolation, llp, params
+
+    columns.configure({"parameters": {"cluster_eps": 0.7, "match_min_hits": 3},
+                       "steps": ["llp", "llp_hits"]})
+
+    for mod in (columns, clustering, isolation, llp, params):
+        assert mod.PARAMS["cluster_eps"] == 0.7
+        assert mod.PARAMS["match_min_hits"] == 3
+    assert list(llp.STEPS) == ["llp", "llp_hits"]
