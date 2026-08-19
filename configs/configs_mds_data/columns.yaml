@@ -10,14 +10,19 @@ parameters:
   cluster_min_samples: 10
   rpc_min_samples: 10
   match_min_hits: 10         # sets cluster.matched, which the clusters step fills
-  # Which prompt objects the cluster drMuon / drJet are measured against.
   jerc: true                 # JEC on events.Jet first (data too); JER smearing on MC
-  iso_jet_pt: 30.0
-  iso_jet_abseta: 2.4
-  iso_jet_id: tight          # official jetid.json.gz AK4PUPPI_Tight
-  iso_muon_pt: 10.0
-  iso_muon_abseta: 2.4
-  iso_muon_id: loose         # Muon_looseId
+  # Which prompt objects the cluster drMuon / drJet are measured against: one
+  # entry per dR field, each a collection plus a per-object boolean expression.
+  # `obj` is the collection; `jet_id` is the official jetid.json.gz decision
+  # (2024 NanoAOD no longer stores Jet_jetId).  Add a field here -- electrons,
+  # photons, HLT jets -- and it appears on every cluster with no code change.
+  iso_objects:
+    drMuon:
+      collection: Muon
+      expression: "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId"
+    drJet:
+      collection: Jet
+      expression: "(obj.pt > 20) & (abs(obj.eta) < 2.4) & (obj.neHEF < 0.8) & (obj.chHEF > 0.1) & jet_id(obj, 'tightlepveto')"
 
 # Reco-only: no histogram or selection here touches events.llp, so the four
 # truth steps are dropped -- 4x faster derive() (23s -> 6s per 500 signal

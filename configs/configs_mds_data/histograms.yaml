@@ -22,12 +22,21 @@ _variant_sets:
   csc_variants:
     iso_muon:  {selections: [csc_cluster_iso_muon],  label_prefix: "muon-isolated "}
     iso_jet:   {selections: [csc_cluster_iso_jet],   label_prefix: "jet-isolated "}
+    iso_both:
+      selections: [csc_cluster_iso_muon, csc_cluster_iso_jet]
+      label_prefix: "muon+jet-isolated "
   dt_variants:
     iso_muon:  {selections: [dt_cluster_iso_muon],   label_prefix: "muon-isolated "}
     iso_jet:   {selections: [dt_cluster_iso_jet],    label_prefix: "jet-isolated "}
+    iso_both:
+      selections: [dt_cluster_iso_muon, dt_cluster_iso_jet]
+      label_prefix: "muon+jet-isolated "
   rpc_variants:
     iso_muon:  {selections: [rpc_cluster_iso_muon],  label_prefix: "muon-isolated "}
     iso_jet:   {selections: [rpc_cluster_iso_jet],   label_prefix: "jet-isolated "}
+    iso_both:
+      selections: [rpc_cluster_iso_muon, rpc_cluster_iso_jet]
+      label_prefix: "muon+jet-isolated "
 
 # ── (3) DBSCAN cluster properties: CSC ─────────────────────────────
 csc_cluster_n:
@@ -284,6 +293,24 @@ csc_cluster_station_span:
   label: 'CSC cluster station span (max-min)'
   variants: csc_variants
 
+csc_cluster_first_chamber:
+  expression: "events.cscCluster.firstChamber"
+  per_object: true
+  bins: 50
+  lo: -0.5
+  hi: 49.5
+  label: 'CSC cluster first-hit chamber (station$\times$10 + ring)'
+  variants: csc_variants
+
+csc_cluster_first_station:
+  expression: "events.cscCluster.firstStation"
+  per_object: true
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: 'CSC cluster first-hit station'
+  variants: csc_variants
+
 csc_cluster_avg_station:
   expression: "events.cscCluster.avgStation"
   per_object: true
@@ -414,6 +441,24 @@ dt_cluster_station_span:
   label: 'DT cluster station span (max-min)'
   variants: dt_variants
 
+dt_cluster_first_chamber:
+  expression: "events.dtCluster.firstChamber"
+  per_object: true
+  bins: 50
+  lo: -0.5
+  hi: 49.5
+  label: 'DT cluster first-hit chamber (station$\times$10 + |wheel|)'
+  variants: dt_variants
+
+dt_cluster_first_station:
+  expression: "events.dtCluster.firstStation"
+  per_object: true
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: 'DT cluster first-hit station'
+  variants: dt_variants
+
 dt_cluster_avg_station:
   expression: "events.dtCluster.avgStation"
   per_object: true
@@ -495,6 +540,24 @@ rpc_cluster_station_span:
   lo: -0.5
   hi: 3.5
   label: 'RPC cluster station span (max-min)'
+  variants: rpc_variants
+
+rpc_cluster_first_chamber:
+  expression: "events.rpcCluster.firstChamber"
+  per_object: true
+  bins: 150
+  lo: -0.5
+  hi: 149.5
+  label: 'RPC cluster first-hit chamber (100$\times$|region| + station$\times$10 + ring)'
+  variants: rpc_variants
+
+rpc_cluster_first_station:
+  expression: "events.rpcCluster.firstStation"
+  per_object: true
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: 'RPC cluster first-hit station'
   variants: rpc_variants
 
 rpc_cluster_max_station_frac:

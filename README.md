@@ -405,12 +405,13 @@ parameters:
   jerc_era: 2024_Summer24     # jsonpog payload directory
   jerc_algo: AK4PFPuppi
   jerc_data_tag:              # null = the era's jec_tag_data from suep_plot.jme
-  iso_jet_pt: 30.0            # jet pT / |η| / ID for drJet
-  iso_jet_abseta: 2.4
-  iso_jet_id: tight           # 'tight' | 'tightlepveto' | 'none'
-  iso_muon_pt: 10.0           # muon pT / |η| / ID for drMuon
-  iso_muon_abseta: 2.4
-  iso_muon_id: loose          # 'loose' | 'medium' | 'tight' | 'none'
+  iso_objects:                # one dR field per entry, selection written here
+    drMuon:
+      collection: Muon
+      expression: "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId"
+    drJet:
+      collection: Jet
+      expression: "(obj.pt > 20) & (abs(obj.eta) < 2.4) & (obj.neHEF < 0.8) & (obj.chHEF > 0.1) & jet_id(obj, 'tightlepveto')"
 steps: [jerc, clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]
 ```
 
@@ -447,10 +448,17 @@ overflow of the ΔR histograms.
 
 Two details are specific to 2024 NanoAOD:
 
-- **`Jet_jetId` is not stored any more.** The ID is evaluated from the PF energy
-  fractions and multiplicities with the official jsonpog `jetid.json.gz`
-  (`AK4PUPPI_Tight` / `AK4PUPPI_TightLeptonVeto`), so the thresholds come from
-  the central payload instead of being copied into `custom/columns.py`.
+- **The object selections live in the config, not in the code.** `iso_objects`
+  maps each dR field to a `collection` plus a per-object boolean `expression`,
+  evaluated by a single `_selected_objects(events, selection)`. Adding a field —
+  electrons, photons, HLT jets — is a config edit; nothing in
+  `custom/columns.py` knows about muons or jets specifically. In scope: `obj`
+  (the collection), `events`/`ev`, `ak`, `np`, the safe builtins, and
+  `jet_id(obj, "tight"|"tightlepveto")`.
+- **`Jet_jetId` is not stored any more**, which is why `jet_id()` exists: it
+  evaluates the ID from the PF energy fractions and multiplicities with the
+  official jsonpog `jetid.json.gz` (`AK4PUPPI_Tight` /
+  `AK4PUPPI_TightLeptonVeto`), so the thresholds stay in the central payload.
 - **JEC/JER rescale pT and mass only** — η and φ are untouched — so `jerc`
   reaches ΔR *only* through the `iso_jet_pt` threshold. (`correct_jets` re-sorts
   jets by the new pT, so the ordering moves, but ΔR-to-nearest is

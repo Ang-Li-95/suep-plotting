@@ -41,6 +41,11 @@ this module attaches four derived collections:
     ``hasTruth`` is False, so ``matched | ~hasTruth`` selects "signal-like"
     clusters uniformly (gen-matched in signal, all clusters in background).
 
+    Where a cluster starts (per cluster): ``firstChamber`` / ``firstStation``,
+    the chamber-type code and station of the hit closest to the interaction
+    point -- a punch-through jet starts in an innermost chamber, a genuine
+    displaced shower need not.
+
     Shape variables (per cluster): hit-count moments across detector layers
     (``nLayer``, ``layerHitsMean/RMS/RelRMS``, ``maxLayerFrac``) and across
     stations (``nStation``, ``stationSpan``, ``avgStation``,
@@ -146,10 +151,20 @@ RPC_EC_ZMIN, RPC_EC_ZMAX, RPC_EC_RMAX = 600.0, 1020.0, 660.0  # endcap; barrel =
 # ``*_DATA`` tag — L1L2L3Res is where the residual corrections live — and is
 # never smeared.  ``jerc_data_tag`` overrides that tag; None takes the era entry
 # from suep_plot.jme.DEFAULTS.
-# ``iso_jet_id`` / ``iso_muon_id``: working points.  2024 NanoAOD no longer
-# stores ``Jet_jetId``, so the jet ID is evaluated from the PF energy fractions
-# with the official jsonpog ``jetid.json.gz`` ("tight", "tightlepveto" or
-# "none").  Muon IDs are the stored flags ("loose", "medium", "tight", "none").
+# ``iso_objects``: which prompt objects the cluster dR is measured against, one
+# entry per dR field.  Each entry is a ``collection`` (a NanoAOD collection name)
+# and an ``expression`` returning a per-object boolean.  Nothing about muons or
+# jets is baked into the code, so a new field -- electrons, photons, taus, HLT
+# jets -- is a config edit, not a code edit::
+#
+#     iso_objects:
+#       drMuon:      {collection: Muon, expression: "obj.pt > 10 & obj.looseId"}
+#       drElectron:  {collection: Electron, expression: "obj.pt > 15"}
+#
+# In scope: ``obj`` (the collection), ``events``/``ev``, ``ak``, ``np``, the safe
+# builtins, and ``jet_id(obj, "tight"|"tightlepveto")`` -- the official jsonpog
+# ``jetid.json.gz`` decision, since 2024 NanoAOD no longer stores
+# ``Jet_jetId``.
 DEFAULT_PARAMS = {
     "cluster_eps": 0.4,
     "cluster_min_samples": 10,
@@ -162,12 +177,18 @@ DEFAULT_PARAMS = {
     "jerc_era": "2024_Summer24",
     "jerc_algo": "AK4PFPuppi",
     "jerc_data_tag": None,
-    "iso_jet_pt": 30.0,
-    "iso_jet_abseta": 2.4,
-    "iso_jet_id": "tight",
-    "iso_muon_pt": 10.0,
-    "iso_muon_abseta": 2.4,
-    "iso_muon_id": "loose",
+    "iso_objects": {
+        "drMuon": {
+            "collection": "Muon",
+            "expression": "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId",
+        },
+        "drJet": {
+            "collection": "Jet",
+            "expression": ("(obj.pt > 20) & (abs(obj.eta) < 2.4)"
+                           " & (obj.neHEF < 0.8) & (obj.chHEF > 0.1)"
+                           " & jet_id(obj, 'tightlepveto')"),
+        },
+    },
 }
 
 # drMuon / drJet in events with no reconstructed muon / jet at all.  Such a
@@ -225,15 +246,24 @@ def configure(cfg=None):
         if not isinstance(PARAMS[key], int) or PARAMS[key] < 1:
             raise ValueError(f"columns.yaml: {key} must be a positive integer, "
                              f"got {PARAMS[key]!r}")
-    for key, allowed in (("iso_muon_id", ("loose", "medium", "tight", "none")),
-                         ("iso_jet_id", ("tight", "tightlepveto", "none"))):
-        if str(PARAMS[key]).lower() not in allowed:
-            raise ValueError(f"columns.yaml: {key} must be one of "
-                             f"{list(allowed)}, got {PARAMS[key]!r}")
-    for key in ("iso_muon_pt", "iso_jet_pt", "iso_muon_abseta", "iso_jet_abseta"):
-        if not isinstance(PARAMS[key], (int, float)) or PARAMS[key] < 0:
-            raise ValueError(f"columns.yaml: {key} must be a non-negative "
-                             f"number, got {PARAMS[key]!r}")
+    iso = PARAMS["iso_objects"]
+    if not isinstance(iso, dict):
+        raise ValueError("columns.yaml: iso_objects must be a mapping of "
+                         f"dR field -> {{collection, expression}}, got {iso!r}")
+    for field, selection in iso.items():
+        if not isinstance(selection, dict) or set(selection) != {"collection",
+                                                                 "expression"}:
+            raise ValueError(
+                f"columns.yaml: iso_objects['{field}'] needs exactly "
+                f"'collection' and 'expression', got {selection!r}")
+        for key in ("collection", "expression"):
+            if not isinstance(selection[key], str) or not selection[key].strip():
+                raise ValueError(f"columns.yaml: iso_objects['{field}'].{key} "
+                                 f"must be a non-empty string, got "
+                                 f"{selection[key]!r}")
+        if not str(field).isidentifier():
+            raise ValueError(f"columns.yaml: iso_objects key '{field}' becomes a "
+                             "cluster field name, so it must be an identifier")
     if not PARAMS["cluster_eps"] > 0:
         raise ValueError("columns.yaml: cluster_eps must be positive, got "
                          f"{PARAMS['cluster_eps']!r}")
@@ -376,16 +406,14 @@ def _step_jerc(ctx):
 
 
 def _step_cluster_isolation(ctx):
-    """dR from each cluster centroid to the nearest selected muon / jet.
+    """dR from each cluster centroid to the nearest selected prompt object.
 
-    "Selected" means the pT / |eta| / ID requirements in :data:`DEFAULT_PARAMS`:
-    a cluster is only counted as non-isolated if the nearby object is one the
-    analysis would actually call a prompt muon or jet.
+    One dR field per entry of the ``iso_objects`` parameter, so which objects
+    count -- and how they are selected -- lives entirely in the config set.
     """
-    objects = {
-        "drMuon": _selected_muons(ctx.events),
-        "drJet": _selected_jets(ctx.events),
-    }
+    objects = {field: _selected_objects(ctx.events, selection)
+               for field, selection in PARAMS["iso_objects"].items()}
+
     for sys, clusters in ctx.clusters.items():
         for field, objs in objects.items():
             if objs is not None:
@@ -394,31 +422,36 @@ def _step_cluster_isolation(ctx):
         ctx.clusters[sys] = clusters
 
 
-def _selected_muons(events):
-    """Muons passing the isolation-veto requirements, or None if absent."""
-    if "Muon" not in events.fields:
-        return None
-    muons = events.Muon
-    keep = ((muons.pt > PARAMS["iso_muon_pt"])
-            & (abs(muons.eta) < PARAMS["iso_muon_abseta"]))
-    flag = {"loose": "looseId", "medium": "mediumId",
-            "tight": "tightId", "none": None}[str(PARAMS["iso_muon_id"]).lower()]
-    if flag is not None:
-        keep = keep & muons[flag]
-    return muons[keep]
+_SAFE_BUILTINS = {"abs": abs, "len": len, "min": min, "max": max}
 
 
-def _selected_jets(events):
-    """Jets passing the isolation-veto requirements, or None if absent."""
-    if "Jet" not in events.fields:
+def _selected_objects(events, selection):
+    """Objects passing *selection*, or None when the collection is absent.
+
+    *selection* is ``{"collection": <NanoAOD collection>, "expression": <per-object
+    boolean>}``, exactly as written in ``columns.yaml``.  The expression sees
+    ``obj`` (the collection), ``events``/``ev``, ``ak``, ``np``, the safe builtins
+    and ``jet_id``; nothing about any particular object type is hard-coded here.
+    """
+    collection = selection["collection"]
+    if collection not in events.fields:
         return None
-    jets = events.Jet
-    keep = ((jets.pt > PARAMS["iso_jet_pt"])
-            & (abs(jets.eta) < PARAMS["iso_jet_abseta"]))
-    level = str(PARAMS["iso_jet_id"]).lower()
-    if level != "none":
-        keep = keep & _jet_id(jets, level, PARAMS["jerc_era"])
-    return jets[keep]
+
+    objects = events[collection]
+    try:
+        keep = eval(  # noqa: S307 - trusted config expressions
+            selection["expression"],
+            {"__builtins__": _SAFE_BUILTINS},
+            {"obj": objects, "events": events, "ev": events, "ak": ak, "np": np,
+             "jet_id": lambda obj, level: _jet_id(obj, str(level).lower(),
+                                                  PARAMS["jerc_era"])},
+        )
+    except Exception as exc:
+        raise ValueError(
+            f"columns.yaml: iso_objects expression for '{collection}' failed: "
+            f"{selection['expression']!r}\n  {type(exc).__name__}: {exc}") from exc
+
+    return objects[keep]
 
 
 @functools.lru_cache(maxsize=None)
@@ -895,6 +928,34 @@ def _flat_layer_key(rechits):
               + flat("Sector")) * 5 + flat("Station")) * 3 + flat("Layer"))
 
 
+def _flat_chamber_code(rechits):
+    """Flat int64 chamber-type code of every rechit, as ``station * 10 + ring``.
+
+    Read off the innermost hit of a cluster this identifies where the cluster
+    starts, which is what separates a genuine shower from a punch-through: a jet
+    that leaks out of the calorimeter enters the muon system at its innermost
+    chamber (ME1/1, ME1/2 for CSC), so a cluster whose first hit sits there is
+    suspect.
+
+    CSC stores the code directly as ``Chamber`` (signed for the two endcaps;
+    the sign is dropped so both share a bin).  DT and RPC have no such branch,
+    so the code is built from the station and the ring-like coordinate — the
+    wheel for DT, the ring for RPC — in the same ``station * 10 + ring`` layout.
+    RPC additionally offsets the endcap by 100, since a barrel and an endcap
+    chamber can otherwise share a code.
+    """
+    def flat(field):
+        return np.abs(np.asarray(ak.flatten(rechits[field]), dtype=np.int64))
+
+    f = rechits.fields
+    if "IChamber" in f:                                # CSC: ME<station>/<ring>
+        return flat("Chamber")
+    if "SuperLayer" in f:                              # DT: MB<station>/<|wheel|>
+        return flat("Station") * 10 + flat("Wheel")
+    return (flat("Station") * 10 + flat("Ring")        # RPC: RB/RE<station>/<ring>
+            + 100 * flat("Region"))
+
+
 def _flat_zlayer_key(rechits):
     """Flat int64 id of the layer plane from the global rechit z (1 mm bins).
 
@@ -933,6 +994,9 @@ def _cluster_system(rechits, timefield, eps, min_samples):
     station = np.asarray(ak.flatten(rechits.Station))
     layerkey = _flat_layer_key(rechits)
     zlayerkey = _flat_zlayer_key(rechits)
+    chamber = _flat_chamber_code(rechits)
+    # Distance to the nominal interaction point, to pick a cluster's first hit.
+    dist = np.sqrt(xs ** 2 + ys ** 2 + zs ** 2)
     has_truth = "llpIdx" in rechits.fields
     llpidx = (np.asarray(ak.flatten(rechits.llpIdx)) if has_truth
               else np.full(len(eta), -1, dtype=np.int64))
@@ -946,6 +1010,7 @@ def _cluster_system(rechits, timefield, eps, min_samples):
               "maxLayerFrac",
               "nZLayer", "zLayerHitsMean", "zLayerHitsRMS", "zLayerHitsRelRMS",
               "maxZLayerFrac",
+              "firstChamber", "firstStation",
               "nMatchedHits", "matchedLLPIdx", "matched", "nMatchedLLP", "hasTruth"]
     if tvals is not None:
         fields.append("time")
@@ -1016,6 +1081,11 @@ def _cluster_system(rechits, timefield, eps, min_samples):
             out["zLayerHitsRMS"].append(float(zcnt.std()))
             out["zLayerHitsRelRMS"].append(float(zcnt.std()) / zmean)
             out["maxZLayerFrac"].append(float(zcnt.max() / zcnt.sum()))
+            # Where the cluster starts: the hit closest to the interaction
+            # point.  A punch-through begins at an innermost chamber.
+            first = int(np.argmin(dist[s][m]))
+            out["firstChamber"].append(int(chamber[s][m][first]))
+            out["firstStation"].append(int(abs(station[s][m][first])))
             out["nMatchedHits"].append(nbest)
             out["matchedLLPIdx"].append(best if matched else -1)
             out["matched"].append(matched)
@@ -1027,6 +1097,7 @@ def _cluster_system(rechits, timefield, eps, min_samples):
 
     dtypes = {"size": np.int64, "nStation": np.int64, "stationSpan": np.int64,
               "nLayer": np.int64, "nZLayer": np.int64, "nMatchedHits": np.int64,
+              "firstChamber": np.int64, "firstStation": np.int64,
               "matchedLLPIdx": np.int64, "matched": np.bool_,
               "nMatchedLLP": np.int64, "hasTruth": np.bool_}
     return ak.zip({f: ak.unflatten(np.asarray(v, dtype=dtypes.get(f, np.float64)), nclu)

@@ -39,24 +39,63 @@ _variant_sets:
   csc_iso: &csc_iso
     iso_muon:  {selections: [csc_cluster_iso_muon],  label_prefix: "muon-isolated "}
     iso_jet:   {selections: [csc_cluster_iso_jet],   label_prefix: "jet-isolated "}
+    iso_both:
+      selections: [csc_cluster_iso_muon, csc_cluster_iso_jet]
+      label_prefix: "muon+jet-isolated "
   dt_iso: &dt_iso
     iso_muon:  {selections: [dt_cluster_iso_muon],   label_prefix: "muon-isolated "}
     iso_jet:   {selections: [dt_cluster_iso_jet],    label_prefix: "jet-isolated "}
+    iso_both:
+      selections: [dt_cluster_iso_muon, dt_cluster_iso_jet]
+      label_prefix: "muon+jet-isolated "
   rpc_iso: &rpc_iso
     iso_muon:  {selections: [rpc_cluster_iso_muon],  label_prefix: "muon-isolated "}
     iso_jet:   {selections: [rpc_cluster_iso_jet],   label_prefix: "jet-isolated "}
+    iso_both:
+      selections: [rpc_cluster_iso_muon, rpc_cluster_iso_jet]
+      label_prefix: "muon+jet-isolated "
 
   # The full split, for the cluster shape variables: truth match + isolation.
   csc_variants:
     <<: *csc_iso
+    matched_iso_muon:
+      selections: [csc_cluster_matched, csc_cluster_iso_muon]
+      label_prefix: "matched muon-isolated "
+    matched_iso_jet:
+      selections: [csc_cluster_matched, csc_cluster_iso_jet]
+      label_prefix: "matched jet-isolated "
+    matched_iso_both:
+      selections: [csc_cluster_matched, csc_cluster_iso_muon,
+                   csc_cluster_iso_jet]
+      label_prefix: "matched muon+jet-isolated "
     matched:   {selections: [csc_cluster_matched],   label_prefix: "matched "}
     unmatched: {selections: [csc_cluster_unmatched], label_prefix: "unmatched "}
   dt_variants:
     <<: *dt_iso
+    matched_iso_muon:
+      selections: [dt_cluster_matched, dt_cluster_iso_muon]
+      label_prefix: "matched muon-isolated "
+    matched_iso_jet:
+      selections: [dt_cluster_matched, dt_cluster_iso_jet]
+      label_prefix: "matched jet-isolated "
+    matched_iso_both:
+      selections: [dt_cluster_matched, dt_cluster_iso_muon,
+                   dt_cluster_iso_jet]
+      label_prefix: "matched muon+jet-isolated "
     matched:   {selections: [dt_cluster_matched],    label_prefix: "matched "}
     unmatched: {selections: [dt_cluster_unmatched],  label_prefix: "unmatched "}
   rpc_variants:
     <<: *rpc_iso
+    matched_iso_muon:
+      selections: [rpc_cluster_matched, rpc_cluster_iso_muon]
+      label_prefix: "matched muon-isolated "
+    matched_iso_jet:
+      selections: [rpc_cluster_matched, rpc_cluster_iso_jet]
+      label_prefix: "matched jet-isolated "
+    matched_iso_both:
+      selections: [rpc_cluster_matched, rpc_cluster_iso_muon,
+                   rpc_cluster_iso_jet]
+      label_prefix: "matched muon+jet-isolated "
     matched:   {selections: [rpc_cluster_matched],   label_prefix: "matched "}
     unmatched: {selections: [rpc_cluster_unmatched], label_prefix: "unmatched "}
 
@@ -1122,6 +1161,24 @@ csc_cluster_station_span:
   label: 'CSC cluster station span (max-min)'
   variants: csc_variants
 
+csc_cluster_first_chamber:
+  expression: "events.cscCluster.firstChamber"
+  per_object: true
+  bins: 50
+  lo: -0.5
+  hi: 49.5
+  label: 'CSC cluster first-hit chamber (station$\times$10 + ring)'
+  variants: csc_variants
+
+csc_cluster_first_station:
+  expression: "events.cscCluster.firstStation"
+  per_object: true
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: 'CSC cluster first-hit station'
+  variants: csc_variants
+
 csc_cluster_avg_station:
   expression: "events.cscCluster.avgStation"
   per_object: true
@@ -1252,6 +1309,24 @@ dt_cluster_station_span:
   label: 'DT cluster station span (max-min)'
   variants: dt_variants
 
+dt_cluster_first_chamber:
+  expression: "events.dtCluster.firstChamber"
+  per_object: true
+  bins: 50
+  lo: -0.5
+  hi: 49.5
+  label: 'DT cluster first-hit chamber (station$\times$10 + |wheel|)'
+  variants: dt_variants
+
+dt_cluster_first_station:
+  expression: "events.dtCluster.firstStation"
+  per_object: true
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: 'DT cluster first-hit station'
+  variants: dt_variants
+
 dt_cluster_avg_station:
   expression: "events.dtCluster.avgStation"
   per_object: true
@@ -1333,6 +1408,24 @@ rpc_cluster_station_span:
   lo: -0.5
   hi: 3.5
   label: 'RPC cluster station span (max-min)'
+  variants: rpc_variants
+
+rpc_cluster_first_chamber:
+  expression: "events.rpcCluster.firstChamber"
+  per_object: true
+  bins: 150
+  lo: -0.5
+  hi: 149.5
+  label: 'RPC cluster first-hit chamber (100$\times$|region| + station$\times$10 + ring)'
+  variants: rpc_variants
+
+rpc_cluster_first_station:
+  expression: "events.rpcCluster.firstStation"
+  per_object: true
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: 'RPC cluster first-hit station'
   variants: rpc_variants
 
 rpc_cluster_max_station_frac:
