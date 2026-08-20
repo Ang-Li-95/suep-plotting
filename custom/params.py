@@ -25,8 +25,26 @@ RPC_EC_ZMIN, RPC_EC_ZMAX, RPC_EC_RMAX = 600.0, 1020.0, 660.0  # endcap; barrel =
 # ``cluster_eps`` / ``cluster_min_samples``: DBSCAN eps (dR radius in eta-phi)
 # and minimum cluster size for CSC and DT (50 = standard MDS analysis).  RPC
 # keeps its own, smaller ``rpc_min_samples`` (sparse system).
+# ``rpc_merge``: cluster the RPC rechits *together with* the system they
+# overlap instead of on their own -- barrel RPC (Region == 0) with DT, endcap
+# RPC (|Region| == 1) with CSC.  The run then has only ``events.cscCluster``
+# and ``events.dtCluster`` (no ``events.rpcCluster``: every RPC rechit is
+# already inside one of those two), each carrying the RPC hit content
+# (``nRPCHits``, ``rpcHitFrac``) and the RPC timing of the cluster: the rechit
+# time (``rpcTime``, ``rpcTimeMedian``, ``rpcTimeSpread``, ``rpcTimeWeighted``,
+# ``rpcTimeErr``, ``rpcTimeValidFrac``) and the bunch crossing (``rpcBx``,
+# ``rpcBxMedian``, ``rpcBxSpread``, ``rpcOutOfTimeFrac``).  RPC is the only
+# muon subdetector whose MDSNano rechits carry timing at all -- but the rechit
+# time is not actually filled in any production so far (``Time`` 0,
+# ``TimeError`` -1), so the rpcTime* fields come out NaN and the BX is the
+# estimate to use; see :func:`clustering._rpc_time`.  ``rpc_min_samples`` is
+# unused in this mode; both merged systems use ``cluster_min_samples``.
 # ``match_min_hits``: cluster <-> LLP truth matching, matched := (# rechits
 # sharing one llpIdx) >= this.
+# ``oot_time_cut``: half-width [ns] of the in-time window a cluster's rechit
+# times are counted against (``cluster.ootHitFrac``).  12.5 ns = half a bunch
+# crossing, the standard MDS in-time definition.  Only reaches systems with a
+# rechit time, i.e. CSC ``Tpeak``.
 # ``pair_max_hits``: an LLP with more matched rechits than this is strided down
 # before the O(N^2) pairwise dR matrix is built (hit multiplicities are far
 # below the cap in practice, so this never fires).
@@ -63,7 +81,9 @@ DEFAULT_PARAMS = {
     "cluster_eps": 0.4,
     "cluster_min_samples": 10,
     "rpc_min_samples": 10,
+    "rpc_merge": False,
     "match_min_hits": 10,
+    "oot_time_cut": 12.5,
     "pair_max_hits": 2000,
     "dr_quantiles": (0.5, 0.8, 0.9),
     "llpidx_convention": "genpart",
@@ -130,6 +150,9 @@ def configure(cfg=None):
     if PARAMS["llpidx_convention"] not in ("genpart", "ordinal"):
         raise ValueError("columns.yaml: llpidx_convention must be 'genpart' or "
                          f"'ordinal', got '{PARAMS['llpidx_convention']}'")
+    if not isinstance(PARAMS["rpc_merge"], bool):
+        raise ValueError("columns.yaml: rpc_merge must be true or false, got "
+                         f"{PARAMS['rpc_merge']!r}")
     for key in ("cluster_min_samples", "rpc_min_samples", "match_min_hits",
                 "pair_max_hits"):
         if not isinstance(PARAMS[key], int) or PARAMS[key] < 1:
@@ -153,6 +176,9 @@ def configure(cfg=None):
         if not str(field).isidentifier():
             raise ValueError(f"columns.yaml: iso_objects key '{field}' becomes a "
                              "cluster field name, so it must be an identifier")
+    if not PARAMS["oot_time_cut"] > 0:
+        raise ValueError("columns.yaml: oot_time_cut must be positive [ns], got "
+                         f"{PARAMS['oot_time_cut']!r}")
     if not PARAMS["cluster_eps"] > 0:
         raise ValueError("columns.yaml: cluster_eps must be positive, got "
                          f"{PARAMS['cluster_eps']!r}")

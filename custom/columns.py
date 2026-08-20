@@ -11,7 +11,8 @@ columns, the default pass-through below is fine.
 MDS LLP cluster study (configs_mds/, configs_mds_shape/)
 ---------------------------------------------------------
 For MDSNANO samples (detected by the presence of the ``cscRechits`` collection)
-this module attaches four derived collections:
+this module attaches the derived collections below (three of them with
+``rpc_merge``, which folds the RPC rechits into the other two systems):
 
 ``events.llp``
     One entry per generated LLP (``SUEPGenPart.pdgId == 999999``): kinematics,
@@ -34,7 +35,25 @@ this module attaches four derived collections:
 
 ``events.cscCluster`` / ``events.dtCluster`` / ``events.rpcCluster``
     DBSCAN clusters of the muon-system rechits (per system, dR metric in
-    eta-phi with proper phi wrap-around).  A cluster is truth-matched to an
+    eta-phi with proper phi wrap-around).  With the ``rpc_merge`` parameter
+    the RPC rechits are instead clustered *together with* the system they
+    overlap -- barrel RPC (``Region == 0``) with DT, endcap RPC with CSC --
+    and there is no ``rpcCluster``: every RPC rechit already belongs to a CSC
+    or a DT cluster.  Those merged clusters carry their RPC content
+    (``nRPCHits``, ``rpcHitFrac``), which system the innermost hit came from
+    (``firstSystem``, the codes of ``clustering.SOURCE_CODES``), how much of
+    that RPC content is in time (``nRPCHitsBx0``) and the RPC
+    timing of the cluster: ``rpcTime`` / ``rpcTimeMedian`` / ``rpcTimeSpread``
+    / ``rpcTimeWeighted`` / ``rpcTimeErr`` from the rechit time, over the hits
+    that have a valid one (``rpcTimeValidFrac``), and ``rpcBx`` /
+    ``rpcBxMedian`` / ``rpcBxSpread`` / ``rpcOutOfTimeFrac`` from the bunch
+    crossing.  All of them are NaN on a cluster with no RPC hit.  RPC is the
+    only muon subdetector whose MDSNano rechits carry timing at all, so this
+    is what dates a DT cluster (DT rechits have no time branch; the CSC
+    ``time`` field, mean ``Tpeak``, stays alongside it) -- but no production
+    so far fills the rechit time itself, which leaves the BX as the estimate
+    with data in it (see ``clustering._rpc_time``).  A cluster is
+    truth-matched to an
     LLP when at least ``match_min_hits`` of its rechits carry that LLP's
     ``llpIdx``.  On samples without the truth branches (central background
     MDSNano, e.g. DY) clustering still runs; ``matched`` is always False and
@@ -45,6 +64,13 @@ this module attaches four derived collections:
     the chamber-type code and station of the hit closest to the interaction
     point -- a punch-through jet starts in an innermost chamber, a genuine
     displaced shower need not.
+
+    Timing (per cluster, on the systems whose rechits carry a time -- CSC
+    ``Tpeak``): ``time``, ``timeSpread`` and ``ootHitFrac``, the mean, the RMS
+    and the fraction of hits outside +-``oot_time_cut``.  The last two are the
+    out-of-time-pile-up handles; on DT, which has no rechit time, the
+    equivalent is the RPC content of the merged cluster (``rpcBxSpread``,
+    ``rpcOutOfTimeFrac``, ``nRPCHitsBx0``).
 
     Shape variables (per cluster): hit-count moments across detector layers
     (``nLayer``, ``layerHitsMean/RMS/RelRMS``, ``maxLayerFrac``) and across
@@ -75,7 +101,10 @@ Everything above is optional and tunable per config directory: drop a
       cluster_eps: 0.4            # DBSCAN eps (dR in eta-phi), all systems
       cluster_min_samples: 10     # DBSCAN min_samples, CSC and DT
       rpc_min_samples: 10         # DBSCAN min_samples, RPC (sparse system)
+      rpc_merge: false            # true: RPC rechits join DT (barrel) / CSC
+                                  # (endcap); no rpcCluster is produced
       match_min_hits: 10          # cluster <-> LLP truth-match threshold
+      oot_time_cut: 12.5          # in-time window [ns] -> cluster.ootHitFrac
       dr_quantiles: [0.5, 0.8, 0.9]   # -> llp.dr50/dr80/dr90 fields
       pair_max_hits: 2000
       llpidx_convention: genpart  # or 'ordinal' (pre-Geant4-fix files)
@@ -85,13 +114,15 @@ Each entry of ``steps`` is one of the optional helpers below; the default is
 all of them, in this order:
 
 ``clusters``
-    DBSCAN the three rechit systems -> ``events.<sys>Cluster``.
+    DBSCAN the three rechit systems -> ``events.<sys>Cluster`` (two systems,
+    CSC and DT, with ``rpc_merge``).
 ``cluster_isolation``
     ``drMuon`` / ``drJet`` on the clusters (needs ``clusters``).
 ``llp``
     The ``events.llp`` collection: kinematics, decay vertex, volume flags.
 ``llp_hits``
-    Per-LLP truth rechit counts ``nHits{CSC,DT,RPC,Total}`` (needs ``llp``).
+    Per-LLP truth rechit counts ``nHits{CSC,DT,RPC,RPCBarrel,RPCEndcap,Total}``
+    (needs ``llp``).
 ``llp_reco``
     ``llp.reco*``, ``nRecoCluster*``, ``clusterHitFrac*`` (needs ``clusters``
     and ``llp_hits``).
@@ -118,7 +149,8 @@ helpers, so ``import custom.columns`` keeps giving the whole interface.
     Constants, :data:`DEFAULT_PARAMS` / :data:`STEP_DEPS`, and
     :func:`configure` (the ``columns.yaml`` reader).
 ``clustering.py``
-    DBSCAN of one rechit system and the flat layer/chamber keys it counts over.
+    DBSCAN of one rechit system (or of several merged) and the flat
+    layer/chamber keys it counts over.
 ``llp.py``
     The gen-level ``events.llp`` collection and its rechit spread variables.
 ``isolation.py``
@@ -131,7 +163,7 @@ import awkward as ak
 import numpy as np
 
 # The settings and the helpers the pipeline below calls.
-from .clustering import _cluster_system
+from .clustering import _cluster_merged, _cluster_system
 from .isolation import NO_OBJECT_DR, _dr_to_nearest, _selected_objects
 from .llp import _build_llps, _empty_llps, _llp_rechit_dr
 from .params import DEFAULT_PARAMS, LLP_PDGID, PARAMS, STEP_DEPS, STEPS
@@ -141,13 +173,25 @@ from .params import _dbscan_params, configure
 # notebooks, scripts/event_display.py and tests reach the helpers through
 # ``custom.columns``, whichever file they now live in.
 from .clustering import (  # noqa: F401
-    _flat_chamber_code, _flat_layer_key, _flat_zlayer_key)
+    SOURCE_CODES, _flat_chamber_code, _flat_layer_key, _flat_zlayer_key)
 from .isolation import _jet_id, _jet_id_evaluator  # noqa: F401
 from .llp import _dr_field_names, _dr_kernel, _llpidx_is_genpart_index  # noqa: F401
 
 
 __all__ = ["derive", "configure", "PARAMS", "STEPS", "DEFAULT_PARAMS", "STEP_DEPS",
            "NO_OBJECT_DR", "LLP_PDGID"]
+
+
+# The cluster collections, in the order they are built and attached; with
+# rpc_merge there is no "rpc" entry (its rechits live in the other two).
+_CLUSTER_SYSTEMS = (("csc", "CSC"), ("dt", "DT"), ("rpc", "RPC"))
+
+
+def _hit_fields(SYS):
+    """The ``llp.nHits*`` fields one cluster system's rechits are counted in."""
+    if not PARAMS["rpc_merge"]:
+        return (SYS,)
+    return {"CSC": ("CSC", "RPCEndcap"), "DT": ("DT", "RPCBarrel")}[SYS]
 
 
 class _Context:
@@ -185,21 +229,61 @@ def derive(events):
     events = ctx.events
     if ctx.llp is not None:
         events = ak.with_field(events, ctx.llp, "llp")
-    for sys, field in (("csc", "cscCluster"), ("dt", "dtCluster"),
-                       ("rpc", "rpcCluster")):
+    for sys, _ in _CLUSTER_SYSTEMS:
         if sys in ctx.clusters:
-            events = ak.with_field(events, ctx.clusters[sys], field)
+            events = ak.with_field(events, ctx.clusters[sys], sys + "Cluster")
     return events
 
 
 def _step_clusters(ctx):
-    """DBSCAN the three rechit systems (~35% of derive())."""
+    """DBSCAN the rechit systems (~35% of derive()).
+
+    Two layouts, selected by the ``rpc_merge`` parameter: the three systems on
+    their own, or -- with ``rpc_merge`` -- the RPC rechits folded into the
+    system they overlap (see :func:`_merged_clusters`).
+    """
+    if PARAMS["rpc_merge"]:
+        _merged_clusters(ctx)
+        return
     for sys, coll, timefield in (("csc", "cscRechits", "Tpeak"),
                                  ("dt", "dtRecHits", None),
                                  ("rpc", "rpcRecHits", "Time")):
         eps, min_samples = _dbscan_params(sys)
         ctx.clusters[sys] = _cluster_system(ctx.events[coll], timefield,
-                                            eps, min_samples)
+                                            eps, min_samples, sys)
+
+
+def _rpc_regions(events):
+    """The RPC rechits split into (barrel, endcap) by their ``Region`` branch.
+
+    ``Region`` is 0 in the barrel and +-1 in the two endcaps, so the barrel
+    wheels pair with DT and the endcap disks with CSC -- the two are at the
+    same radii / z as the system they are read out alongside.
+    """
+    rpc = events.rpcRecHits
+    return rpc[rpc.Region == 0], rpc[rpc.Region != 0]
+
+
+def _merged_clusters(ctx):
+    """DBSCAN with the RPC rechits merged into the overlapping system.
+
+    Barrel RPC clusters with DT, endcap RPC with CSC, so a shower crossing
+    both leaves one cluster instead of two that later have to be paired up.
+    No ``rpcCluster`` collection is produced: every RPC rechit has been offered
+    to the clustering of the system it overlaps, and clustering it a second
+    time on its own would double count it.  The RPC hits a cluster picked up
+    are what date it (the ``rpcTime*`` / ``rpcBx*`` fields) -- DT rechits carry
+    no time branch at all, and the CSC ``Tpeak`` is on its own clock.
+    """
+    barrel, endcap = _rpc_regions(ctx.events)
+    eps, min_samples = _dbscan_params("csc")
+    ctx.clusters["csc"] = _cluster_merged(
+        [(ctx.events.cscRechits, "Tpeak", "csc"), (endcap, "Time", "rpc")],
+        eps, min_samples)
+    eps, min_samples = _dbscan_params("dt")
+    ctx.clusters["dt"] = _cluster_merged(
+        [(ctx.events.dtRecHits, None, "dt"), (barrel, "Time", "rpc")],
+        eps, min_samples)
 
 
 def _step_jerc(ctx):
@@ -270,16 +354,20 @@ def _step_llp_hits(ctx):
     """Per-LLP truth rechit counts, per system and pooled."""
     if not ctx.has_truth:
         return               # _empty_llps already carries the fields
+    barrel, endcap = _rpc_regions(ctx.events)
     nhits = {}
-    for sys, coll in (("CSC", "cscRechits"), ("DT", "dtRecHits"), ("RPC", "rpcRecHits")):
+    for sys, rechits in (("CSC", ctx.events.cscRechits),
+                         ("DT", ctx.events.dtRecHits),
+                         ("RPC", ctx.events.rpcRecHits),
+                         # The two RPC regions on their own: the denominators
+                         # of the merged clustering (see _step_llp_reco).
+                         ("RPCBarrel", barrel), ("RPCEndcap", endcap)):
         nhits[sys] = ak.values_astype(
-            ak.sum(ctx.match_key[:, :, None] == ctx.events[coll].llpIdx[:, None, :],
-                   axis=2),
+            ak.sum(ctx.match_key[:, :, None] == rechits.llpIdx[:, None, :], axis=2),
             np.int64)
     llp = ctx.llp
-    llp = ak.with_field(llp, nhits["CSC"], "nHitsCSC")
-    llp = ak.with_field(llp, nhits["DT"], "nHitsDT")
-    llp = ak.with_field(llp, nhits["RPC"], "nHitsRPC")
+    for sys in ("CSC", "DT", "RPC", "RPCBarrel", "RPCEndcap"):
+        llp = ak.with_field(llp, nhits[sys], "nHits" + sys)
     ctx.llp = ak.with_field(llp, nhits["CSC"] + nhits["DT"] + nhits["RPC"], "nHitsTotal")
 
 
@@ -288,7 +376,9 @@ def _step_llp_reco(ctx):
     if not ctx.has_truth:
         return               # _empty_llps already carries the fields
     llp, reco = ctx.llp, {}
-    for sys, SYS in (("csc", "CSC"), ("dt", "DT"), ("rpc", "RPC")):
+    for sys, SYS in _CLUSTER_SYSTEMS:
+        if sys not in ctx.clusters:
+            continue
         # (ev, nLLP, nCluster) truth-match table: cluster's best-LLP index
         # equals this LLP's.  Unmatched clusters carry -1, which never equals
         # an LLP index (>= 0), so they drop out.
@@ -303,13 +393,18 @@ def _step_llp_reco(ctx):
         # in the system.  NaN when the LLP has no matched rechit there.
         hits_in = ak.where(sel, ctx.clusters[sys].nMatchedHits[:, None, :], 0)
         best = ak.fill_none(ak.max(hits_in, axis=2), 0)
-        nh = llp["nHits" + SYS]
+        # With rpc_merge the cluster also holds the RPC rechits of the region
+        # it covers, so those count towards the LLP's hits in "this system".
+        nh = sum(llp["nHits" + name] for name in _hit_fields(SYS))
         frac = ak.where(nh > 0, best / ak.where(nh > 0, nh, 1), np.nan)
         llp = ak.with_field(llp, frac, "clusterHitFrac" + SYS)
-    llp = ak.with_field(llp, reco["csc"], "recoCSC")
-    llp = ak.with_field(llp, reco["dt"], "recoDT")
-    llp = ak.with_field(llp, reco["rpc"], "recoRPC")
-    ctx.llp = ak.with_field(llp, reco["csc"] | reco["dt"] | reco["rpc"], "reco")
+    for sys, SYS in _CLUSTER_SYSTEMS:
+        if sys in reco:
+            llp = ak.with_field(llp, reco[sys], "reco" + SYS)
+    any_reco = None
+    for flag in reco.values():
+        any_reco = flag if any_reco is None else (any_reco | flag)
+    ctx.llp = ak.with_field(llp, any_reco, "reco")
 
 
 def _step_llp_shape(ctx):

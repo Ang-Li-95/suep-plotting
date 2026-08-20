@@ -215,17 +215,44 @@ def _load_custom_columns(columns_cfg: dict | None = None):
     return derive_fn
 
 
+# The columns.yaml settings this process has applied, so the (cheap) call is
+# made once per worker and not once per chunk.
+_columns_cfg_applied = ()
+
+
+def _apply_columns_config(derive_fn, columns_cfg):
+    """Make columns.yaml take effect in *this* process.
+
+    The worker processes of a multi-worker run import custom/columns.py fresh,
+    so the ``configure()`` call the CLI made in the parent never reached them
+    and they silently ran on the module defaults.  That went unnoticed while
+    every config set spelled the defaults out; a config that changes a
+    parameter (``rpc_merge``, a different ``cluster_min_samples``, a shorter
+    ``steps`` list) needs the settings re-applied where derive() actually runs.
+    """
+    global _columns_cfg_applied
+    if columns_cfg == _columns_cfg_applied:
+        return
+    module = sys.modules.get(getattr(derive_fn, "__module__", ""))
+    configure = getattr(module, "configure", None)
+    if configure is not None:
+        configure(columns_cfg)
+    _columns_cfg_applied = columns_cfg
+
+
 class SuepProcessor(processor.ProcessorABC):
     """Fill YAML-defined histograms for one sample chunk."""
 
     def __init__(self, hist_defs, sel_defs, correctors, sample_defs, derive_fn=None,
-                 reweighters=None):
+                 reweighters=None, columns_cfg=None):
         self.hist_defs = hist_defs
         self.sel_defs = sel_defs
         self.correctors = correctors
         self.sample_defs = sample_defs
         self.derive_fn = derive_fn
         self.reweighters = reweighters or {}
+        # Pickled along to the workers, which re-apply it themselves.
+        self.columns_cfg = columns_cfg or {}
 
     def process(self, events):
         dataset = events.metadata["dataset"]
@@ -234,6 +261,7 @@ class SuepProcessor(processor.ProcessorABC):
         group = cfg.get("group", "")
 
         if self.derive_fn is not None:
+            _apply_columns_config(self.derive_fn, self.columns_cfg)
             events = self.derive_fn(events)
 
         n = len(events)
@@ -475,10 +503,11 @@ def run_all(
             print(f"WARNING: could not load corrections: {e}")
             print("         proceeding without corrections")
 
-    derive_fn = _load_custom_columns(load_columns_config(config_dir / "columns.yaml"))
+    columns_cfg = load_columns_config(config_dir / "columns.yaml")
+    derive_fn = _load_custom_columns(columns_cfg)
 
     proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
-                         reweighters)
+                         reweighters, columns_cfg)
     rw_files = tuple(str(rw.include_path) for rw in reweighters.values()
                      if rw.include_path is not None)
     if workers and workers > 1:

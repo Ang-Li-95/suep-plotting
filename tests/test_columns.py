@@ -419,6 +419,7 @@ def _csc_rechits(hits):
         "X": [x], "Y": [y], "Z": [z],
         "Station": [station], "Chamber": [chamber],
         "IChamber": [[1] * len(hits)],
+        "Tpeak": [[5.0] * len(hits)],
     })
 
 
@@ -477,3 +478,235 @@ def test_the_helper_modules_see_the_configured_settings():
         assert mod.PARAMS["cluster_eps"] == 0.7
         assert mod.PARAMS["match_min_hits"] == 3
     assert list(llp.STEPS) == ["llp", "llp_hits"]
+
+
+# ── RPC-merged clustering (rpc_merge) ────────────────────────────────────────
+
+def _rpc_rechits(n, eta, phi, region, times, time_error=1.0, llpidx=-1):
+    """One event of RPC-shaped rechits, all in the same chamber."""
+    import awkward as ak
+    import numpy as np
+
+    ones = np.ones(n)
+    return ak.Array({
+        "Eta": [list(eta * ones)], "Phi": [list(phi * ones)],
+        "X": [list(300.0 * ones)], "Y": [list(100.0 * ones)],
+        "Z": [list(800.0 * ones)],
+        "Station": [list((2 * ones).astype(int))],
+        "Region": [list((region * ones).astype(int))],
+        "Ring": [list(ones.astype(int))],
+        "Sector": [list((3 * ones).astype(int))],
+        "Layer": [list(ones.astype(int))],
+        "Time": [list(np.asarray(times, dtype=float))],
+        "TimeError": [list(time_error * ones)],
+        "Bx": [list(0 * ones)],
+        "llpIdx": [list((llpidx * ones).astype(int))],
+    })
+
+
+def test_rpc_merge_must_be_a_boolean():
+    with pytest.raises(ValueError, match="rpc_merge"):
+        columns.configure({"parameters": {"rpc_merge": "yes"}})
+
+
+def test_merged_cluster_absorbs_the_rpc_hits_and_times_them():
+    """The RPC hits join the cluster and are what gives it a time.
+
+    The CSC ``time`` (Tpeak) must NOT move when RPC hits are merged in: the two
+    detectors are on different clocks, so the RPC estimate is reported apart.
+    """
+    hits = [(200.0, 0.0, 700.0, 2, 21)] * 6
+    csc = _csc_rechits(hits)
+    # Same eta-phi as the CSC hits, so DBSCAN puts them in the same cluster.
+    eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
+    rpc = _rpc_rechits(4, eta, phi, region=1, times=[9.0, 10.0, 11.0, 12.0])
+
+    merged = columns._cluster_merged([(csc, "Tpeak", "csc"), (rpc, "Time", "rpc")],
+                                     eps=0.4, min_samples=3)
+    solo = columns._cluster_system(csc, "Tpeak", eps=0.4, min_samples=3)
+
+    assert len(merged[0]) == 1
+    assert merged[0].size[0] == 10 and merged[0].nRPCHits[0] == 4
+    assert merged[0].rpcHitFrac[0] == pytest.approx(0.4)
+    assert merged[0].rpcTime[0] == pytest.approx(10.5)
+    assert merged[0].rpcTimeMedian[0] == pytest.approx(10.5)
+    # Equal per-hit errors -> the weighted mean is the plain one, sigma/sqrt(N)
+    assert merged[0].rpcTimeWeighted[0] == pytest.approx(10.5)
+    assert merged[0].rpcTimeErr[0] == pytest.approx(0.5)
+    assert merged[0].time[0] == pytest.approx(float(solo[0].time[0]))
+
+
+def test_an_unfilled_rpc_time_is_nan_and_the_bx_carries_the_timing():
+    """MDSNano stores Time = 0 / TimeError = -1: that is no measurement.
+
+    Averaging the placeholder zeros would report every cluster as perfectly
+    in time.  The bunch crossing is filled, so it is what dates the cluster.
+    """
+    import awkward as ak
+    import numpy as np
+
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 6)
+    eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
+    rpc = _rpc_rechits(4, eta, phi, region=1, times=[0.0] * 4, time_error=-1.0)
+    rpc = ak.with_field(rpc, [[0, 0, 1, 2]], "Bx")
+
+    merged = columns._cluster_merged([(csc, "Tpeak", "csc"), (rpc, "Time", "rpc")],
+                                     eps=0.4, min_samples=3)
+
+    assert merged[0].nRPCHits[0] == 4
+    assert merged[0].rpcTimeValidFrac[0] == 0.0
+    for field in ("rpcTime", "rpcTimeMedian", "rpcTimeWeighted", "rpcTimeErr"):
+        assert np.isnan(merged[0][field][0])
+    assert merged[0].rpcBx[0] == pytest.approx(0.75)
+    assert merged[0].rpcBxMedian[0] == pytest.approx(0.5)
+    assert merged[0].rpcOutOfTimeFrac[0] == pytest.approx(0.5)
+
+
+def test_a_merged_cluster_without_rpc_hits_has_no_rpc_time():
+    """NaN, not 0: a cluster the RPC never saw is undated, not dated at zero."""
+    import numpy as np
+
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 6)
+    far = _rpc_rechits(4, -2.0, 3.0, region=1, times=[9.0] * 4)
+
+    merged = columns._cluster_merged([(csc, "Tpeak", "csc"), (far, "Time", "rpc")],
+                                     eps=0.4, min_samples=3)
+
+    assert merged[0].nRPCHits[0] == 0
+    for field in ("rpcTime", "rpcTimeMedian", "rpcTimeWeighted", "rpcTimeErr"):
+        assert np.isnan(merged[0][field][0])
+
+
+def test_merging_keeps_the_layer_counts_of_the_two_systems_apart():
+    """A DT layer id and an RPC layer id collide unless they are offset."""
+    import awkward as ak
+
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 6)
+    eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
+    rpc = _rpc_rechits(4, eta, phi, region=1, times=[9.0] * 4)
+
+    merged = columns._cluster_merged([(csc, "Tpeak", "csc"), (rpc, "Time", "rpc")],
+                                     eps=0.4, min_samples=3)
+    solo = columns._cluster_system(csc, "Tpeak", eps=0.4, min_samples=3)
+
+    # One CSC layer plus one RPC layer, not one shared layer.
+    assert merged[0].nLayer[0] == solo[0].nLayer[0] + 1
+    # The innermost hit is still a CSC one, and its chamber code is unchanged.
+    assert merged[0].firstSystem[0] == columns.SOURCE_CODES["csc"]
+    assert merged[0].firstChamber[0] == solo[0].firstChamber[0]
+
+
+def test_rpc_regions_split_barrel_from_endcap():
+    import awkward as ak
+
+    barrel = _rpc_rechits(2, 0.1, 0.0, region=0, times=[1.0, 2.0])
+    endcap = _rpc_rechits(3, 2.0, 0.0, region=1, times=[3.0, 4.0, 5.0])
+    rpc = ak.concatenate([barrel, endcap], axis=1)
+    events = ak.zip({"rpcRecHits": rpc}, depth_limit=1)
+
+    got_barrel, got_endcap = columns._rpc_regions(events)
+
+    assert list(ak.num(got_barrel.Eta)) == [2]
+    assert list(ak.num(got_endcap.Eta)) == [3]
+
+
+def test_merged_hit_counts_include_the_rpc_region_of_that_system():
+    """clusterHitFrac's denominator has to follow what went into the cluster."""
+    columns.configure({"parameters": {"rpc_merge": False}})
+    assert columns._hit_fields("CSC") == ("CSC",)
+
+    columns.configure({"parameters": {"rpc_merge": True}})
+    assert columns._hit_fields("CSC") == ("CSC", "RPCEndcap")
+    assert columns._hit_fields("DT") == ("DT", "RPCBarrel")
+
+
+def test_the_processor_reapplies_columns_yaml_where_derive_runs():
+    """A worker process imports custom/columns.py fresh, at its defaults.
+
+    configure() runs in the parent, so without this the workers of a
+    multi-worker run would cluster with the module defaults while the parent
+    printed the config's settings -- invisible for as long as every config set
+    happened to spell the defaults out.
+    """
+    from suep_plot import processor as proc_mod
+
+    columns.configure()                       # the state a fresh worker is in
+    assert columns.PARAMS["rpc_merge"] is False
+    applied = proc_mod._columns_cfg_applied
+    proc_mod._columns_cfg_applied = ()        # ... and it has applied nothing
+    try:
+        proc_mod._apply_columns_config(columns.derive,
+                                       {"parameters": {"rpc_merge": True}})
+        assert columns.PARAMS["rpc_merge"] is True
+    finally:
+        proc_mod._columns_cfg_applied = applied
+
+
+def test_the_rpcmerge_configs_match_their_generator():
+    """configs_mds_rpcmerge* are generated, not hand-written.
+
+    A change to the reference sets they are derived from -- a new cluster
+    histogram, a retuned isolation cut -- has to be carried over by re-running
+    the generator, or the two studies quietly stop being comparable.
+    """
+    import importlib.util
+
+    repo = Path(__file__).resolve().parent.parent
+    path = repo / "scripts" / "make_rpcmerge_configs.py"
+    spec = importlib.util.spec_from_file_location("make_rpcmerge_configs", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.main(["--check"]) == 0, (
+        "run python scripts/make_rpcmerge_configs.py to refresh them")
+
+
+def test_cluster_time_spread_and_oot_fraction_separate_a_shower_from_pile_up():
+    """The out-of-time handles: one shower is one time, pile-up is not."""
+    import awkward as ak
+    columns.configure({"parameters": {"oot_time_cut": 12.5}})
+
+    # Same geometry twice, so only the hit times differ.
+    hits = [(200.0, 0.0, 700.0, 2, 21)] * 6
+    shower = _csc_rechits(hits)                      # Tpeak = 5 ns for every hit
+    mixed = _csc_rechits(hits)
+    mixed = ak.with_field(mixed, [[5.0, 5.0, 5.0, 5.0, 60.0, -40.0]], "Tpeak")
+
+    a = columns._cluster_system(shower, "Tpeak", eps=0.4, min_samples=3)
+    b = columns._cluster_system(mixed, "Tpeak", eps=0.4, min_samples=3)
+
+    assert a[0].timeSpread[0] == pytest.approx(0.0)
+    assert a[0].ootHitFrac[0] == pytest.approx(0.0)
+    assert b[0].timeSpread[0] > 20
+    assert b[0].ootHitFrac[0] == pytest.approx(2 / 6)
+
+
+def test_the_in_time_window_is_configurable():
+    import awkward as ak
+    hits = [(200.0, 0.0, 700.0, 2, 21)] * 6
+    rechits = _csc_rechits(hits)                     # every hit at 5 ns
+    rechits = ak.with_field(rechits, [[5.0] * 6], "Tpeak")
+
+    columns.configure({"parameters": {"oot_time_cut": 12.5}})
+    inside = columns._cluster_system(rechits, "Tpeak", eps=0.4, min_samples=3)
+    columns.configure({"parameters": {"oot_time_cut": 2.0}})
+    outside = columns._cluster_system(rechits, "Tpeak", eps=0.4, min_samples=3)
+
+    assert inside[0].ootHitFrac[0] == 0.0
+    assert outside[0].ootHitFrac[0] == 1.0
+
+
+def test_in_time_rpc_hits_are_counted_on_the_merged_cluster():
+    """nRPCHitsBx0 makes ">= N in-time RPC hits" expressible on a DT cluster."""
+    import awkward as ak
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 6)
+    eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
+    rpc = _rpc_rechits(4, eta, phi, region=1, times=[0.0] * 4, time_error=-1.0)
+    rpc = ak.with_field(rpc, [[0, 0, 0, 2]], "Bx")
+
+    merged = columns._cluster_merged([(csc, "Tpeak", "csc"), (rpc, "Time", "rpc")],
+                                     eps=0.4, min_samples=3)
+
+    assert merged[0].nRPCHits[0] == 4
+    assert merged[0].nRPCHitsBx0[0] == 3
+    assert merged[0].rpcOutOfTimeFrac[0] == pytest.approx(0.25)

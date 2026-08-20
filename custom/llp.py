@@ -136,11 +136,16 @@ def _empty_llps(events):
     i64 = ["gidx", "lidx"]
     boo = ["inCSC", "inDT", "inRPC"]
     if "llp_hits" in STEPS:
-        i64 += ["nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsTotal"]
+        i64 += ["nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsRPCBarrel",
+                "nHitsRPCEndcap", "nHitsTotal"]
     if "llp_reco" in STEPS:
-        f64 += ["clusterHitFracCSC", "clusterHitFracDT", "clusterHitFracRPC"]
-        i64 += ["nRecoClusterCSC", "nRecoClusterDT", "nRecoClusterRPC"]
-        boo += ["recoCSC", "recoDT", "recoRPC", "reco"]
+        # With rpc_merge there is no RPC cluster collection, so no LLP field
+        # describes one -- the same rule as everywhere else here: a field
+        # exists exactly when the run it came from produced it.
+        systems = ["CSC", "DT"] if PARAMS["rpc_merge"] else ["CSC", "DT", "RPC"]
+        f64 += ["clusterHitFrac" + sys for sys in systems]
+        i64 += ["nRecoCluster" + sys for sys in systems]
+        boo += ["reco" + sys for sys in systems] + ["reco"]
     if "llp_shape" in STEPS:
         f64 += [f + sys for sys in ("CSC", "DT", "RPC", "Total")
                 for f in _dr_field_names()]

@@ -196,6 +196,110 @@ Notes:
 
 ---
 
+## RPC-merged clustering (one cluster per shower, with a time)
+
+`configs/configs_mds_rpcmerge/` and `configs/configs_mds_rpcmerge_data/` run the
+same study with the RPC rechits **clustered into the system they overlap**
+instead of on their own: barrel RPC (`Region == 0`) with DT, endcap RPC
+(`|Region| == 1`) with CSC.  A shower crossing both detectors is then one
+cluster instead of two that have to be paired up afterwards, and the run has
+**only `events.cscCluster` and `events.dtCluster`** — there is no
+`events.rpcCluster`, because every RPC rechit already belongs to one of those
+two.  One line in `columns.yaml` selects it:
+
+```yaml
+parameters:
+  rpc_merge: true
+```
+
+Each merged cluster gains its RPC content (`nRPCHits`, `rpcHitFrac`,
+`firstSystem`) and the RPC estimate of **when** it happened:
+
+| field | meaning |
+| --- | --- |
+| `rpcTime`, `rpcTimeMedian`, `rpcTimeSpread` | mean / median / RMS of the RPC rechit times, over the hits with a valid one |
+| `rpcTimeWeighted`, `rpcTimeErr` | `1/σ²`-weighted mean from the per-hit `TimeError`, and its uncertainty |
+| `rpcTimeValidFrac` | fraction of the cluster's RPC hits that had a valid time at all |
+| `rpcBx`, `rpcBxMedian`, `rpcBxSpread` | mean / median / RMS bunch crossing (× 25 ns for a time) |
+| `rpcOutOfTimeFrac`, `nRPCHitsBx0` | fraction of the cluster's RPC hits outside the in-time BX, and the count inside it |
+
+All of them are NaN on a cluster with no RPC hit (the `<sys>_cluster_has_rpc`
+selection filters those out), and the CSC `time` (mean `Tpeak`) is unchanged by
+the merge: the two detectors are on different clocks, so the RPC estimate is
+reported apart rather than averaged in.  The merged-in RPC hits also keep their
+own layer and chamber ids (offset by +1000 in `firstChamber`, so a cluster whose
+innermost hit is an RPC one lands in the overflow of the chamber-code plots and
+`firstSystem` says so); the CSC/DT hits keep the ids they always had, so
+`nLayer`, `firstChamber` and `firstStation` stay comparable with the reference
+run except for the RPC hits now inside the cluster.  The `first_chamber` /
+`first_station` histograms are cut to clusters whose innermost hit belongs to
+the primary system (`<sys>_cluster_first_not_rpc`) — on this file that is 93 %
+of the CSC clusters but only 70 % of the DT ones, since the barrel RPC layers
+sit inside the DT stations; `<sys>_cluster_first_system` counts all three.
+
+> **The rechit time is not filled in any MDSNano production so far.**
+> `rpcRecHits_Time` is 0 with `TimeError` −1 throughout — checked on the Gen3
+> signal, on DY and on ZeroBias 2024C — so every `rpcTime*` field is NaN and its
+> histograms come out empty by construction (that is deliberate: averaging the
+> placeholder zeros would report every cluster as perfectly in time).  The
+> **bunch crossing is filled** and carries real structure, so today's RPC time
+> estimate is `rpcBx * 25` ns, plotted as `<sys>_cluster_rpc_time_from_bx`.
+> Filling `rpcRecHits_Time` in the ntuplizer is what would turn the fine-time
+> fields on; nothing here has to change for that.
+
+### Rejecting out-of-time background
+
+Timing here rejects *out-of-time* activity — previous/later-BX pile-up, cavern
+background, noise. In-time pile-up is not a timing problem; that is what the
+isolation and shape variables are for.
+
+On **CSC** the handle is the rechit time, and it is the cluster's *spread*, not
+its mean, that discriminates (on one signal file: gen-matched clusters have an
+RMS of 5.9 ns, unmatched ones 18.3 ns, with both means at ~1.5 ns). Every
+cluster of a system whose rechits carry a time therefore gets
+
+| field | meaning |
+| --- | --- |
+| `time` | mean rechit time (CSC `Tpeak`) — unchanged |
+| `timeSpread` | RMS of those times over the cluster |
+| `ootHitFrac` | fraction of them outside ±`oot_time_cut` (12.5 ns by default) |
+
+On **DT** there is no rechit time at all, so the equivalent handle is the RPC
+content of the merged cluster — `rpcBxSpread`, `rpcOutOfTimeFrac`,
+`nRPCHitsBx0` — which is how the standard CMS DT muon-shower search times its
+clusters. The same split shows up there: matched clusters have a BX RMS of
+0.31 against 0.82 for unmatched ones, while both means sit at ~0.1.
+
+> **Do not take the rejection factor from MC.** The BX composition is wildly
+> different in data: BX = 0 holds 77 % of the RPC hits in the signal MC, 61 %
+> in DY, but only 19 % in ZeroBias 2024C, where the distribution is essentially
+> flat over −2…+2 (an unmodelled uniform cavern/noise background filling the
+> readout window). The CSC picture matches: `|Tpeak| < 12.5` ns keeps 61 % of
+> signal-MC rechits and 22 % of ZeroBias ones. The real rejection is therefore
+> much *larger* than MC suggests — measure it in ZeroBias, and take only the
+> signal efficiency from MC.
+
+The two config sets are **generated**, not hand-written — they are
+`configs_mds_grid/` and `configs_mds_data/` with the RPC-cluster blocks pruned,
+the "reconstructable" hit counts widened to the merged system
+(`nHitsCSC + nHitsRPCEndcap`, `nHitsDT + nHitsRPCBarrel`) and the RPC timing
+histograms added, so everything the two studies share stays identical by
+construction:
+
+```bash
+python scripts/make_rpcmerge_configs.py           # rewrite the two config dirs
+python scripts/make_rpcmerge_configs.py --check   # are they current?
+```
+
+Running them is the usual pair of commands:
+
+```bash
+suep-run  -c configs/configs_mds_rpcmerge -o output_mds_rpcmerge --chunk-size 10000 --workers 8
+suep-plot output_mds_rpcmerge -o output_mds_rpcmerge/plots -c configs/configs_mds_rpcmerge -j 8
+```
+
+---
+
 ## What lives where
 
 - [`configs/configs_mds/samples.yaml`](configs/configs_mds/samples.yaml) — the mDark=2 pair; `configs/configs_mds_grid/samples.yaml` pulls in the full six-point grid instead.
@@ -207,6 +311,7 @@ Notes:
 - [`custom/columns.py`](custom/columns.py) — `derive()`: the step pipeline that attaches the LLP + cluster collections; parameters and optional steps come from each config's `columns.yaml`.  Its helpers sit next to it, one file per topic: [`params.py`](custom/params.py) (constants, defaults, the `columns.yaml` reader), [`clustering.py`](custom/clustering.py) (DBSCAN), [`llp.py`](custom/llp.py) (`events.llp` and the per-LLP rechit spread), [`isolation.py`](custom/isolation.py) (cluster→prompt-object dR).  Everything stays reachable through `custom.columns`.
 - [`configs/configs_mds/columns.yaml`](configs/configs_mds/columns.yaml) — clustering parameters of the reference run; [`configs/configs_mds_gen/columns.yaml`](configs/configs_mds_gen/columns.yaml) is the gen-level (no-DBSCAN) step list.
 - [`configs/configs_mds_gen/`](configs/configs_mds_gen) — gen-level-only subset (LLPs + matched rechits), → `output_mds_gen/`.
+- [`configs/configs_mds_rpcmerge/`](configs/configs_mds_rpcmerge), [`configs/configs_mds_rpcmerge_data/`](configs/configs_mds_rpcmerge_data) — the RPC-merged study (section above), generated by [`scripts/make_rpcmerge_configs.py`](scripts/make_rpcmerge_configs.py) from the two reference sets; do not edit them by hand.
 
 ---
 

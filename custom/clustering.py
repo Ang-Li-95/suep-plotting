@@ -2,9 +2,13 @@
 
 :func:`_cluster_system` turns one rechit collection into a jagged record array
 of clusters (dR metric in eta-phi, per-cluster shape/position/truth-match
-fields).  The ``_flat_*_key`` helpers build the flat integer ids it counts hits
-over: the depth segment ("layer"), the chamber-type code, and the layer plane
-read off the quantized global z.
+fields).  :func:`_cluster_merged` does the same for *several* collections
+clustered together -- the RPC-merged configuration, where the barrel RPC
+rechits join the DT ones and the endcap RPC rechits join the CSC ones, so that
+an LLP shower crossing both systems becomes a single cluster.  The
+``_flat_*_key`` helpers build the flat integer ids it counts hits over: the
+depth segment ("layer"), the chamber-type code, and the layer plane read off
+the quantized global z.
 """
 
 from __future__ import annotations
@@ -13,6 +17,18 @@ import awkward as ak
 import numpy as np
 
 from .params import PARAMS
+
+# Which detector a merged cluster's hit came from (the ``source`` per-hit array
+# and the per-cluster ``firstSystem`` field).
+SOURCE_CODES = {"csc": 0, "dt": 1, "rpc": 2}
+
+# Offsets that keep the flat ids of two merged systems from colliding: a DT
+# layer key and an RPC layer key are both small integers, and a DT and an RPC
+# chamber code can be identical.  Applied per merged collection after the
+# first, so single-system clustering -- and the primary system of a merge --
+# keeps its historical ids.
+_LAYER_KEY_STRIDE = 10 ** 12
+_CHAMBER_CODE_STRIDE = 1000
 
 
 def _flat_layer_key(rechits):
@@ -48,10 +64,10 @@ def _flat_chamber_code(rechits):
 
     CSC stores the code directly as ``Chamber`` (signed for the two endcaps;
     the sign is dropped so both share a bin).  DT and RPC have no such branch,
-    so the code is built from the station and the ring-like coordinate — the
-    wheel for DT, the ring for RPC — in the same ``station * 10 + ring`` layout.
-    RPC additionally offsets the endcap by 100, since a barrel and an endcap
-    chamber can otherwise share a code.
+    so the code is built from the station and the ring-like coordinate -- the
+    wheel for DT, the ring for RPC -- in the same ``station * 10 + ring``
+    layout.  RPC additionally offsets the endcap by 100, since a barrel and an
+    endcap chamber can otherwise share a code.
     """
     def flat(field):
         return np.abs(np.asarray(ak.flatten(rechits[field]), dtype=np.int64))
@@ -70,13 +86,13 @@ def _flat_zlayer_key(rechits):
 
     CSC layer planes are normal to the beam, so quantized global z identifies
     the in-chamber layer (6 discrete planes per chamber, 2.54 cm spacing,
-    2.2 cm in ME1/1; 132 planes in total) — finer than the chamber unit of
+    2.2 cm in ME1/1; 132 planes in total) -- finer than the chamber unit of
     :func:`_flat_layer_key`.  CAVEAT: the central MDSNano v2 background
     production stores ONE z value per chamber (in-chamber layer information
     is dropped), so the ``zLayer*`` cluster fields are only comparable
     between samples whose ntuples keep the true per-layer z (the private
     signal production does; a reprocessed background sample would).  Only
-    meaningful for CSC — for barrel systems z runs along the wires, not
+    meaningful for CSC -- for barrel systems z runs along the wires, not
     through the layers.
     """
     return np.round(
@@ -84,33 +100,192 @@ def _flat_zlayer_key(rechits):
     ).astype(np.int64)
 
 
-def _cluster_system(rechits, timefield, eps, min_samples):
-    """DBSCAN-cluster one rechit system -> jagged record array of clusters.
+def _flat_hits(rechits, timefield, system):
+    """Materialize one rechit collection as flat numpy arrays.
 
-    The rechit branches are materialized to flat numpy once per chunk and
-    events are processed as offset slices (per-event awkward indexing is slow).
+    Per-event awkward indexing is slow, so every branch the clustering needs is
+    flattened once per chunk and events are then processed as offset slices.
+    The returned dict is what :func:`_merge_hits` concatenates and
+    :func:`_cluster_hits` clusters; ``system`` is the key of
+    :data:`SOURCE_CODES` this collection belongs to.
+    """
+    counts = np.asarray(ak.num(rechits.Eta))
+    n = int(counts.sum())
+
+    def flat(field, dtype=np.float64):
+        return np.asarray(ak.flatten(rechits[field]), dtype=dtype)
+
+    xs, ys, zs = flat("X"), flat("Y"), flat("Z")
+    fields = rechits.fields
+    has_truth = "llpIdx" in fields
+    return {
+        "counts": counts,
+        "eta": flat("Eta"),
+        "phi": flat("Phi"),
+        "x": xs,
+        "y": ys,
+        "z": zs,
+        # Distance to the nominal interaction point, to pick a cluster's
+        # first hit.
+        "dist": np.sqrt(xs ** 2 + ys ** 2 + zs ** 2),
+        "station": np.asarray(ak.flatten(rechits.Station)),
+        "layerkey": _flat_layer_key(rechits),
+        "zlayerkey": _flat_zlayer_key(rechits),
+        "chamber": _flat_chamber_code(rechits),
+        "llpidx": (np.asarray(ak.flatten(rechits.llpIdx)) if has_truth
+                   else np.full(n, -1, dtype=np.int64)),
+        "system": system,
+        "code": SOURCE_CODES[system],
+        "source": np.full(n, SOURCE_CODES[system], dtype=np.int64),
+        "time": (flat(timefield) if timefield is not None
+                 else np.full(n, np.nan)),
+        # RPC-only timing extras; NaN everywhere else, so the merged arrays
+        # have one dtype and the RPC-time estimate below just masks on source.
+        "timeError": (flat("TimeError") if "TimeError" in fields
+                      else np.full(n, np.nan)),
+        "bx": (flat("Bx") if "Bx" in fields else np.full(n, np.nan)),
+        "has_time": timefield is not None,
+        "has_truth": has_truth,
+    }
+
+
+# Per-hit arrays of _flat_hits that _merge_hits concatenates (the rest are
+# scalars or the per-event counts).
+_HIT_ARRAYS = ("eta", "phi", "x", "y", "z", "dist", "station", "layerkey",
+               "zlayerkey", "chamber", "llpidx", "source", "time", "timeError",
+               "bx")
+
+
+def _merge_hits(components):
+    """Interleave several :func:`_flat_hits` dicts into one, event by event.
+
+    The clustering runs on per-event slices of flat arrays, so the merged
+    arrays have to be ordered by event first and by source collection second
+    -- not simply concatenated, which would put all of one system's hits
+    before all of the other's.  The destination index of every hit is built
+    vectorized, then each array is scattered into place.
+
+    The layer/chamber ids of the *added* collections are offset so that two
+    systems cannot share an id (a DT and an RPC chamber code are otherwise the
+    same small integer).  The primary component keeps its own ids, so a
+    cluster's ``firstChamber`` still reads as the plain CSC/DT chamber code it
+    always did and only an RPC-first cluster stands out.  A single component is
+    returned as-is, which keeps single-system clustering bit-identical to
+    before.
+    """
+    if len(components) == 1:
+        return components[0]
+
+    counts = np.sum([c["counts"] for c in components], axis=0)
+    offsets = np.concatenate([[0], np.cumsum(counts)])
+    total = int(counts.sum())
+
+    merged = {name: np.empty(total, dtype=np.result_type(
+        *[c[name].dtype for c in components])) for name in _HIT_ARRAYS}
+
+    # Running per-event write position: component k starts after the hits of
+    # components 0..k-1 in the same event.
+    start = offsets[:-1].copy()
+    for index, comp in enumerate(components):
+        c_counts = comp["counts"]
+        c_offsets = np.concatenate([[0], np.cumsum(c_counts)])
+        rank = np.arange(int(c_counts.sum())) - np.repeat(c_offsets[:-1], c_counts)
+        dest = np.repeat(start, c_counts) + rank
+        for name in _HIT_ARRAYS:
+            values = comp[name]
+            if name in ("layerkey", "zlayerkey"):
+                values = values + index * _LAYER_KEY_STRIDE
+            elif name == "chamber":
+                values = values + index * _CHAMBER_CODE_STRIDE
+            merged[name][dest] = values
+        start = start + c_counts
+
+    merged["counts"] = counts
+    merged["system"] = components[0]["system"]
+    merged["code"] = components[0]["code"]
+    # The merged collection has a time if its *primary* (first) component does:
+    # that is the field the historical ``time`` means -- CSC Tpeak.  RPC times
+    # are reported separately by the rpcTime* fields.
+    merged["has_time"] = components[0]["has_time"]
+    merged["has_truth"] = all(c["has_truth"] for c in components)
+    return merged
+
+
+def _rpc_time(times, errors, bx):
+    """Timing of one cluster's RPC hits, from the rechit time and the BX.
+
+    RPC is the only muon subdetector whose MDSNano rechits carry timing at
+    all, so its hits are what date a merged cluster.  Two independent
+    estimates, because the fine one is not always there:
+
+    * the rechit time (ns), averaged plainly, by ``1/sigma^2`` from the
+      per-hit ``TimeError``, and as a median (robust against the few badly
+      mistimed hits a shower leaves).  A rechit whose ``TimeError`` is not
+      positive has no valid time -- the whole MDSNano production line as of
+      2026-08 stores ``Time = 0``, ``TimeError = -1`` -- and is left out, so
+      these fields are NaN rather than a fake 0 when nothing was measured.
+      ``rpcTimeValidFrac`` says how much of the cluster fed them.
+    * the bunch crossing, which *is* filled: mean / median / RMS in BX units
+      (multiply by 25 ns for a time), plus ``rpcOutOfTimeFrac``, the fraction
+      of the cluster's RPC hits outside the in-time BX -- the coarse handle on
+      a late, displaced shower.
+
+    A cluster with no RPC hit at all gives NaN throughout.
+    """
+    fields = ("rpcTime", "rpcTimeMedian", "rpcTimeSpread", "rpcTimeWeighted",
+              "rpcTimeErr", "rpcTimeValidFrac", "rpcBx", "rpcBxMedian",
+              "rpcBxSpread", "rpcOutOfTimeFrac")
+    if len(times) == 0:
+        return dict.fromkeys(fields, np.nan)
+
+    out = dict.fromkeys(fields, np.nan)
+    valid = np.isfinite(times) & np.isfinite(errors) & (errors > 0)
+    out["rpcTimeValidFrac"] = float(valid.mean())
+    if valid.any():
+        t, weights = times[valid], 1.0 / errors[valid] ** 2
+        out["rpcTime"] = float(t.mean())
+        out["rpcTimeMedian"] = float(np.median(t))
+        out["rpcTimeSpread"] = float(t.std())
+        out["rpcTimeWeighted"] = float((t * weights).sum() / weights.sum())
+        out["rpcTimeErr"] = float(1.0 / np.sqrt(weights.sum()))
+
+    good_bx = bx[np.isfinite(bx)]
+    if len(good_bx):
+        out["rpcBx"] = float(good_bx.mean())
+        out["rpcBxMedian"] = float(np.median(good_bx))
+        out["rpcBxSpread"] = float(good_bx.std())
+        out["rpcOutOfTimeFrac"] = float((good_bx != 0).mean())
+    return out
+
+
+def _cluster_hits(hits, eps, min_samples, merged=False):
+    """DBSCAN one (possibly merged) flat hit collection -> cluster records.
+
+    ``hits`` is a :func:`_flat_hits` dict, or several of them run through
+    :func:`_merge_hits`; ``merged`` adds the fields that only mean something
+    when more than one system went in (the RPC timing estimate, the RPC hit
+    content and which system the innermost hit came from).
+
+    A system with a rechit time (CSC ``Tpeak``) gets ``time`` / ``timeSpread``
+    / ``ootHitFrac`` from it -- the mean, the RMS and the fraction of the
+    cluster's hits outside +-``oot_time_cut``.  The spread and the out-of-time
+    fraction are the out-of-time-background handles: a real shower deposits
+    every hit at one time, a cluster DBSCAN assembled from unrelated pile-up
+    and cavern hits does not.
     """
     from sklearn.cluster import DBSCAN
 
-    match_min_hits = PARAMS["match_min_hits"]
-    counts = np.asarray(ak.num(rechits.Eta))
+    match_min_hits, oot_cut = PARAMS["match_min_hits"], PARAMS["oot_time_cut"]
+    counts = hits["counts"]
     offsets = np.concatenate([[0], np.cumsum(counts)])
-    eta = np.asarray(ak.flatten(rechits.Eta), dtype=np.float64)
-    phi = np.asarray(ak.flatten(rechits.Phi), dtype=np.float64)
-    xs = np.asarray(ak.flatten(rechits.X), dtype=np.float64)
-    ys = np.asarray(ak.flatten(rechits.Y), dtype=np.float64)
-    zs = np.asarray(ak.flatten(rechits.Z), dtype=np.float64)
-    station = np.asarray(ak.flatten(rechits.Station))
-    layerkey = _flat_layer_key(rechits)
-    zlayerkey = _flat_zlayer_key(rechits)
-    chamber = _flat_chamber_code(rechits)
-    # Distance to the nominal interaction point, to pick a cluster's first hit.
-    dist = np.sqrt(xs ** 2 + ys ** 2 + zs ** 2)
-    has_truth = "llpIdx" in rechits.fields
-    llpidx = (np.asarray(ak.flatten(rechits.llpIdx)) if has_truth
-              else np.full(len(eta), -1, dtype=np.int64))
-    tvals = (np.asarray(ak.flatten(rechits[timefield]), dtype=np.float64)
-             if timefield is not None else None)
+    eta, phi = hits["eta"], hits["phi"]
+    xs, ys, zs = hits["x"], hits["y"], hits["z"]
+    station, dist = hits["station"], hits["dist"]
+    layerkey, zlayerkey, chamber = hits["layerkey"], hits["zlayerkey"], hits["chamber"]
+    llpidx, source = hits["llpidx"], hits["source"]
+    has_truth = hits["has_truth"]
+    tvals = hits["time"] if hits["has_time"] else None
+    primary_code, rpc_code = hits["code"], SOURCE_CODES["rpc"]
 
     fields = ["size", "eta", "phi", "x", "y", "z", "r", "etaSpread", "phiSpread",
               "rSpread", "zSpread",
@@ -122,7 +297,12 @@ def _cluster_system(rechits, timefield, eps, min_samples):
               "firstChamber", "firstStation",
               "nMatchedHits", "matchedLLPIdx", "matched", "nMatchedLLP", "hasTruth"]
     if tvals is not None:
-        fields.append("time")
+        fields += ["time", "timeSpread", "ootHitFrac"]
+    if merged:
+        fields += ["firstSystem", "nRPCHits", "nRPCHitsBx0", "rpcHitFrac",
+                   "rpcTime", "rpcTimeMedian", "rpcTimeSpread",
+                   "rpcTimeWeighted", "rpcTimeErr", "rpcTimeValidFrac",
+                   "rpcBx", "rpcBxMedian", "rpcBxSpread", "rpcOutOfTimeFrac"]
     out = {f: [] for f in fields}
     nclu = np.zeros(len(counts), dtype=np.int64)
 
@@ -200,14 +380,60 @@ def _cluster_system(rechits, timefield, eps, min_samples):
             out["matched"].append(matched)
             out["nMatchedLLP"].append(nmatched_llp)
             out["hasTruth"].append(has_truth)
+            src = source[s][m] if merged else None
             if tvals is not None:
-                out["time"].append(float(tvals[s][m].mean()))
+                # ``time`` is the primary system's time only (CSC Tpeak): the
+                # RPC hits a merged cluster picked up are reported apart, by
+                # the rpcTime* fields, and are on a different clock.
+                t = tvals[s][m] if src is None else tvals[s][m][src == primary_code]
+                t = t[np.isfinite(t)]
+                # The spread separates a real shower (every hit from the same
+                # particle, so one time) from a cluster DBSCAN built out of
+                # unrelated in-time and out-of-time hits; ootHitFrac says how
+                # much of it sits outside the in-time window.
+                out["time"].append(float(t.mean()) if len(t) else np.nan)
+                out["timeSpread"].append(float(t.std()) if len(t) else np.nan)
+                out["ootHitFrac"].append(float((np.abs(t) > oot_cut).mean())
+                                         if len(t) else np.nan)
+            if merged:
+                isrpc = src == rpc_code
+                rpc_bx = hits["bx"][s][m][isrpc]
+                out["firstSystem"].append(int(src[first]))
+                out["nRPCHits"].append(int(isrpc.sum()))
+                out["nRPCHitsBx0"].append(int(np.count_nonzero(rpc_bx == 0)))
+                out["rpcHitFrac"].append(float(isrpc.sum() / m.sum()))
+                for f, v in _rpc_time(hits["time"][s][m][isrpc],
+                                      hits["timeError"][s][m][isrpc],
+                                      rpc_bx).items():
+                    out[f].append(v)
         nclu[i] = labels.max() + 1
 
     dtypes = {"size": np.int64, "nStation": np.int64, "stationSpan": np.int64,
               "nLayer": np.int64, "nZLayer": np.int64, "nMatchedHits": np.int64,
               "firstChamber": np.int64, "firstStation": np.int64,
               "matchedLLPIdx": np.int64, "matched": np.bool_,
-              "nMatchedLLP": np.int64, "hasTruth": np.bool_}
+              "nMatchedLLP": np.int64, "hasTruth": np.bool_,
+              "firstSystem": np.int64, "nRPCHits": np.int64,
+              "nRPCHitsBx0": np.int64}
     return ak.zip({f: ak.unflatten(np.asarray(v, dtype=dtypes.get(f, np.float64)), nclu)
                    for f, v in out.items()})
+
+
+def _cluster_system(rechits, timefield, eps, min_samples, system="csc"):
+    """DBSCAN-cluster one rechit system -> jagged record array of clusters."""
+    return _cluster_hits(_flat_hits(rechits, timefield, system), eps, min_samples)
+
+
+def _cluster_merged(components, eps, min_samples):
+    """DBSCAN-cluster several rechit collections together.
+
+    ``components`` is a list of ``(rechits, timefield, system)``; the first
+    entry is the primary system, which names the resulting collection and
+    supplies the ``time`` field.  Used by the RPC-merged configuration, where
+    the RPC rechits of one region are clustered with the barrel (DT) or endcap
+    (CSC) system they overlap instead of on their own, so a shower seen by both
+    becomes one cluster with an RPC time attached.
+    """
+    hits = _merge_hits([_flat_hits(rechits, timefield, system)
+                        for rechits, timefield, system in components])
+    return _cluster_hits(hits, eps, min_samples, merged=True)
