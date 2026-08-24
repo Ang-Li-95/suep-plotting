@@ -422,6 +422,18 @@ Both blocks are optional; anything left out keeps the default shown above.
 The file is part of the run's identity — `suep-run` treats it like the other
 configs for the up-to-date check, so editing it reprocesses.
 
+`derive()` reads these settings once, at entry, and passes them down to the
+helpers, so nothing below it depends on module state. Nothing is installed at
+import time either: `configure()` has to run in **every process** that calls
+`derive()` — the CLI does it in the parent and again in each worker — and a
+process that skipped it raises on the first parameter read rather than falling
+back on the defaults. That distinction is the whole point: a worker silently
+running the defaults while the config asked for something else is a run whose
+histograms are wrong and whose logs look fine. A `columns.yaml` that fails
+validation installs nothing, so the settings already in force stay in force.
+An interactive user (a notebook, `scripts/event_display.py`) calls
+`custom.columns.configure()` with no argument for the defaults.
+
 `steps` selects which of the optional helpers `derive()` runs (the default is
 all of them):
 

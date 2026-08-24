@@ -126,6 +126,15 @@ def _muons(*specs):
                       for pt, eta, phi, lid in specs]])
 
 
+def _ctx(events):
+    """A real pipeline context on the settings configure() last installed.
+
+    The steps read their parameters off the context, so a test that drives one
+    directly has to hand it the same thing derive() would.
+    """
+    return columns._Context(events, dict(columns.PARAMS), list(columns.STEPS))
+
+
 MUON_SEL = {"collection": "Muon",
             "expression": "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId"}
 JET_SEL = {"collection": "Jet",
@@ -216,11 +225,7 @@ def test_isolation_fields_come_from_the_config():
                        "expression": "obj.pt > 1"},
     }}})
 
-    class Ctx:
-        pass
-
-    ctx = Ctx()
-    ctx.events = ak.zip({"Muon": _muons((25.0, 0.05, 0.0, True))}, depth_limit=1)
+    ctx = _ctx(ak.zip({"Muon": _muons((25.0, 0.05, 0.0, True))}, depth_limit=1))
     ctx.clusters = {"csc": ak.Array([[{"eta": 0.0, "phi": 0.0}]])}
     columns._step_cluster_isolation(ctx)
 
@@ -233,14 +238,10 @@ def test_isolation_measures_dr_only_against_selected_objects():
     """A cluster next to a muon that fails the ID is isolated, not vetoed."""
     ak = pytest.importorskip("awkward")
 
-    class Ctx:
-        pass
-
     def run(passes_id):
         columns.configure({"parameters": {"iso_objects": {"drMuon": MUON_SEL}}})
-        ctx = Ctx()
-        ctx.events = ak.zip({"Muon": _muons((25.0, 0.05, 0.0, passes_id))},
-                            depth_limit=1)
+        ctx = _ctx(ak.zip({"Muon": _muons((25.0, 0.05, 0.0, passes_id))},
+                          depth_limit=1))
         ctx.clusters = {"csc": ak.Array([[{"eta": 0.0, "phi": 0.0}]])}
         columns._step_cluster_isolation(ctx)
         return float(ak.flatten(ctx.clusters["csc"].drMuon)[0])
@@ -261,11 +262,7 @@ def _jerc_call(monkeypatch, events):
 
     monkeypatch.setattr(jme, "correct_jets", fake_correct_jets)
 
-    class Ctx:
-        pass
-
-    ctx = Ctx()
-    ctx.events = events
+    ctx = _ctx(events)
     columns._step_jerc(ctx)
     return seen
 
@@ -480,7 +477,7 @@ def test_the_helper_modules_see_the_configured_settings():
     assert list(llp.STEPS) == ["llp", "llp_hits"]
 
 
-# ── RPC-merged clustering (rpc_merge) ────────────────────────────────────────
+# ── RPC with the other systems (rpc_mode: merge / match) ─────────────────────
 
 def _rpc_rechits(n, eta, phi, region, times, time_error=1.0, llpidx=-1):
     """One event of RPC-shaped rechits, all in the same chamber."""
@@ -504,9 +501,11 @@ def _rpc_rechits(n, eta, phi, region, times, time_error=1.0, llpidx=-1):
     })
 
 
-def test_rpc_merge_must_be_a_boolean():
-    with pytest.raises(ValueError, match="rpc_merge"):
-        columns.configure({"parameters": {"rpc_merge": "yes"}})
+def test_rpc_mode_must_be_one_of_the_three():
+    with pytest.raises(ValueError, match="rpc_mode"):
+        columns.configure({"parameters": {"rpc_mode": "yes"}})
+    for mode in ("separate", "merge", "match"):
+        assert columns.configure({"parameters": {"rpc_mode": mode}})[0]["rpc_mode"] == mode
 
 
 def test_merged_cluster_absorbs_the_rpc_hits_and_times_them():
@@ -612,10 +611,13 @@ def test_rpc_regions_split_barrel_from_endcap():
 
 def test_merged_hit_counts_include_the_rpc_region_of_that_system():
     """clusterHitFrac's denominator has to follow what went into the cluster."""
-    columns.configure({"parameters": {"rpc_merge": False}})
-    assert columns._hit_fields("CSC") == ("CSC",)
+    for mode in ("separate", "match"):
+        # "match" leaves the RPC hits outside the cluster, so outside the
+        # denominator too -- they are counted by nRPCHits instead.
+        columns.configure({"parameters": {"rpc_mode": mode}})
+        assert columns._hit_fields("CSC") == ("CSC",)
 
-    columns.configure({"parameters": {"rpc_merge": True}})
+    columns.configure({"parameters": {"rpc_mode": "merge"}})
     assert columns._hit_fields("CSC") == ("CSC", "RPCEndcap")
     assert columns._hit_fields("DT") == ("DT", "RPCBarrel")
 
@@ -631,13 +633,13 @@ def test_the_processor_reapplies_columns_yaml_where_derive_runs():
     from suep_plot import processor as proc_mod
 
     columns.configure()                       # the state a fresh worker is in
-    assert columns.PARAMS["rpc_merge"] is False
+    assert columns.PARAMS["rpc_mode"] == "separate"
     applied = proc_mod._columns_cfg_applied
     proc_mod._columns_cfg_applied = ()        # ... and it has applied nothing
     try:
         proc_mod._apply_columns_config(columns.derive,
-                                       {"parameters": {"rpc_merge": True}})
-        assert columns.PARAMS["rpc_merge"] is True
+                                       {"parameters": {"rpc_mode": "merge"}})
+        assert columns.PARAMS["rpc_mode"] == "merge"
     finally:
         proc_mod._columns_cfg_applied = applied
 
@@ -710,3 +712,184 @@ def test_in_time_rpc_hits_are_counted_on_the_merged_cluster():
     assert merged[0].nRPCHits[0] == 4
     assert merged[0].nRPCHitsBx0[0] == 3
     assert merged[0].rpcOutOfTimeFrac[0] == pytest.approx(0.25)
+
+
+def test_a_rejected_config_installs_nothing():
+    """Validation must not leave the bad values behind.
+
+    configure() used to overwrite PARAMS and validate afterwards, so a config
+    that raised still installed itself and the next reader picked it up.
+    """
+    columns.configure({"parameters": {"cluster_eps": 0.7}})
+    with pytest.raises(ValueError):
+        columns.configure({"parameters": {"cluster_eps": 0.9,
+                                          "rpc_mode": "nonesuch"}})
+    assert columns.PARAMS["cluster_eps"] == 0.7
+    assert columns.PARAMS["rpc_mode"] == "separate"
+
+
+def test_reading_the_settings_before_configure_raises():
+    """"Never configured" must be distinguishable from "configured by hand".
+
+    Seeding the defaults at import time is what let a worker process that never
+    received its columns.yaml run silently on the wrong settings.
+    """
+    from custom import params as params_mod
+
+    columns.PARAMS.clear()
+    try:
+        with pytest.raises(KeyError, match="before configure"):
+            columns.PARAMS["cluster_eps"]
+        with pytest.raises(RuntimeError, match="before configure"):
+            params_mod._live()
+    finally:
+        columns.configure()
+
+
+def test_unknown_parameter_name_is_named_on_read():
+    with pytest.raises(KeyError, match="no such parameter"):
+        columns.PARAMS["cluster_epsilon"]
+
+
+def _empty_dt():
+    """One event with no DT rechits (DT-shaped fields, so _flat_hits sees DT)."""
+    import awkward as ak
+    return ak.Array({f: [[]] for f in ("Eta", "Phi", "X", "Y", "Z", "Wheel",
+                                       "Sector", "Station", "SuperLayer",
+                                       "Layer")})
+
+
+def test_derive_takes_its_settings_as_arguments():
+    """The pipeline runs on what it is handed, not on module state.
+
+    This is what lets the configuration travel with the work instead of having
+    to be installed in every process that might run derive().
+    """
+    ak = pytest.importorskip("awkward")
+    columns.configure({"parameters": {"cluster_min_samples": 3}})
+    csc = _csc_rechits([(200.0, 0.0, -700.0, 1, 11),
+                        (201.0, 1.0, -701.0, 1, 11),
+                        (202.0, 2.0, -702.0, 2, 21)])
+    events = ak.zip({"cscRechits": csc, "dtRecHits": _empty_dt(),
+                     "rpcRecHits": _rpc_rechits(0, 0.0, 0.0, 1, [])},
+                    depth_limit=1)
+
+    out = columns.derive(events, steps=["clusters"])
+    assert len(ak.flatten(out.cscCluster.size)) == 1
+    # min_samples raised past the cluster's size, module settings untouched
+    out = columns.derive(events, params={**columns.PARAMS,
+                                         "cluster_min_samples": 10},
+                         steps=["clusters"])
+    assert len(ak.flatten(out.cscCluster.size)) == 0
+    assert columns.PARAMS["cluster_min_samples"] == 3
+
+
+def test_the_rpc_offset_does_not_depend_on_the_component_order():
+    """RPC is offset because it is RPC, not because it came second.
+
+    Keying the offset on the position in ``components`` made the shift mean
+    "the second collection", which is only unambiguous as long as every merge
+    happens to pass RPC last.
+    """
+    import awkward as ak
+
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 6)
+    eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
+    rpc = _rpc_rechits(4, eta, phi, region=1, times=[9.0] * 4)
+
+    def first_chambers(components):
+        clusters = columns._cluster_merged(components, eps=0.4, min_samples=3)
+        return sorted(float(v) for v in ak.flatten(clusters.firstChamber))
+
+    csc_first = first_chambers([(csc, "Tpeak", "csc"), (rpc, "Time", "rpc")])
+    rpc_first = first_chambers([(rpc, "Time", "rpc"), (csc, "Tpeak", "csc")])
+    assert csc_first == rpc_first
+    # ... and it is the CSC code, unshifted, either way.
+    solo = columns._cluster_system(csc, "Tpeak", eps=0.4, min_samples=3)
+    assert csc_first == [float(solo[0].firstChamber[0])]
+
+
+def test_merging_two_non_rpc_systems_is_refused():
+    """Two systems sharing offset 0 would collapse different chambers into one id."""
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 6)
+    with pytest.raises(ValueError, match="at most one non-RPC"):
+        columns._cluster_merged([(csc, "Tpeak", "csc"), (_empty_dt(), None, "dt")],
+                                eps=0.4, min_samples=3)
+
+
+# ── rpc_mode: match — RPC dates the clusters without joining them ─────────────
+
+def _matched(csc, rpc, eps=0.4, min_samples=3):
+    """CSC clusters of *csc*, annotated with the RPC hits of *rpc*."""
+    clusters = columns._cluster_system(csc, "Tpeak", eps=eps, min_samples=min_samples)
+    return columns._match_rpc(clusters, rpc, eps, "csc")
+
+
+def test_matching_does_not_change_the_clustering():
+    """The whole point: RPC cannot make, unmake or move a cluster.
+
+    Merging lets RPC hits count towards min_samples, which in data -- where
+    only ~19% of RPC rechits are at BX 0 -- means noise can push a background
+    cluster over threshold.
+    """
+    import awkward as ak
+
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 4)
+    eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
+    rpc = _rpc_rechits(20, eta, phi, region=1, times=[9.0] * 20)
+
+    solo = columns._cluster_system(csc, "Tpeak", eps=0.4, min_samples=3)
+    matched = _matched(csc, rpc)
+    merged = columns._cluster_merged([(csc, "Tpeak", "csc"), (rpc, "Time", "rpc")],
+                                     eps=0.4, min_samples=3)
+    for field in ("size", "eta", "phi", "nLayer", "firstChamber", "time"):
+        assert ak.to_list(matched[field]) == ak.to_list(solo[field]), field
+    # ... whereas merging absorbs them, so the cluster is a different object.
+    assert merged[0].size[0] == solo[0].size[0] + 20
+
+
+def test_matching_still_reports_the_rpc_content_and_timing():
+    import awkward as ak
+
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 4)
+    eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
+    rpc = _rpc_rechits(6, eta, phi, region=1, times=[9.0] * 6)
+
+    clusters = _matched(csc, rpc)
+    assert clusters[0].nRPCHits[0] == 6
+    assert clusters[0].nRPCHitsBx0[0] == 6
+    assert clusters[0].rpcBx[0] == 0
+    # rpcHitFrac means the same thing as under merge: the RPC share of the
+    # cluster's hits, 6 / (4 + 6).
+    assert clusters[0].rpcHitFrac[0] == pytest.approx(0.6)
+    # No RPC hit is in the cluster, so it can never be the innermost one.
+    assert clusters[0].firstSystem[0] == columns.SOURCE_CODES["csc"]
+
+
+def test_matching_ignores_rpc_hits_beyond_eps():
+    import numpy as np
+
+    csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 4)
+    eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
+    far = _rpc_rechits(5, eta + 2.0, phi, region=1, times=[9.0] * 5)
+
+    clusters = _matched(csc, far)
+    assert clusters[0].nRPCHits[0] == 0
+    assert clusters[0].rpcHitFrac[0] == 0.0
+    assert np.isnan(clusters[0].rpcBx[0])
+
+
+def test_an_rpc_hit_dates_only_its_nearest_cluster():
+    """Otherwise a hit between two clusters would be counted twice."""
+    import awkward as ak
+
+    hits = [(200.0, 0.0, 700.0, 2, 21)] * 4 + [(200.0, 0.0, 300.0, 1, 11)] * 4
+    csc = _csc_rechits(hits)
+    clusters = columns._cluster_system(csc, "Tpeak", eps=0.05, min_samples=3)
+    assert len(clusters[0].eta) == 2                      # two separate clusters
+    eta = float(ak.flatten(clusters.eta)[0])
+    phi = float(ak.flatten(clusters.phi)[0])
+    rpc = _rpc_rechits(3, eta, phi, region=1, times=[9.0] * 3)
+
+    got = columns._match_rpc(clusters, rpc, 10.0, "csc")   # eps large enough for both
+    assert sorted(ak.to_list(ak.flatten(got.nRPCHits))) == [0, 3]

@@ -46,7 +46,7 @@ def _dr_to_nearest(clusters, objects):
 _SAFE_BUILTINS = {"abs": abs, "len": len, "min": min, "max": max}
 
 
-def _selected_objects(events, selection):
+def _selected_objects(events, selection, params=None):
     """Objects passing *selection*, or None when the collection is absent.
 
     *selection* is ``{"collection": <NanoAOD collection>, "expression": <per-object
@@ -54,6 +54,7 @@ def _selected_objects(events, selection):
     ``obj`` (the collection), ``events``/``ev``, ``ak``, ``np``, the safe builtins
     and ``jet_id``; nothing about any particular object type is hard-coded here.
     """
+    era = (PARAMS if params is None else params)["jerc_era"]
     collection = selection["collection"]
     if collection not in events.fields:
         return None
@@ -65,7 +66,7 @@ def _selected_objects(events, selection):
             {"__builtins__": _SAFE_BUILTINS},
             {"obj": objects, "events": events, "ev": events, "ak": ak, "np": np,
              "jet_id": lambda obj, level: _jet_id(obj, str(level).lower(),
-                                                  PARAMS["jerc_era"])},
+                                                  era)},
         )
     except Exception as exc:
         raise ValueError(

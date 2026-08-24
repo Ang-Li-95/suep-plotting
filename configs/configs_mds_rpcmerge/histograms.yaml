@@ -10,7 +10,7 @@
 #
 # All expressions reference the derived collections attached in
 # custom/columns.py: events.llp, events.cscCluster, events.dtCluster
-# (the RPC rechits are clustered inside those two, see rpc_merge).  Efficiency numerator/denominator pairs share
+# (the RPC rechits belong to those two, see rpc_mode).  Efficiency numerator/denominator pairs share
 # identical binning (required by derived_plots.yaml type: efficiency).
 #
 # Efficiency factorization chain (per system, see derived_plots.yaml):
@@ -1342,8 +1342,9 @@ dt_cluster_dr_jet:
 
 
 # ── RPC content and RPC timing of the merged clusters ─────────────
-# Filled from the RPC rechits that DBSCAN put inside a CSC cluster
-# (custom/clustering.py, rpc_merge).  The time fields are NaN on a cluster
+# Filled from the RPC rechits belonging to a CSC cluster -- put there by
+# DBSCAN (rpc_mode: merge) or associated to it afterwards (rpc_mode: match);
+# custom/clustering.py.  The time fields are NaN on a cluster
 # with no RPC hit, so every one of them is filtered by csc_cluster_has_rpc.
 # NOTE the rechit time itself (rpcTime*) is unfilled in every MDSNano
 # production so far -- rpcRecHits_Time is 0 with TimeError -1, so those fields
@@ -1555,8 +1556,9 @@ csc_cluster_rpc_time_vs_nrpc:
   log_z: true
 
 # ── RPC content and RPC timing of the merged clusters ─────────────
-# Filled from the RPC rechits that DBSCAN put inside a DT cluster
-# (custom/clustering.py, rpc_merge).  The time fields are NaN on a cluster
+# Filled from the RPC rechits belonging to a DT cluster -- put there by
+# DBSCAN (rpc_mode: merge) or associated to it afterwards (rpc_mode: match);
+# custom/clustering.py.  The time fields are NaN on a cluster
 # with no RPC hit, so every one of them is filtered by dt_cluster_has_rpc.
 # NOTE the rechit time itself (rpcTime*) is unfilled in every MDSNano
 # production so far -- rpcRecHits_Time is 0 with TimeError -1, so those fields

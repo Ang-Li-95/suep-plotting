@@ -24,9 +24,11 @@ SOURCE_CODES = {"csc": 0, "dt": 1, "rpc": 2}
 
 # Offsets that keep the flat ids of two merged systems from colliding: a DT
 # layer key and an RPC layer key are both small integers, and a DT and an RPC
-# chamber code can be identical.  Applied per merged collection after the
-# first, so single-system clustering -- and the primary system of a merge --
-# keeps its historical ids.
+# chamber code can be identical.  Applied to the RPC component of a merge and
+# to nothing else -- RPC is never the primary system (it is merged *into* CSC
+# or DT), so CSC and DT keep their historical ids, and the shift means the same
+# thing in cscCluster and dtCluster instead of depending on the order the
+# components were passed in.
 _LAYER_KEY_STRIDE = 10 ** 12
 _CHAMBER_CODE_STRIDE = 1000
 
@@ -165,16 +167,27 @@ def _merge_hits(components):
     before all of the other's.  The destination index of every hit is built
     vectorized, then each array is scattered into place.
 
-    The layer/chamber ids of the *added* collections are offset so that two
-    systems cannot share an id (a DT and an RPC chamber code are otherwise the
-    same small integer).  The primary component keeps its own ids, so a
-    cluster's ``firstChamber`` still reads as the plain CSC/DT chamber code it
-    always did and only an RPC-first cluster stands out.  A single component is
-    returned as-is, which keeps single-system clustering bit-identical to
-    before.
+    The layer/chamber ids of the RPC component are offset so that two systems
+    cannot share an id (a DT and an RPC chamber code are otherwise the same
+    small integer).  Keyed on the system, not on the position in *components*:
+    RPC is always the one merged in, never the primary, so CSC and DT keep the
+    ids they have always had -- a cluster's ``firstChamber`` still reads as the
+    plain CSC/DT chamber code and only an RPC-first cluster stands out -- and
+    ``+_CHAMBER_CODE_STRIDE`` means "RPC" in both merged collections rather
+    than "whichever component came second".  A single component is returned
+    as-is, which keeps single-system clustering bit-identical to before.
     """
     if len(components) == 1:
         return components[0]
+
+    # One offset per component, so a collision would silently merge two
+    # physically different chambers into one id.
+    shifts = [int(c["code"] == SOURCE_CODES["rpc"]) for c in components]
+    if len(set(shifts)) != len(shifts):
+        raise ValueError(
+            "clustering: cannot merge " + ", ".join(c["system"] for c in components)
+            + " -- the id offsets separate RPC from the system it is merged "
+              "into, so at most one non-RPC component can go in")
 
     counts = np.sum([c["counts"] for c in components], axis=0)
     offsets = np.concatenate([[0], np.cumsum(counts)])
@@ -186,7 +199,7 @@ def _merge_hits(components):
     # Running per-event write position: component k starts after the hits of
     # components 0..k-1 in the same event.
     start = offsets[:-1].copy()
-    for index, comp in enumerate(components):
+    for shift, comp in zip(shifts, components):
         c_counts = comp["counts"]
         c_offsets = np.concatenate([[0], np.cumsum(c_counts)])
         rank = np.arange(int(c_counts.sum())) - np.repeat(c_offsets[:-1], c_counts)
@@ -194,9 +207,9 @@ def _merge_hits(components):
         for name in _HIT_ARRAYS:
             values = comp[name]
             if name in ("layerkey", "zlayerkey"):
-                values = values + index * _LAYER_KEY_STRIDE
+                values = values + shift * _LAYER_KEY_STRIDE
             elif name == "chamber":
-                values = values + index * _CHAMBER_CODE_STRIDE
+                values = values + shift * _CHAMBER_CODE_STRIDE
             merged[name][dest] = values
         start = start + c_counts
 
@@ -209,6 +222,85 @@ def _merge_hits(components):
     merged["has_time"] = components[0]["has_time"]
     merged["has_truth"] = all(c["has_truth"] for c in components)
     return merged
+
+
+# The RPC fields a cluster carries, in both rpc_mode: merge and rpc_mode: match
+# -- the same names and the same meanings, so one config set plots either.
+RPC_CLUSTER_FIELDS = ("firstSystem", "nRPCHits", "nRPCHitsBx0", "rpcHitFrac",
+                      "rpcTime", "rpcTimeMedian", "rpcTimeSpread",
+                      "rpcTimeWeighted", "rpcTimeErr", "rpcTimeValidFrac",
+                      "rpcBx", "rpcBxMedian", "rpcBxSpread", "rpcOutOfTimeFrac")
+
+
+def _match_rpc(clusters, rpc, eps, system):
+    """Attach the RPC timing of the rechits *near* each cluster (rpc_mode: match).
+
+    The alternative to merging: the clustering stays exactly the single-system
+    one, and the RPC rechits are associated to the finished clusters
+    afterwards -- every hit within *eps* in dR of a cluster centroid, assigned
+    to its nearest cluster so no hit dates two showers.
+
+    RPC then contributes nothing to the DBSCAN density estimate, which is the
+    point.  RPC rechit times are flat in BX in data (only ~19% of the rechits
+    of a ZeroBias event sit at BX 0), so merged, RPC noise can push a
+    background cluster over ``min_samples``; matched, it can only annotate a
+    cluster the CSC or DT rechits already made on their own.  The cluster
+    variables therefore keep the values -- and the signal region keeps the
+    definition -- of the standard MDS analysis.
+
+    The fields are :data:`RPC_CLUSTER_FIELDS`, the same ones a merged cluster
+    carries.  ``rpcHitFrac`` means the same thing in both modes, the RPC share
+    of the cluster's hits: matching leaves the RPC hits out of ``size``, so it
+    is n / (size + n) here and n / size there.  ``firstSystem`` is always the
+    primary system, since no RPC hit is part of the cluster -- so the
+    ``first_not_rpc`` selections simply pass everything, rather than needing a
+    config of their own.
+    """
+    hits = _flat_hits(rpc, "Time", "rpc")
+    code = SOURCE_CODES[system]
+
+    nclu = np.asarray(ak.num(clusters.eta))
+    clu_off = np.concatenate([[0], np.cumsum(nclu)])
+    ceta = np.asarray(ak.flatten(clusters.eta), dtype=np.float64)
+    cphi = np.asarray(ak.flatten(clusters.phi), dtype=np.float64)
+    csize = np.asarray(ak.flatten(clusters.size), dtype=np.float64)
+    hit_off = np.concatenate([[0], np.cumsum(hits["counts"])])
+
+    out = {f: [] for f in RPC_CLUSTER_FIELDS}
+    empty = np.zeros(0, dtype=np.float64)
+    for i in range(len(nclu)):
+        c = slice(int(clu_off[i]), int(clu_off[i + 1]))
+        if c.start == c.stop:
+            continue
+        h = slice(int(hit_off[i]), int(hit_off[i + 1]))
+        ce, cp = ceta[c], cphi[c]
+        owner = None
+        if h.stop > h.start:
+            deta = hits["eta"][h][None, :] - ce[:, None]
+            dphi = hits["phi"][h][None, :] - cp[:, None]
+            dphi = (dphi + np.pi) % (2.0 * np.pi) - np.pi
+            dr = np.sqrt(deta ** 2 + dphi ** 2)
+            # Nearest cluster wins, so a hit between two clusters dates one.
+            nearest = dr.argmin(axis=0)
+            owner = np.where(dr.min(axis=0) < eps, nearest, -1)
+        for j in range(c.stop - c.start):
+            m = owner == j if owner is not None else np.zeros(0, dtype=bool)
+            n = int(m.sum())
+            bx = hits["bx"][h][m] if n else empty
+            out["firstSystem"].append(code)
+            out["nRPCHits"].append(n)
+            out["nRPCHitsBx0"].append(int(np.count_nonzero(bx == 0)))
+            out["rpcHitFrac"].append(float(n / (csize[c][j] + n)) if n else 0.0)
+            for f, v in _rpc_time(hits["time"][h][m] if n else empty,
+                                  hits["timeError"][h][m] if n else empty,
+                                  bx).items():
+                out[f].append(v)
+
+    ints = {"firstSystem", "nRPCHits", "nRPCHitsBx0"}
+    for f in RPC_CLUSTER_FIELDS:
+        values = np.asarray(out[f], dtype=np.int64 if f in ints else np.float64)
+        clusters = ak.with_field(clusters, ak.unflatten(values, nclu), f)
+    return clusters
 
 
 def _rpc_time(times, errors, bx):
@@ -258,7 +350,7 @@ def _rpc_time(times, errors, bx):
     return out
 
 
-def _cluster_hits(hits, eps, min_samples, merged=False):
+def _cluster_hits(hits, eps, min_samples, merged=False, params=None):
     """DBSCAN one (possibly merged) flat hit collection -> cluster records.
 
     ``hits`` is a :func:`_flat_hits` dict, or several of them run through
@@ -275,7 +367,8 @@ def _cluster_hits(hits, eps, min_samples, merged=False):
     """
     from sklearn.cluster import DBSCAN
 
-    match_min_hits, oot_cut = PARAMS["match_min_hits"], PARAMS["oot_time_cut"]
+    p = PARAMS if params is None else params
+    match_min_hits, oot_cut = p["match_min_hits"], p["oot_time_cut"]
     counts = hits["counts"]
     offsets = np.concatenate([[0], np.cumsum(counts)])
     eta, phi = hits["eta"], hits["phi"]
@@ -419,12 +512,19 @@ def _cluster_hits(hits, eps, min_samples, merged=False):
                    for f, v in out.items()})
 
 
-def _cluster_system(rechits, timefield, eps, min_samples, system="csc"):
-    """DBSCAN-cluster one rechit system -> jagged record array of clusters."""
-    return _cluster_hits(_flat_hits(rechits, timefield, system), eps, min_samples)
+def _cluster_system(rechits, timefield, eps, min_samples, system="csc",
+                    params=None):
+    """DBSCAN-cluster one rechit system -> jagged record array of clusters.
+
+    *params* are the resolved settings (:data:`PARAMS` when omitted); the
+    pipeline always passes them explicitly, so nothing below derive() reads
+    the module-level settings.
+    """
+    return _cluster_hits(_flat_hits(rechits, timefield, system), eps,
+                         min_samples, params=params)
 
 
-def _cluster_merged(components, eps, min_samples):
+def _cluster_merged(components, eps, min_samples, params=None):
     """DBSCAN-cluster several rechit collections together.
 
     ``components`` is a list of ``(rechits, timefield, system)``; the first
@@ -436,4 +536,4 @@ def _cluster_merged(components, eps, min_samples):
     """
     hits = _merge_hits([_flat_hits(rechits, timefield, system)
                         for rechits, timefield, system in components])
-    return _cluster_hits(hits, eps, min_samples, merged=True)
+    return _cluster_hits(hits, eps, min_samples, merged=True, params=params)

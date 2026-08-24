@@ -288,8 +288,11 @@ def main():
     args = p.parse_args()
 
     # Cluster exactly like the histograms of that config set were filled.
-    if args.config_dir:
-        columns.configure(load_columns_config(Path(args.config_dir) / "columns.yaml"))
+    # Unconditional: custom/columns.py installs nothing at import time, so the
+    # no-config-dir run is what puts the defaults in place.
+    columns.configure(
+        load_columns_config(Path(args.config_dir) / "columns.yaml")
+        if args.config_dir else None)
     eps, min_samples = columns._dbscan_params("csc")
     print(f"DBSCAN: eps={eps}, min_samples={min_samples} (CSC/DT), "
           f"match_min_hits={columns.PARAMS['match_min_hits']}")

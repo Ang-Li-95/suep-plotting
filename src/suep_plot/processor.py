@@ -227,8 +227,13 @@ def _apply_columns_config(derive_fn, columns_cfg):
     so the ``configure()`` call the CLI made in the parent never reached them
     and they silently ran on the module defaults.  That went unnoticed while
     every config set spelled the defaults out; a config that changes a
-    parameter (``rpc_merge``, a different ``cluster_min_samples``, a shorter
+    parameter (``rpc_mode``, a different ``cluster_min_samples``, a shorter
     ``steps`` list) needs the settings re-applied where derive() actually runs.
+
+    custom/params.py no longer seeds the defaults at import, so a worker that
+    somehow skipped this now raises in derive() instead of quietly filling
+    histograms with the wrong settings -- this call is what keeps that from
+    happening, not what keeps it from being noticed.
     """
     global _columns_cfg_applied
     if columns_cfg == _columns_cfg_applied:

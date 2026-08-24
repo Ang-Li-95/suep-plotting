@@ -1,0 +1,14 @@
+# Datasets come from the central registry; see ../../datasets.yaml.
+#
+# The full Gen3 signal grid: mDark = 2 / 5 / 12 GeV x T = 1 / 2, all at
+# mMed=125, ctau=5 m.  Same fills as configs_mds_llp/ (truth-dependent, so
+# signal only) -- the background and data leg of the comparison comes from the
+# configs_mds_data/ run and is overlaid with scripts/compare_sig_bkg.py.
+_include: ../../datasets.yaml
+
+suep_mDark2_temp1:            # mDark=2, T=1
+suep_mDark2_temp2:            # mDark=2, T=2
+suep_mDark5_temp1:
+suep_mDark5_temp2:
+suep_mDark12_temp1:
+suep_mDark12_temp2:

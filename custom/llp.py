@@ -120,12 +120,14 @@ def _build_llps(events):
     })
 
 
-def _empty_llps(events):
+def _empty_llps(events, params=None, steps=None):
     """Zero-length llp collection (background samples without SUEPGenPart).
 
     Same fields as the real collection — for the enabled steps only, so the
     presence of a field means the same thing on signal and background.
     """
+    p = PARAMS if params is None else params
+    enabled = STEPS if steps is None else steps
     counts = np.zeros(len(events), dtype=np.int64)
 
     def empty(dtype):
@@ -135,33 +137,35 @@ def _empty_llps(events):
            "Llab", "betagamma", "ctau", "openingAngle"]
     i64 = ["gidx", "lidx"]
     boo = ["inCSC", "inDT", "inRPC"]
-    if "llp_hits" in STEPS:
+    if "llp_hits" in enabled:
         i64 += ["nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsRPCBarrel",
                 "nHitsRPCEndcap", "nHitsTotal"]
-    if "llp_reco" in STEPS:
-        # With rpc_merge there is no RPC cluster collection, so no LLP field
+    if "llp_reco" in enabled:
+        # Outside rpc_mode: separate there is no RPC cluster collection, so no LLP field
         # describes one -- the same rule as everywhere else here: a field
         # exists exactly when the run it came from produced it.
-        systems = ["CSC", "DT"] if PARAMS["rpc_merge"] else ["CSC", "DT", "RPC"]
+        systems = (["CSC", "DT", "RPC"] if p["rpc_mode"] == "separate"
+                   else ["CSC", "DT"])
         f64 += ["clusterHitFrac" + sys for sys in systems]
         i64 += ["nRecoCluster" + sys for sys in systems]
         boo += ["reco" + sys for sys in systems] + ["reco"]
-    if "llp_shape" in STEPS:
+    if "llp_shape" in enabled:
         f64 += [f + sys for sys in ("CSC", "DT", "RPC", "Total")
-                for f in _dr_field_names()]
+                for f in _dr_field_names(p)]
     fields = {f: empty(np.float64) for f in f64}
     fields.update({f: empty(np.int64) for f in i64})
     fields.update({f: empty(np.bool_) for f in boo})
     return ak.zip(fields)
 
 
-def _dr_field_names():
+def _dr_field_names(params=None):
     """Names of the per-LLP rechit-spread fields (without the system suffix)."""
+    p = PARAMS if params is None else params
     return ("drPairMin", "drPairMax", "drMax") + tuple(
-        f"dr{int(round(q * 100))}" for q in PARAMS["dr_quantiles"])
+        f"dr{int(round(q * 100))}" for q in p["dr_quantiles"])
 
 
-def _llp_rechit_dr(events, coll_names, keys, hit_dr=None):
+def _llp_rechit_dr(events, coll_names, keys, hit_dr=None, params=None):
     """Eta-phi spread of the rechits truth-matched to each LLP.
 
     Pools the rechit collections named in ``coll_names`` (one system, or all
@@ -193,7 +197,7 @@ def _llp_rechit_dr(events, coll_names, keys, hit_dr=None):
     pair_min = np.full(n_llp, np.nan)
     pair_max = np.full(n_llp, np.nan)
     dr_max = np.full(n_llp, np.nan)
-    quantiles = PARAMS["dr_quantiles"]
+    quantiles = (PARAMS if params is None else params)["dr_quantiles"]
     dr_q = np.full((len(quantiles), n_llp), np.nan)
 
     def result():
@@ -235,7 +239,8 @@ def _llp_rechit_dr(events, coll_names, keys, hit_dr=None):
                np.asarray(quantiles, dtype=np.float64),
                pair_min, pair_max, dr_max, dr_q,
                hit_dr if hit_dr is not None else np.empty(0),
-               hit_dr is not None, int(PARAMS["pair_max_hits"]))
+               hit_dr is not None,
+               int((PARAMS if params is None else params)["pair_max_hits"]))
     return result()
 
 

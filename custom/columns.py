@@ -11,8 +11,8 @@ columns, the default pass-through below is fine.
 MDS LLP cluster study (configs_mds/, configs_mds_shape/)
 ---------------------------------------------------------
 For MDSNANO samples (detected by the presence of the ``cscRechits`` collection)
-this module attaches the derived collections below (three of them with
-``rpc_merge``, which folds the RPC rechits into the other two systems):
+this module attaches the derived collections below (only the first two outside
+``rpc_mode: separate``, which is the only mode that clusters RPC on its own):
 
 ``events.llp``
     One entry per generated LLP (``SUEPGenPart.pdgId == 999999``): kinematics,
@@ -35,11 +35,14 @@ this module attaches the derived collections below (three of them with
 
 ``events.cscCluster`` / ``events.dtCluster`` / ``events.rpcCluster``
     DBSCAN clusters of the muon-system rechits (per system, dR metric in
-    eta-phi with proper phi wrap-around).  With the ``rpc_merge`` parameter
-    the RPC rechits are instead clustered *together with* the system they
-    overlap -- barrel RPC (``Region == 0``) with DT, endcap RPC with CSC --
-    and there is no ``rpcCluster``: every RPC rechit already belongs to a CSC
-    or a DT cluster.  Those merged clusters carry their RPC content
+    eta-phi with proper phi wrap-around).  The ``rpc_mode`` parameter decides
+    what becomes of the RPC rechits: clustered on their own ("separate"),
+    clustered *together with* the system they overlap ("merge") or associated
+    to the finished CSC/DT clusters afterwards ("match") -- barrel RPC
+    (``Region == 0``) with DT, endcap RPC with CSC either way.  Outside
+    "separate" there is no ``rpcCluster``, since every RPC rechit has already
+    been offered to a CSC or a DT cluster.  Those clusters carry their RPC
+    content
     (``nRPCHits``, ``rpcHitFrac``), which system the innermost hit came from
     (``firstSystem``, the codes of ``clustering.SOURCE_CODES``), how much of
     that RPC content is in time (``nRPCHitsBx0``) and the RPC
@@ -101,8 +104,9 @@ Everything above is optional and tunable per config directory: drop a
       cluster_eps: 0.4            # DBSCAN eps (dR in eta-phi), all systems
       cluster_min_samples: 10     # DBSCAN min_samples, CSC and DT
       rpc_min_samples: 10         # DBSCAN min_samples, RPC (sparse system)
-      rpc_merge: false            # true: RPC rechits join DT (barrel) / CSC
-                                  # (endcap); no rpcCluster is produced
+      rpc_mode: separate          # or 'merge' / 'match': RPC rechits join
+                                  # DT (barrel) / CSC (endcap) clusters, in
+                                  # the clustering or after it; no rpcCluster
       match_min_hits: 10          # cluster <-> LLP truth-match threshold
       oot_time_cut: 12.5          # in-time window [ns] -> cluster.ootHitFrac
       dr_quantiles: [0.5, 0.8, 0.9]   # -> llp.dr50/dr80/dr90 fields
@@ -115,7 +119,7 @@ all of them, in this order:
 
 ``clusters``
     DBSCAN the three rechit systems -> ``events.<sys>Cluster`` (two systems,
-    CSC and DT, with ``rpc_merge``).
+    CSC and DT, outside ``rpc_mode: separate``).
 ``cluster_isolation``
     ``drMuon`` / ``drJet`` on the clusters (needs ``clusters``).
 ``llp``
@@ -163,11 +167,11 @@ import awkward as ak
 import numpy as np
 
 # The settings and the helpers the pipeline below calls.
-from .clustering import _cluster_merged, _cluster_system
+from .clustering import _cluster_merged, _cluster_system, _match_rpc
 from .isolation import NO_OBJECT_DR, _dr_to_nearest, _selected_objects
 from .llp import _build_llps, _empty_llps, _llp_rechit_dr
 from .params import DEFAULT_PARAMS, LLP_PDGID, PARAMS, STEP_DEPS, STEPS
-from .params import _dbscan_params, configure
+from .params import _dbscan_params, _live, configure
 
 # Re-exported so this module stays the single entry point for the package:
 # notebooks, scripts/event_display.py and tests reach the helpers through
@@ -183,13 +187,19 @@ __all__ = ["derive", "configure", "PARAMS", "STEPS", "DEFAULT_PARAMS", "STEP_DEP
 
 
 # The cluster collections, in the order they are built and attached; with
-# rpc_merge there is no "rpc" entry (its rechits live in the other two).
+# rpc_mode merge/match there is no "rpc" entry (its rechits belong to the
+# other two).
 _CLUSTER_SYSTEMS = (("csc", "CSC"), ("dt", "DT"), ("rpc", "RPC"))
 
 
-def _hit_fields(SYS):
-    """The ``llp.nHits*`` fields one cluster system's rechits are counted in."""
-    if not PARAMS["rpc_merge"]:
+def _hit_fields(SYS, params=None):
+    """The ``llp.nHits*`` fields one cluster system's rechits are counted in.
+
+    Only ``rpc_mode: merge`` puts RPC rechits *inside* a cluster, so only there
+    do they belong in the denominator of ``clusterHitFrac``; under ``match``
+    they sit next to the cluster and are counted by ``nRPCHits``.
+    """
+    if (PARAMS if params is None else params)["rpc_mode"] != "merge":
         return (SYS,)
     return {"CSC": ("CSC", "RPCEndcap"), "DT": ("DT", "RPCBarrel")}[SYS]
 
@@ -199,9 +209,19 @@ class _Context:
 
     ``events`` and ``llp`` are rebuilt by ``ak.with_field``, so the steps
     reassign them on the context rather than mutating arrays in place.
+
+    ``params`` / ``steps`` are the resolved settings for *this* call.  The
+    steps read them off the context and pass them down to the helpers rather
+    than reaching for the module-level :data:`PARAMS` / :data:`STEPS`, so the
+    configuration travels with the work: a process that was handed a config
+    cannot lose it on the way to the code that acts on it, and two configs can
+    be run side by side (an eps scan in a notebook) without one clobbering the
+    other.
     """
 
-    def __init__(self, events):
+    def __init__(self, events, params, steps):
+        self.params = params
+        self.steps = steps
         self.events = events
         self.has_truth = "SUEPGenPart" in events.fields
         self.clusters = {}
@@ -211,19 +231,28 @@ class _Context:
         self.match_key = None
 
 
-def derive(events):
+def derive(events, params=None, steps=None):
     """Attach the MDS LLP/cluster collections (MDSNANO samples only).
 
     Runs the optional helpers selected by :func:`configure` (all of them by
     default) and attaches whatever they produced.  Fields belonging to a
     disabled step are deliberately absent, so a config referencing them fails
     at expression validation rather than silently filling zeros.
+
+    *params* / *steps* override the settings :func:`configure` installed, which
+    is where the module-level :data:`PARAMS` / :data:`STEPS` are read -- the
+    one place in the package that reads them during a run.  Reading them before
+    any :func:`configure` call raises (see :class:`params._Settings`).
     """
     if "cscRechits" not in events.fields:
         return events
 
-    ctx = _Context(events)
-    for step in STEPS:
+    live_params, live_steps = _live() if params is None or steps is None \
+        else (None, None)
+    ctx = _Context(events,
+                   live_params if params is None else params,
+                   live_steps if steps is None else list(steps))
+    for step in ctx.steps:
         _STEP_FUNCS[step](ctx)
 
     events = ctx.events
@@ -238,19 +267,26 @@ def derive(events):
 def _step_clusters(ctx):
     """DBSCAN the rechit systems (~35% of derive()).
 
-    Two layouts, selected by the ``rpc_merge`` parameter: the three systems on
-    their own, or -- with ``rpc_merge`` -- the RPC rechits folded into the
-    system they overlap (see :func:`_merged_clusters`).
+    Three layouts, selected by the ``rpc_mode`` parameter: the three systems on
+    their own ("separate"), the RPC rechits folded into the system they overlap
+    ("merge", see :func:`_merged_clusters`), or the same CSC/DT clustering as
+    "separate" with the RPC rechits associated to the finished clusters
+    afterwards ("match", see :func:`_matched_clusters`).
     """
-    if PARAMS["rpc_merge"]:
+    mode = ctx.params["rpc_mode"]
+    if mode == "merge":
         _merged_clusters(ctx)
         return
-    for sys, coll, timefield in (("csc", "cscRechits", "Tpeak"),
-                                 ("dt", "dtRecHits", None),
-                                 ("rpc", "rpcRecHits", "Time")):
-        eps, min_samples = _dbscan_params(sys)
+    systems = (("csc", "cscRechits", "Tpeak"), ("dt", "dtRecHits", None))
+    if mode == "separate":
+        systems += (("rpc", "rpcRecHits", "Time"),)
+    for sys, coll, timefield in systems:
+        eps, min_samples = _dbscan_params(sys, ctx.params)
         ctx.clusters[sys] = _cluster_system(ctx.events[coll], timefield,
-                                            eps, min_samples, sys)
+                                            eps, min_samples, sys,
+                                            params=ctx.params)
+    if mode == "match":
+        _matched_clusters(ctx)
 
 
 def _rpc_regions(events):
@@ -276,14 +312,28 @@ def _merged_clusters(ctx):
     no time branch at all, and the CSC ``Tpeak`` is on its own clock.
     """
     barrel, endcap = _rpc_regions(ctx.events)
-    eps, min_samples = _dbscan_params("csc")
+    eps, min_samples = _dbscan_params("csc", ctx.params)
     ctx.clusters["csc"] = _cluster_merged(
         [(ctx.events.cscRechits, "Tpeak", "csc"), (endcap, "Time", "rpc")],
-        eps, min_samples)
-    eps, min_samples = _dbscan_params("dt")
+        eps, min_samples, params=ctx.params)
+    eps, min_samples = _dbscan_params("dt", ctx.params)
     ctx.clusters["dt"] = _cluster_merged(
         [(ctx.events.dtRecHits, None, "dt"), (barrel, "Time", "rpc")],
-        eps, min_samples)
+        eps, min_samples, params=ctx.params)
+
+
+def _matched_clusters(ctx):
+    """Date the finished CSC/DT clusters with the RPC rechits around them.
+
+    The counterpart of :func:`_merged_clusters`: same RPC fields on the same
+    two collections, but the clustering never saw an RPC rechit, so the
+    cluster variables are bit-identical to a ``rpc_mode: separate`` run and
+    only the RPC annotation is new.  See :func:`clustering._match_rpc`.
+    """
+    barrel, endcap = _rpc_regions(ctx.events)
+    for sys, rpc in (("csc", endcap), ("dt", barrel)):
+        eps, _ = _dbscan_params(sys, ctx.params)
+        ctx.clusters[sys] = _match_rpc(ctx.clusters[sys], rpc, eps, sys)
 
 
 def _step_jerc(ctx):
@@ -298,17 +348,17 @@ def _step_jerc(ctx):
     smearing is MC-only.  ``genWeight`` is the MC marker (``has_truth`` is False
     for the non-SUEP MC too, so it cannot be used here).
     """
-    if not PARAMS["jerc"] or "Jet" not in ctx.events.fields:
+    if not ctx.params["jerc"] or "Jet" not in ctx.events.fields:
         return
 
     from suep_plot.jme import DEFAULTS, correct_jets
 
-    era, algo = PARAMS["jerc_era"], PARAMS["jerc_algo"]
+    era, algo = ctx.params["jerc_era"], ctx.params["jerc_algo"]
     if "genWeight" in ctx.events.fields:
         ctx.events = correct_jets(ctx.events, era=era, algo=algo)
         return
 
-    tag = PARAMS["jerc_data_tag"] or DEFAULTS.get(era, {}).get("jec_tag_data")
+    tag = ctx.params["jerc_data_tag"] or DEFAULTS.get(era, {}).get("jec_tag_data")
     if tag is None:
         raise ValueError(
             f"columns.yaml: jerc is on and this is data, but era '{era}' has no "
@@ -324,8 +374,8 @@ def _step_cluster_isolation(ctx):
     One dR field per entry of the ``iso_objects`` parameter, so which objects
     count -- and how they are selected -- lives entirely in the config set.
     """
-    objects = {field: _selected_objects(ctx.events, selection)
-               for field, selection in PARAMS["iso_objects"].items()}
+    objects = {field: _selected_objects(ctx.events, selection, ctx.params)
+               for field, selection in ctx.params["iso_objects"].items()}
 
     for sys, clusters in ctx.clusters.items():
         for field, objs in objects.items():
@@ -338,7 +388,7 @@ def _step_cluster_isolation(ctx):
 def _step_llp(ctx):
     """The ``events.llp`` collection (empty on samples without truth)."""
     if not ctx.has_truth:
-        ctx.llp = _empty_llps(ctx.events)
+        ctx.llp = _empty_llps(ctx.events, ctx.params, ctx.steps)
         return
     ctx.llp = _build_llps(ctx.events)
     # The rechit truth branch ``llpIdx`` uses one of two conventions depending
@@ -346,7 +396,8 @@ def _step_llp(ctx):
     # SUEPs_Gen2; the default) or the ordinal LLP index within the event
     # (pre-fix, SUEPs_Gen; llpidx_convention: ordinal).  Match against the LLP
     # field in the same space.
-    ctx.match_key = (ctx.llp.gidx if PARAMS["llpidx_convention"] == "genpart"
+    ctx.match_key = (ctx.llp.gidx
+                     if ctx.params["llpidx_convention"] == "genpart"
                      else ctx.llp.lidx)
 
 
@@ -393,9 +444,10 @@ def _step_llp_reco(ctx):
         # in the system.  NaN when the LLP has no matched rechit there.
         hits_in = ak.where(sel, ctx.clusters[sys].nMatchedHits[:, None, :], 0)
         best = ak.fill_none(ak.max(hits_in, axis=2), 0)
-        # With rpc_merge the cluster also holds the RPC rechits of the region
-        # it covers, so those count towards the LLP's hits in "this system".
-        nh = sum(llp["nHits" + name] for name in _hit_fields(SYS))
+        # With rpc_mode: merge the cluster also holds the RPC rechits of the
+        # region it covers, so those count towards the LLP's hits in "this
+        # system" (see _hit_fields; under "match" they do not).
+        nh = sum(llp["nHits" + name] for name in _hit_fields(SYS, ctx.params))
         frac = ak.where(nh > 0, best / ak.where(nh > 0, nh, 1), np.nan)
         llp = ak.with_field(llp, frac, "clusterHitFrac" + SYS)
     for sys, SYS in _CLUSTER_SYSTEMS:
@@ -425,7 +477,8 @@ def _step_llp_shape(ctx):
         hit_dr = np.full(int(ak.sum(counts)), np.nan)
         if ctx.has_truth:
             for f, v in _llp_rechit_dr(events, [coll], ctx.match_key,
-                                       hit_dr=hit_dr).items():
+                                       hit_dr=hit_dr,
+                                       params=ctx.params).items():
                 llp = ak.with_field(llp, ak.unflatten(v, nllp), f + sys)
         matched = (rechits.llpIdx >= 0 if "llpIdx" in rechits.fields
                    else ak.values_astype(ak.zeros_like(rechits.Eta), np.bool_))
@@ -434,7 +487,8 @@ def _step_llp_shape(ctx):
                                coll)
     if ctx.has_truth:
         for f, v in _llp_rechit_dr(
-                events, ["cscRechits", "dtRecHits", "rpcRecHits"], ctx.match_key).items():
+                events, ["cscRechits", "dtRecHits", "rpcRecHits"],
+                ctx.match_key, params=ctx.params).items():
             llp = ak.with_field(llp, ak.unflatten(v, nllp), f + "Total")
     ctx.events, ctx.llp = events, llp
 

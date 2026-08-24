@@ -196,23 +196,42 @@ Notes:
 
 ---
 
-## RPC-merged clustering (one cluster per shower, with a time)
+## RPC with the CSC and DT clusters (a time for each shower)
 
-`configs/configs_mds_rpcmerge/` and `configs/configs_mds_rpcmerge_data/` run the
-same study with the RPC rechits **clustered into the system they overlap**
-instead of on their own: barrel RPC (`Region == 0`) with DT, endcap RPC
-(`|Region| == 1`) with CSC.  A shower crossing both detectors is then one
-cluster instead of two that have to be paired up afterwards, and the run has
-**only `events.cscCluster` and `events.dtCluster`** — there is no
-`events.rpcCluster`, because every RPC rechit already belongs to one of those
-two.  One line in `columns.yaml` selects it:
+RPC is the only muon subdetector whose MDSNano rechits carry timing at all, so
+it is what can date a CSC or DT cluster.  The barrel wheels (`Region == 0`) sit
+at the DT radii and the endcap disks (`|Region| == 1`) at the CSC z, so each RPC
+rechit pairs with one of the two.  There are two ways to use that, chosen by one
+line in `columns.yaml`, and both drop `events.rpcCluster` — every RPC rechit
+already belongs to a CSC or a DT cluster, so clustering it again on its own
+would double count it:
+
+| `rpc_mode` | config sets | what happens |
+| --- | --- | --- |
+| `merge` | `configs_mds_rpcmerge/`, `configs_mds_rpcmerge_data/` | the RPC rechits go **into the DBSCAN** with the system they overlap, so a shower crossing both detectors is one cluster instead of two |
+| `match` | `configs_mds_rpcmatch/`, `configs_mds_rpcmatch_data/` | the DBSCAN is exactly the reference CSC/DT one and the RPC rechits are **associated afterwards** — nearest cluster centroid within `cluster_eps` — so they date a cluster without being able to create one |
 
 ```yaml
 parameters:
-  rpc_merge: true
+  rpc_mode: merge      # or: match
 ```
 
-Each merged cluster gains its RPC content (`nRPCHits`, `rpcHitFrac`,
+Both attach the same fields to the same two collections, so one set of plots
+reads either and the two can be compared plot for plot.  The difference that
+matters is what RPC is allowed to do to the *clustering*: under `merge` an RPC
+rechit counts towards `min_samples`, and in data only ~19 % of RPC rechits sit
+at BX 0 (essentially flat over −2…+2), so RPC noise can push a background
+cluster over threshold.  Under `match` it cannot, and every cluster variable is
+bit-identical to a reference run.  Merging in exchange joins a shower that
+straddles the two detectors, and lets RPC hits bridge a gap in the CSC/DT hit
+density.
+
+Positional resolution is *not* what separates them: measuring the ΔR spread of
+gen-matched rechits about the shower centroid on one signal file, endcap RPC is
+1.4× wider than CSC (0.053 vs 0.037) and barrel RPC is slightly *tighter* than
+DT (0.046 vs 0.057) — both far inside `eps = 0.4`.
+
+Each cluster gains its RPC content (`nRPCHits`, `rpcHitFrac`,
 `firstSystem`) and the RPC estimate of **when** it happened:
 
 | field | meaning |
@@ -225,8 +244,15 @@ Each merged cluster gains its RPC content (`nRPCHits`, `rpcHitFrac`,
 
 All of them are NaN on a cluster with no RPC hit (the `<sys>_cluster_has_rpc`
 selection filters those out), and the CSC `time` (mean `Tpeak`) is unchanged by
-the merge: the two detectors are on different clocks, so the RPC estimate is
-reported apart rather than averaged in.  The merged-in RPC hits also keep their
+either mode: the two detectors are on different clocks, so the RPC estimate is
+reported apart rather than averaged in.  `rpcHitFrac` means the same thing in
+both — the RPC share of the cluster's hits — which under `match` is
+`n / (size + n)`, since matching leaves those hits out of `size`.
+`firstSystem` is always the primary system under `match`, so the
+`first_not_rpc` selections simply pass everything there.
+
+**The rest of this section describes `rpc_mode: merge` specifically.**  The
+merged-in RPC hits keep their
 own layer and chamber ids (offset by +1000 in `firstChamber`, so a cluster whose
 innermost hit is an RPC one lands in the overflow of the chamber-code plots and
 `firstSystem` says so); the CSC/DT hits keep the ids they always had, so

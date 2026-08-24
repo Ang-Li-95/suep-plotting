@@ -12,12 +12,14 @@ parameters:
   cluster_eps: 0.4
   cluster_min_samples: 10
   rpc_min_samples: 10
-  # The RPC rechits are clustered with the system they overlap -- barrel RPC
-  # (Region == 0) with DT, endcap RPC with CSC -- instead of on their own, so
-  # this run has cscCluster and dtCluster only and each of them carries the RPC
-  # timing of its own hits (rpcTime*).  rpc_min_samples is unused here: both
-  # merged systems use cluster_min_samples.
-  rpc_mode: merge
+  # The CSC and DT clustering is exactly the reference one -- no RPC rechit
+  # enters the DBSCAN -- and the RPC rechits are associated to the finished
+  # clusters afterwards (nearest centroid within cluster_eps), purely to date
+  # them (rpcTime*, rpcBx*).  The cluster variables are therefore identical to
+  # configs_mds_grid's, which is the point: RPC noise cannot push a background
+  # cluster over min_samples, and the signal region is unchanged.
+  # rpc_min_samples is unused here.
+  rpc_mode: match
   match_min_hits: 10
   llpidx_convention: genpart
   jerc: true                 # JEC on events.Jet first (data too); JER smearing on MC

@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""Generate the RPC-merged config sets from the reference ones.
+"""Generate the RPC config sets from the reference ones.
 
-The RPC-merged study (``rpc_merge: true`` in ``columns.yaml``) clusters the
-barrel RPC rechits together with DT and the endcap RPC rechits together with
-CSC, so the run has only CSC and DT clusters -- every RPC rechit is already
-inside one of them -- and each cluster carries an RPC-derived time.  Its
-configs are the reference ones with three mechanical edits:
+Two studies, one per ``rpc_mode`` (``columns.yaml``), both pairing the barrel
+RPC rechits with DT and the endcap RPC rechits with CSC so the run has only
+CSC and DT clusters and each carries an RPC-derived time:
+
+* ``merge`` -- the RPC rechits go into the DBSCAN with the system they overlap;
+* ``match`` -- the DBSCAN is the reference one and the RPC rechits are
+  associated to the finished clusters afterwards, so they date a cluster
+  without being able to create one.
+
+Both sets carry the same histograms, so the two can be compared plot for plot.
+The configs are the reference ones with three mechanical edits:
 
 * every block that mentions ``events.rpcCluster`` or ``llp.recoRPC`` is
   dropped, along with the histograms and derived plots that referenced it
   (there is no standalone RPC cluster collection any more);
-* the per-LLP hit counts that define "reconstructable in this system" gain the
-  RPC region that was merged into it (``nHitsCSC + nHitsRPCEndcap``,
-  ``nHitsDT + nHitsRPCBarrel``);
-* the RPC content and RPC timing of the merged clusters are added as new
-  histograms (see :data:`RPC_HISTOGRAMS`).
+* under ``merge`` only, the per-LLP hit counts that define "reconstructable in
+  this system" gain the RPC region that went into it (``nHitsCSC +
+  nHitsRPCEndcap``, ``nHitsDT + nHitsRPCBarrel``) -- under ``match`` the RPC
+  rechits never entered a cluster, so the reference denominators stand;
+* the RPC content and RPC timing of the clusters are added as new histograms
+  (see :data:`RPC_HISTOGRAMS`).
 
 Writing them out rather than hand-maintaining a second copy keeps the shared
 plots -- binning, isolation cuts, variant splits -- identical to the reference
@@ -35,9 +42,19 @@ REPO = Path(__file__).resolve().parent.parent
 CONFIGS = REPO / "configs"
 
 # generated set -> reference set it is derived from
+# One target per (mode, reference set).  "merge" and "match" produce the same
+# cluster collections carrying the same RPC fields, so the two sets differ only
+# in columns.yaml and in whether the RPC rechits count towards the per-LLP hit
+# totals -- which is exactly what makes them comparable plot for plot.
 SOURCES = {
-    "configs_mds_rpcmerge": "configs_mds_grid",            # signal grid, truth
-    "configs_mds_rpcmerge_data": "configs_mds_data",        # reco-only, + data
+    "merge": {
+        "configs_mds_rpcmerge": "configs_mds_grid",         # signal grid, truth
+        "configs_mds_rpcmerge_data": "configs_mds_data",    # reco-only, + data
+    },
+    "match": {
+        "configs_mds_rpcmatch": "configs_mds_grid",
+        "configs_mds_rpcmatch_data": "configs_mds_data",
+    },
 }
 
 # A block mentioning any of these describes something the merged run does not
@@ -53,6 +70,9 @@ DEAD_VARIANT_SETS = ("rpc_iso", "rpc_variants")
 
 # "Rechits of this LLP in this system" now includes the RPC region that was
 # merged into the system, both in the selections and in the histograms.
+# Only under "merge": there the RPC rechits are *inside* the cluster, so they
+# belong in "how many rechits did this LLP leave in this system".  Under
+# "match" the clustering never saw them and the reference denominators stand.
 HIT_COUNT_REWRITES = (
     ("events.llp.nHitsCSC", "(events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)"),
     ("events.llp.nHitsDT", "(events.llp.nHitsDT + events.llp.nHitsRPCBarrel)"),
@@ -63,10 +83,10 @@ COMMENT_REWRITES = (
     ("custom/columns.py: events.llp, events.cscCluster, events.dtCluster,\n"
      "# events.rpcCluster.",
      "custom/columns.py: events.llp, events.cscCluster, events.dtCluster\n"
-     "# (the RPC rechits are clustered inside those two, see rpc_merge)."),
+     "# (the RPC rechits belong to those two, see rpc_mode)."),
     ("(events.cscCluster / dtCluster / rpcCluster)",
-     "(events.cscCluster / dtCluster; the RPC rechits are clustered inside\n"
-     "# those two, see rpc_merge)"),
+     "(events.cscCluster / dtCluster; the RPC rechits belong to\n"
+     "# those two, see rpc_mode)"),
 )
 
 LABEL_REWRITES = (
@@ -86,14 +106,26 @@ SELECTION_INJECTIONS = {
     "dt_cluster_first_station": "dt_cluster_first_not_rpc",
 }
 
-COLUMNS_NOTE = """
+COLUMNS_NOTE = {
+    "merge": """
   # The RPC rechits are clustered with the system they overlap -- barrel RPC
   # (Region == 0) with DT, endcap RPC with CSC -- instead of on their own, so
   # this run has cscCluster and dtCluster only and each of them carries the RPC
   # timing of its own hits (rpcTime*).  rpc_min_samples is unused here: both
   # merged systems use cluster_min_samples.
-  rpc_merge: true
-"""
+  rpc_mode: merge
+""",
+    "match": """
+  # The CSC and DT clustering is exactly the reference one -- no RPC rechit
+  # enters the DBSCAN -- and the RPC rechits are associated to the finished
+  # clusters afterwards (nearest centroid within cluster_eps), purely to date
+  # them (rpcTime*, rpcBx*).  The cluster variables are therefore identical to
+  # configs_mds_grid's, which is the point: RPC noise cannot push a background
+  # cluster over min_samples, and the signal region is unchanged.
+  # rpc_min_samples is unused here.
+  rpc_mode: match
+""",
+}
 
 GENERATED_HEADER = """\
 # GENERATED by scripts/make_rpcmerge_configs.py from configs/{source}/ --
@@ -106,8 +138,9 @@ GENERATED_HEADER = """\
 # matched / unmatched / isolated versions come for free.
 RPC_HISTOGRAMS = """
 # ── RPC content and RPC timing of the merged clusters ─────────────
-# Filled from the RPC rechits that DBSCAN put inside a {SYS} cluster
-# (custom/clustering.py, rpc_merge).  The time fields are NaN on a cluster
+# Filled from the RPC rechits belonging to a {SYS} cluster -- put there by
+# DBSCAN (rpc_mode: merge) or associated to it afterwards (rpc_mode: match);
+# custom/clustering.py.  The time fields are NaN on a cluster
 # with no RPC hit, so every one of them is filtered by {sys}_cluster_has_rpc.
 # NOTE the rechit time itself (rpcTime*) is unfilled in every MDSNano
 # production so far -- rpcRecHits_Time is 0 with TimeError -1, so those fields
@@ -514,9 +547,11 @@ def _inject_selections(text, required=True):
     return "".join(out)
 
 
-def _rewrite_hit_counts(text):
+def _rewrite_hit_counts(text, mode):
     for old, new in COMMENT_REWRITES:
         text = text.replace(old, new)
+    if mode != "merge":
+        return text            # the RPC rechits stayed outside the clusters
     for old, new in HIT_COUNT_REWRITES:
         text = re.sub(r"(?<![\w.])%s(?![\w])" % re.escape(old), new, text)
     for old, new in LABEL_REWRITES:
@@ -529,21 +564,22 @@ def _generated(text, source):
     return GENERATED_HEADER.format(source=source) + text
 
 
-def build(source_dir, name):
+def build(source_dir, name, mode):
     """The full file set of one generated config directory."""
     source = source_dir.name
     out = {}
 
-    # columns.yaml: the reference settings plus rpc_merge.
+    # columns.yaml: the reference settings plus rpc_mode.
     columns = (source_dir / "columns.yaml").read_text()
-    columns = columns.replace("\n  match_min_hits:", COLUMNS_NOTE + "  match_min_hits:", 1)
+    columns = columns.replace("\n  match_min_hits:",
+                              COLUMNS_NOTE[mode] + "  match_min_hits:", 1)
     out["columns.yaml"] = _generated(columns, source)
 
     # selections.yaml: drop the RPC-cluster masks, add the RPC-content ones.
     selections, dead_selections = _prune(
         (source_dir / "selections.yaml").read_text(),
         lambda key, body: _mentions(body, DEAD_TOKENS))
-    selections = _rewrite_hit_counts(selections) + RPC_SELECTIONS
+    selections = _rewrite_hit_counts(selections, mode) + RPC_SELECTIONS
     out["selections.yaml"] = _generated(selections, source)
 
     # histograms.yaml: drop the RPC-cluster histograms and everything that
@@ -553,7 +589,7 @@ def build(source_dir, name):
     histograms, dead_hists = _prune(
         histograms,
         lambda key, body: _mentions(body, DEAD_TOKENS + tuple(dead_selections)))
-    histograms = _inject_selections(_rewrite_hit_counts(histograms))
+    histograms = _inject_selections(_rewrite_hit_counts(histograms, mode))
     for sys in ("csc", "dt"):
         histograms += RPC_HISTOGRAMS.format(sys=sys, SYS=sys.upper())
     histograms += CSC_TIME_HISTOGRAMS
@@ -579,19 +615,20 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     stale = []
-    for name, source in SOURCES.items():
-        target = CONFIGS / name
-        files = build(CONFIGS / source, name)
-        if not args.check:
-            target.mkdir(exist_ok=True)
-        for filename, text in files.items():
-            path = target / filename
-            if args.check:
-                if not path.exists() or path.read_text() != text:
-                    stale.append(str(path.relative_to(REPO)))
-            else:
-                path.write_text(text)
-                print(f"wrote {path.relative_to(REPO)}")
+    for mode, targets in SOURCES.items():
+        for name, source in targets.items():
+            target = CONFIGS / name
+            files = build(CONFIGS / source, name, mode)
+            if not args.check:
+                target.mkdir(exist_ok=True)
+            for filename, text in files.items():
+                path = target / filename
+                if args.check:
+                    if not path.exists() or path.read_text() != text:
+                        stale.append(str(path.relative_to(REPO)))
+                else:
+                    path.write_text(text)
+                    print(f"wrote {path.relative_to(REPO)}")
     if args.check:
         for path in stale:
             print(f"STALE: {path}")
