@@ -25,8 +25,7 @@ from its config directory alone and a worker process cannot lose it.
 Module layout: this file holds only the pipeline (:func:`derive` and the
 ``_step_*`` functions) and re-exports the helpers, so ``import custom.columns``
 still gives the whole interface.  ``params.py`` owns the schema, ``clustering.py``
-the DBSCAN, ``llp.py`` the gen-level collection, ``isolation.py`` the cluster-to-
-prompt-object dR.
+the DBSCAN, ``llp.py`` the gen-level collection, ``helpers.py`` object selection, isolation dR and the jet ID.
 """
 
 from __future__ import annotations
@@ -36,7 +35,8 @@ import numpy as np
 
 # The settings and the helpers the pipeline below calls.
 from .clustering import _cluster_merged, _cluster_system, _match_rpc
-from .isolation import NO_OBJECT_DR, _dr_to_nearest, _selected_objects
+from .helpers import (ISO_SELECTIONS, NO_OBJECT_DR, _cluster_isolation,
+                      _dr_to_nearest, _jet_id, _selected_objects)
 from .llp import _build_llps, _empty_llps, _llp_rechit_dr
 from .params import (DEFAULT_PARAMS, DEFAULTS, LLP_PDGID, PARAM_SPEC,
                      STEP_DEPS, Settings, _dbscan_params, configure)
@@ -46,7 +46,7 @@ from .params import (DEFAULT_PARAMS, DEFAULTS, LLP_PDGID, PARAM_SPEC,
 # ``custom.columns``, whichever file they now live in.
 from .clustering import (  # noqa: F401
     SOURCE_CODES, _flat_chamber_code, _flat_layer_key, _flat_zlayer_key)
-from .isolation import _jet_id, _jet_id_evaluator  # noqa: F401
+from .helpers import _jet_id_evaluator  # noqa: F401
 from .llp import _dr_field_names, _dr_kernel, _llpidx_is_genpart_index  # noqa: F401
 
 
@@ -85,9 +85,13 @@ class _Context:
     side (an eps scan in a notebook) without one clobbering the other.
     """
 
-    def __init__(self, events, settings):
+    def __init__(self, events, settings, selections=None):
         self.settings = settings
         self.steps = settings.steps
+        # The config set's selections.yaml.  Steps that need to *select* objects
+        # read their cut from here rather than carrying a second copy of the
+        # expression language in columns.yaml (see _step_cluster_isolation).
+        self.selections = selections or {}
         self.events = events
         self.has_truth = "SUEPGenPart" in events.fields
         self.clusters = {}
@@ -97,7 +101,7 @@ class _Context:
         self.match_key = None
 
 
-def derive(events, settings=None):
+def derive(events, settings=None, selections=None):
     """Attach the MDS LLP/cluster collections (MDSNANO samples only).
 
     Runs the optional helpers selected by :func:`configure` (all of them by
@@ -106,13 +110,15 @@ def derive(events, settings=None):
     at expression validation rather than silently filling zeros.
 
     *settings* is a :class:`params.Settings` from :func:`configure`; omitting
-    it runs on the defaults.  Nothing is read from module state, so the caller
-    -- the processor, a notebook, a test -- always knows what it configured.
+    it runs on the defaults.  *selections* is the config set's loaded
+    ``selections.yaml``, which the steps that select objects read their cuts
+    from.  Nothing is read from module state, so the caller -- the processor, a
+    notebook, a test -- always knows what it configured.
     """
     if "cscRechits" not in events.fields:
         return events
 
-    ctx = _Context(events, DEFAULTS if settings is None else settings)
+    ctx = _Context(events, DEFAULTS if settings is None else settings, selections)
     for step in ctx.steps:
         _STEP_FUNCS[step](ctx)
 
@@ -228,21 +234,47 @@ def _step_jerc(ctx):
                               jec_tag=tag, smear=False)
 
 
+def _step_jet_id(ctx):
+    """``events.Jet.tightId`` / ``.tightLepVetoId`` from the official payload.
+
+    2024 NanoAOD dropped ``Jet_jetId``, so the ID has to be recomputed from the
+    PF energy fractions and multiplicities.  Attaching it as a *column* rather
+    than exposing a ``jet_id()`` function to one privileged expression scope is
+    what lets a jet cut be written in ``selections.yaml`` -- and read in
+    ``histograms.yaml`` -- like any other field.
+
+    JEC leaves the energy fractions, the multiplicities and eta alone, so the
+    decision does not depend on whether ``jerc`` ran first.
+    """
+    if "Jet" not in ctx.events.fields:
+        return
+    jets, era = ctx.events.Jet, ctx.settings["jerc_era"]
+    for level, field in (("tight", "tightId"), ("tightlepveto", "tightLepVetoId")):
+        jets = ak.with_field(jets, _jet_id(jets, level, era), field)
+    ctx.events = ak.with_field(ctx.events, jets, "Jet")
+
+
 def _step_cluster_isolation(ctx):
     """dR from each cluster centroid to the nearest selected prompt object.
 
-    One dR field per entry of the ``iso_objects`` parameter, so which objects
-    count -- and how they are selected -- lives entirely in the config set.
+    Which muons and jets count as prompt activity is an ordinary object
+    selection, so it lives in the config set's ``selections.yaml`` under the
+    names in :data:`helpers.ISO_SELECTIONS` -- written the same way as every
+    other cut, and usable as one.
     """
-    objects = {field: _selected_objects(ctx.events, selection, ctx.settings)
-               for field, selection in ctx.settings["iso_objects"].items()}
+    missing = [n for n in ISO_SELECTIONS.values() if n not in ctx.selections]
+    if missing:
+        raise ValueError(
+            f"selections.yaml: the 'cluster_isolation' step needs {missing}, "
+            "which this config set does not define.  Each is an object-level "
+            "selection with a 'collection:' naming what it masks; see "
+            "docs/derived-columns.md.")
+
+    objects = {field: _selected_objects(ctx.events, name, ctx.selections[name])
+               for field, name in ISO_SELECTIONS.items()}
 
     for sys, clusters in ctx.clusters.items():
-        for field, objs in objects.items():
-            if objs is not None:
-                clusters = ak.with_field(
-                    clusters, _dr_to_nearest(clusters, objs), field)
-        ctx.clusters[sys] = clusters
+        ctx.clusters[sys] = _cluster_isolation(clusters, objects)
 
 
 def _step_llp(ctx):
@@ -354,6 +386,7 @@ def _step_llp_shape(ctx):
 
 _STEP_FUNCS = {
     "jerc": _step_jerc,
+    "jet_id": _step_jet_id,
     "clusters": _step_clusters,
     "cluster_isolation": _step_cluster_isolation,
     "llp": _step_llp,

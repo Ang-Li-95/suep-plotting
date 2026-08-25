@@ -201,7 +201,7 @@ class SuepProcessor(processor.ProcessorABC):
         group = cfg.get("group", "")
 
         if self.derive_fn is not None:
-            events = self.derive_fn(events, self.settings)
+            events = self.derive_fn(events, self.settings, self.sel_defs)
 
         n = len(events)
         weights = Weights(n, storeIndividual=False)
@@ -292,7 +292,7 @@ def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn
 
     if derive_fn is not None:
         try:
-            events = derive_fn(events, settings)
+            events = derive_fn(events, settings, sel_defs)
         except Exception as e:  # noqa: BLE001
             print(f"  (custom derive() failed during validation: {e})")
 

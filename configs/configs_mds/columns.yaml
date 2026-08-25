@@ -12,17 +12,8 @@ parameters:
   match_min_hits: 10
   llpidx_convention: genpart
   jerc: true                 # JEC on events.Jet first (data too); JER smearing on MC
-  # Which prompt objects the cluster drMuon / drJet are measured against: one
-  # entry per dR field, each a collection plus a per-object boolean expression.
-  # `obj` is the collection; `jet_id` is the official jetid.json.gz decision
-  # (2024 NanoAOD no longer stores Jet_jetId).  Add a field here -- electrons,
-  # photons, HLT jets -- and it appears on every cluster with no code change.
-  iso_objects:
-    drMuon:
-      collection: Muon
-      expression: "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId"
-    drJet:
-      collection: Jet
-      expression: "(obj.pt > 20) & (abs(obj.eta) < 2.4) & (obj.neHEF < 0.8) & (obj.chHEF > 0.1) & jet_id(obj, 'tightlepveto')"
+  # The prompt objects the cluster drMuon / drJet are measured against are an
+  # ordinary object selection, so they live in selections.yaml
+  # (muon_sel_foriso / jet_sel_foriso, shared via ../_common/prompt_objects.yaml).
 
-steps: [jerc, clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]
+steps: [jerc, jet_id, clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]

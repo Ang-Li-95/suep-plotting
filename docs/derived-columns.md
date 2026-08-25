@@ -53,7 +53,6 @@ its default and its validator.
 | `jerc_era` | `2024_Summer24` | jsonpog era for the above |
 | `jerc_algo` | `AK4PFPuppi` | jet algorithm for the above |
 | `jerc_data_tag` | `null` | overrides the data JEC tag; `null` takes the era entry from `suep_plot.jme.DEFAULTS` |
-| `iso_objects` | muons + jets | which prompt objects the cluster dR is measured against — see below |
 
 ### `rpc_mode`
 
@@ -90,27 +89,62 @@ about.
 > so the `rpcTime*` fields come out NaN and the BX is the estimate with data in
 > it. See `clustering._rpc_time`.
 
-### `iso_objects`
+### Prompt objects live in `selections.yaml`
 
-Which reconstructed objects count as prompt activity for the cluster dR fields.
-One entry per dR field, each a `collection` (a NanoAOD collection name) and an
-`expression` returning a per-object boolean. Nothing about muons or jets is baked
-into the code, so a new field — electrons, photons, taus, HLT jets — is a config
-edit:
+Which reconstructed objects count as prompt activity for the cluster isolation
+is not a parameter — it is an object selection, so it is written where every
+other object selection is written:
 
 ```yaml
-iso_objects:
-  drMuon:     {collection: Muon, expression: "obj.pt > 10 & obj.looseId"}
-  drElectron: {collection: Electron, expression: "obj.pt > 15"}
+# configs/_common/prompt_objects.yaml, pulled in with _include
+muon_sel_foriso:
+  level: object
+  collection: Muon
+  expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
+
+jet_sel_foriso:
+  level: object
+  collection: Jet
+  expression: "(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId"
 ```
 
-In scope: `obj` (the collection), `events`/`ev`, `ak`, `np`, the safe builtins,
-and `jet_id(obj, "tight"|"tightlepveto")` — the official jsonpog `jetid.json.gz`
-decision, since 2024 NanoAOD no longer stores `Jet_jetId`.
+The names are fixed — they are the values of `helpers.ISO_SELECTIONS`, which
+pairs each with the cluster field it produces (`drMuon`, `drJet`). The
+`cluster_isolation` step fails loudly if a config set enabling it does not
+define both.
 
-JEC/JER rescale pT and mass but leave eta/phi untouched, so corrections reach the
-cluster dR only through which jets pass the pT threshold in the expression — which
-is exactly what the threshold is for, so the `jerc` step runs first.
+`collection:` says which collection the per-object mask is over, which is what
+lets the step apply the mask. The expression is the ordinary config dialect —
+`events.Muon.pt`, exactly as in `histograms.yaml`; there is no separate `obj`
+alias and no function available only here.
+
+Because these are ordinary selections, they are also usable as ordinary
+selections: a histogram may list them under `selections:`, and the cutflow
+reports how many events contain such an object.
+
+> JEC/JER rescale pT and mass but leave eta/phi untouched, so corrections reach
+> the cluster dR only through which jets pass the pT threshold above — which is
+> exactly what the threshold is for, so the `jerc` step runs first.
+
+### `jet_id`: the ID as a column
+
+2024 NanoAOD no longer stores `Jet_jetId`, so the ID is recomputed from the PF
+energy fractions and multiplicities with the official jsonpog `jetid.json.gz`.
+The `jet_id` step attaches the decision to `events.Jet` as two plain booleans:
+
+| Field | jsonpog key |
+|---|---|
+| `events.Jet.tightId` | `AK4PUPPI_Tight` |
+| `events.Jet.tightLepVetoId` | `AK4PUPPI_TightLeptonVeto` |
+
+Attaching it as a column rather than exposing a `jet_id()` function to one
+privileged expression scope is what lets the jet cut live in `selections.yaml`
+at all — and it makes the flags readable from `histograms.yaml` too. The
+thresholds stay in the central payload, resolved from `jerc_era` so the ID and
+the calibration come from one campaign directory.
+
+Jet ID is JEC-invariant (energy fractions, multiplicities and eta do not move
+under a pT rescale), so it does not matter whether `jerc` ran first.
 
 ---
 
@@ -125,8 +159,9 @@ empty histograms. Dropping `clusters` saves ~35 % of `derive()` (measured on the
 | Step | Needs | Attaches |
 |---|---|---|
 | `jerc` | — | JEC on `events.Jet` in place, plus JER smearing on MC |
+| `jet_id` | — | `events.Jet.tightId` / `.tightLepVetoId` from the official payload |
 | `clusters` | — | `events.<sys>Cluster` (two systems outside `rpc_mode: separate`) |
-| `cluster_isolation` | `clusters` | the `iso_objects` dR fields on the clusters |
+| `cluster_isolation` | `clusters` | `drMuon` / `drJet` on the clusters, against the `selections.yaml` prompt objects |
 | `llp` | — | `events.llp`: kinematics, decay vertex, volume flags |
 | `llp_hits` | `llp` | `llp.nHits{CSC,DT,RPC,RPCBarrel,RPCEndcap,Total}` |
 | `llp_reco` | `clusters`, `llp_hits` | `llp.reco*`, `nRecoCluster*`, `clusterHitFrac*` |
@@ -189,7 +224,7 @@ proper phi wrap-around.
   `layerHitsMean` / `RMS` / `RelRMS`, `maxLayerFrac`) and across stations
   (`nStation`, `stationSpan`, `avgStation`, `maxStationFrac`), plus spatial
   spreads (`etaSpread`, `phiSpread`, `rSpread`, `zSpread`).
-- **Isolation** — `drMuon` / `drJet` (or whatever `iso_objects` names): the dR
+- **Isolation** — `drMuon` / `drJet`: the dR
   from the cluster centroid to the closest such object, or `NO_OBJECT_DR` (999)
   in events that have none — so an isolation cut is a plain `drMuon >= x` with no
   special case.

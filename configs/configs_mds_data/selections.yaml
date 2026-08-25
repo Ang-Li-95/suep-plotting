@@ -3,6 +3,10 @@
 # clusters) live in configs_mds_llp/selections.yaml.  Nothing here may depend
 # on gen information: this config set also runs on ZeroBias data.
 
+# The prompt-object cuts the cluster isolation is measured against;
+# shared so the overlaid studies cannot drift apart.
+_include: ../_common/prompt_objects.yaml
+
 # Event-level bookkeeping (cutflow.txt)
 has_csc_cluster:
   expression: "ak.num(events.cscCluster) >= 1"

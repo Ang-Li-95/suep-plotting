@@ -11,18 +11,9 @@ parameters:
   rpc_min_samples: 10
   match_min_hits: 10         # sets cluster.matched, which the clusters step fills
   jerc: true                 # JEC on events.Jet first (data too); JER smearing on MC
-  # Which prompt objects the cluster drMuon / drJet are measured against: one
-  # entry per dR field, each a collection plus a per-object boolean expression.
-  # `obj` is the collection; `jet_id` is the official jetid.json.gz decision
-  # (2024 NanoAOD no longer stores Jet_jetId).  Add a field here -- electrons,
-  # photons, HLT jets -- and it appears on every cluster with no code change.
-  iso_objects:
-    drMuon:
-      collection: Muon
-      expression: "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId"
-    drJet:
-      collection: Jet
-      expression: "(obj.pt > 20) & (abs(obj.eta) < 2.4) & (obj.neHEF < 0.8) & (obj.chHEF > 0.1) & jet_id(obj, 'tightlepveto')"
+  # The prompt objects the cluster drMuon / drJet are measured against are an
+  # ordinary object selection, so they live in selections.yaml
+  # (muon_sel_foriso / jet_sel_foriso, shared via ../_common/prompt_objects.yaml).
 
 # Reco-only: no histogram or selection here touches events.llp, so the four
 # truth steps are dropped -- 4x faster derive() (23s -> 6s per 500 signal
@@ -30,4 +21,4 @@ parameters:
 # filled by the clusters step itself.  events.llp is deliberately absent, so a
 # gen-dependent expression added here fails validation instead of filling empty.
 # llpidx_convention is omitted for the same reason: only the llp step reads it.
-steps: [jerc, clusters, cluster_isolation]
+steps: [jerc, jet_id, clusters, cluster_isolation]

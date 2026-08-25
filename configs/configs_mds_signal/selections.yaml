@@ -7,6 +7,10 @@
 # Almost every mask exists once per muon subdetector, so it is written once
 # under _repeat and expanded over the systems axis (see src/suep_plot/config.py).
 
+# The prompt-object cuts the cluster isolation is measured against;
+# shared so the overlaid studies cannot drift apart.
+_include: ../_common/prompt_objects.yaml
+
 _axes:
   systems:
     - {SYS: csc, SYSU: CSC}

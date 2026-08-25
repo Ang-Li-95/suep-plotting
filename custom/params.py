@@ -79,39 +79,6 @@ def quantiles(v):
     return tuple(v)
 
 
-def iso_objects(v):
-    """``{dR field: {collection, expression}}`` -- see docs/derived-columns.md."""
-    if not isinstance(v, dict):
-        raise ValueError("must be a mapping of dR field -> "
-                         f"{{collection, expression}}, got {v!r}")
-    for field, selection in v.items():
-        if not str(field).isidentifier():
-            raise ValueError(f"key '{field}' becomes a cluster field name, so it "
-                             "must be an identifier")
-        if not isinstance(selection, dict) or set(selection) != {"collection",
-                                                                 "expression"}:
-            raise ValueError(f"['{field}'] needs exactly 'collection' and "
-                             f"'expression', got {selection!r}")
-        for key in ("collection", "expression"):
-            if not isinstance(selection[key], str) or not selection[key].strip():
-                raise ValueError(f"['{field}'].{key} must be a non-empty string, "
-                                 f"got {selection[key]!r}")
-    return v
-
-
-DEFAULT_ISO = {
-    "drMuon": {
-        "collection": "Muon",
-        "expression": "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId",
-    },
-    "drJet": {
-        "collection": "Jet",
-        "expression": ("(obj.pt > 20) & (abs(obj.eta) < 2.4)"
-                       " & (obj.neHEF < 0.8) & (obj.chHEF > 0.1)"
-                       " & jet_id(obj, 'tightlepveto')"),
-    },
-}
-
 # ── The schema: parameter -> (default, validator) ──────────────────
 PARAM_SPEC = {
     "cluster_eps":         (0.4, positive),
@@ -127,7 +94,6 @@ PARAM_SPEC = {
     "jerc_era":            ("2024_Summer24", text),
     "jerc_algo":           ("AK4PFPuppi", text),
     "jerc_data_tag":       (None, optional_str),
-    "iso_objects":         (DEFAULT_ISO, iso_objects),
 }
 
 DEFAULT_PARAMS = {name: default for name, (default, _) in PARAM_SPEC.items()}
@@ -136,6 +102,7 @@ DEFAULT_PARAMS = {name: default for name, (default, _) in PARAM_SPEC.items()}
 # needs.  A config's ``steps:`` list selects a subset; the default is all.
 STEP_DEPS = {
     "jerc": (),
+    "jet_id": (),
     "clusters": (),
     "cluster_isolation": ("clusters",),
     "llp": (),

@@ -45,6 +45,8 @@ suep-plotting/
 ├── pyproject.toml                   # package metadata, dependencies, console scripts
 ├── datasets.yaml                    # central dataset registry (paths, xs, labels)
 ├── configs/                         # one subdirectory per config set
+│   ├── _common/                     # fragments several sets _include
+│   │   └── prompt_objects.yaml      #   the muon/jet cuts the isolation uses
 │   ├── configs_mds/                 # a "config set" = these files
 │   │   ├── samples.yaml             # which datasets to run, cross sections, styling
 │   │   ├── histograms.yaml          # histogram definitions (NanoEvents expressions)
@@ -60,7 +62,7 @@ suep-plotting/
 │   ├── params.py                    #   PARAM_SPEC: the columns.yaml schema
 │   ├── clustering.py                #   DBSCAN of one rechit system
 │   ├── llp.py                       #   events.llp + per-LLP rechit spread
-│   └── isolation.py                 #   cluster dR to the nearest prompt object
+│   └── helpers.py                   #   object selection, isolation dR, jet ID
 ├── scripts/                         # standalone plotting/inspection tools
 │   ├── compare_eps.py               # overlay two DBSCAN-eps processings
 │   ├── compare_sig_bkg.py           # matched signal clusters vs background clusters
@@ -742,7 +744,10 @@ suep-plot output_mds_rpcmerge -o output_mds_rpcmerge/plots -c configs/configs_md
 - [`custom/`](custom/) — `derive()` and its helpers: [`params.py`](custom/params.py)
   (`PARAM_SPEC`, the `columns.yaml` schema), [`clustering.py`](custom/clustering.py)
   (DBSCAN), [`llp.py`](custom/llp.py) (`events.llp` and the per-LLP rechit
-  spread), [`isolation.py`](custom/isolation.py) (cluster → prompt-object ΔR).
+  spread), [`helpers.py`](custom/helpers.py) (object selection, isolation ΔR,
+  the jet ID). The prompt-object cuts themselves are ordinary selections in
+  [`configs/_common/prompt_objects.yaml`](configs/_common/prompt_objects.yaml),
+  shared by the three sets that are overlaid.
   Everything stays reachable through `custom.columns`. See
   [`docs/derived-columns.md`](docs/derived-columns.md).
 
@@ -1162,7 +1167,7 @@ tracked, so affected samples re-run automatically).
 **Custom derived columns** — edit `custom/columns.py`; `derive(events)` returns the
 (augmented) events array. Attach fields with `ak.with_field(events, value, "name")`
 and reference them as `events.name` in any expression. Its helpers are split by
-topic over `custom/params.py`, `clustering.py`, `llp.py` and `isolation.py`, all
+topic over `custom/params.py`, `clustering.py`, `llp.py` and `helpers.py`, all
 re-exported from `custom.columns`.
 
 **xrootd files** — list `root://host//store/…` URLs under `files:`; coffea/uproot

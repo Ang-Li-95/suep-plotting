@@ -40,6 +40,6 @@ suep-run  -c configs/configs_smoke -o "$OUT" -s suep_mDark2_temp1 \
           --file-list "$OUT/one.txt" --chunk-size 2000 --force
 suep-plot "$OUT" -o "$OUT/plots" -c configs/configs_smoke --formats png
 
-test -s "$OUT/plots/csc_cluster_size.png" || { echo "FAIL: no figure produced"; exit 1; }
+test -s "$OUT/plots/csc_cluster_size.png" && test -s "$OUT/plots/csc_cluster_dr_muon.png" || { echo "FAIL: no figure produced"; exit 1; }
 echo
 echo "OK -- $(ls "$OUT"/*.pkl | wc -l) pickle, $(ls "$OUT"/plots/*.png | wc -l) figure(s) in $OUT"

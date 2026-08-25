@@ -1,2 +1,5 @@
+# The prompt-object cuts the cluster isolation reads.
+_include: ../_common/prompt_objects.yaml
+
 has_csc_cluster:
   expression: "ak.num(events.cscCluster) >= 1"

@@ -1,5 +1,5 @@
-# The cheap end of derive(): one cluster collection, no truth, no isolation.
-# 'clusters' is ~35% of derive() on its own but it is what the smoke test is
-# for -- it is the step that a config or clustering change actually moves.
+# The cheap end of derive(), but covering the object-selection path: jet ID,
+# one cluster collection and the isolation that reads selections.yaml.  No
+# truth steps -- the smoke test is about the chain working, not the physics.
 _extends: ../configs_mds
-steps: [clusters]
+steps: [jerc, jet_id, clusters, cluster_isolation]

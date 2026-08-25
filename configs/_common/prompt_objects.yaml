@@ -1,0 +1,28 @@
+# Which reconstructed objects count as prompt activity.
+#
+# The cluster isolation (custom/columns.py, step 'cluster_isolation') measures
+# dR from every cluster centroid to the closest object passing these, and
+# attaches it as cluster.drMuon / cluster.drJet -- the names are the keys of
+# helpers.ISO_SELECTIONS.  They are ordinary object-level selections, so the
+# same cut is also available to any histogram or event mask that wants it, and
+# the cutflow reports how many events have such an object.
+#
+# Shared by configs_mds/, configs_mds_signal/ and configs_mds_data/ through
+# _include: those studies are overlaid on one canvas, so a cluster in one and a
+# cluster in the other have to have been isolated against the same objects --
+# by construction, not by three files happening to agree.
+#
+# 'collection:' names what the per-object mask is over; the expression is the
+# ordinary config dialect, the same one histograms.yaml uses.
+
+muon_sel_foriso:
+  level: object
+  collection: Muon
+  expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
+
+# tightLepVetoId is attached by the 'jet_id' step: 2024 NanoAOD no longer stores
+# Jet_jetId, so it is recomputed from the official jetid.json.gz payload.
+jet_sel_foriso:
+  level: object
+  collection: Jet
+  expression: "(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId"

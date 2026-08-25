@@ -132,21 +132,26 @@ def _muons(*specs):
                       for pt, eta, phi, lid in specs]])
 
 
-def _ctx(events, settings=None):
+def _ctx(events, settings=None, selections=None):
     """A real pipeline context on the settings configure() last installed.
 
     The steps read their parameters off the context, so a test that drives one
     directly has to hand it the same thing derive() would.
     """
-    return columns._Context(events, settings or DEFAULTS)
+    return columns._Context(events, settings or DEFAULTS, selections)
 
 
-MUON_SEL = {"collection": "Muon",
-            "expression": "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId"}
-JET_SEL = {"collection": "Jet",
-           "expression": ("(obj.pt > 20) & (abs(obj.eta) < 2.4)"
-                          " & (obj.neHEF < 0.8) & (obj.chHEF > 0.1)"
-                          " & jet_id(obj, 'tightlepveto')")}
+# The prompt-object cuts, written the way selections.yaml writes them: the
+# ordinary events.<Collection> dialect, plus a 'collection:' saying what the
+# per-object mask is over.
+MUON_SEL = {"level": "object", "collection": "Muon",
+            "expression": ("(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4)"
+                           " & events.Muon.looseId")}
+JET_SEL = {"level": "object", "collection": "Jet",
+           "expression": ("(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4)"
+                          " & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1)"
+                          " & events.Jet.tightLepVetoId")}
+ISO_SELS = {"muon_sel_foriso": MUON_SEL, "jet_sel_foriso": JET_SEL}
 
 
 def test_selected_objects_applies_an_arbitrary_expression():
@@ -157,7 +162,7 @@ def test_selected_objects_applies_an_arbitrary_expression():
                    (25.0, 2.9, 1.5, True))    # fails |eta|
     events = ak.zip({"Muon": muons}, depth_limit=1)
 
-    kept = columns._selected_objects(events, MUON_SEL, DEFAULTS)
+    kept = columns._selected_objects(events, "muon_sel_foriso", MUON_SEL)
 
     assert ak.to_list(kept.phi) == [[0.0]]
 
@@ -169,9 +174,9 @@ def test_selected_objects_needs_no_code_for_a_new_collection():
                            {"pt": 30.0, "eta": 0.2, "phi": 0.9, "cutBased": 1}]])
     events = ak.zip({"Electron": electrons}, depth_limit=1)
 
-    kept = columns._selected_objects(events, {
-        "collection": "Electron",
-        "expression": "(obj.pt > 15) & (obj.cutBased >= 3)"}, DEFAULTS)
+    kept = columns._selected_objects(events, "prompt_electron", {
+        "level": "object", "collection": "Electron",
+        "expression": "(events.Electron.pt > 15) & (events.Electron.cutBased >= 3)"})
 
     assert ak.to_list(kept.phi) == [[0.4]]
 
@@ -187,7 +192,28 @@ def _jets(*specs):
 
 
 
-def test_selected_objects_exposes_jet_id_to_the_expression():
+def test_the_jet_id_step_attaches_the_official_decision_as_a_column():
+    """The cut lives in selections.yaml, so the ID has to be a field, not a
+    function only one expression scope can call.  It must agree with the
+    payload exactly -- a drifting copy would silently reselect the jets."""
+    ak = pytest.importorskip("awkward")
+    pytest.importorskip("correctionlib")
+
+    jets = _jets((50.0, 0.5, 0.30, 0.50), (50.0, 0.5, 0.90, 0.50),
+                 (50.0, 3.5, 0.30, 0.50))
+    ctx = _ctx(ak.zip({"Jet": jets}, depth_limit=1))
+    try:
+        columns._step_jet_id(ctx)
+    except FileNotFoundError:
+        pytest.skip("JME payloads not available")
+
+    era = DEFAULTS["jerc_era"]
+    for level, field in (("tight", "tightId"), ("tightlepveto", "tightLepVetoId")):
+        assert ak.to_list(ctx.events.Jet[field]) == \
+            ak.to_list(columns._jet_id(jets, level, era))
+
+
+def test_the_jet_selection_reads_the_column_the_step_attached():
     ak = pytest.importorskip("awkward")
     pytest.importorskip("correctionlib")
 
@@ -196,12 +222,13 @@ def test_selected_objects_exposes_jet_id_to_the_expression():
                  (50.0, 0.5, 0.30, 0.05),   # fails chHEF > 0.1
                  (10.0, 0.5, 0.30, 0.50),   # fails pt
                  (50.0, 3.5, 0.30, 0.50))   # fails |eta|
-    events = ak.zip({"Jet": jets}, depth_limit=1)
-
+    ctx = _ctx(ak.zip({"Jet": jets}, depth_limit=1))
     try:
-        kept = columns._selected_objects(events, JET_SEL, DEFAULTS)
+        columns._step_jet_id(ctx)
     except FileNotFoundError:
         pytest.skip("JME payloads not available")
+
+    kept = columns._selected_objects(ctx.events, "jet_sel_foriso", JET_SEL)
 
     assert ak.to_list(kept.phi) == [[0.0]]
 
@@ -210,48 +237,62 @@ def test_selected_objects_returns_none_for_a_missing_collection():
     ak = pytest.importorskip("awkward")
     events = ak.zip({"Muon": _muons((25.0, 0.1, 0.0, True))}, depth_limit=1)
 
-    assert columns._selected_objects(events, JET_SEL, DEFAULTS) is None
+    assert columns._selected_objects(events, "jet_sel_foriso", JET_SEL) is None
 
 
-def test_a_broken_expression_names_the_collection_and_the_expression():
+def test_a_selection_used_to_pick_objects_needs_a_collection():
+    """Without it there is nothing to apply the mask to, so say so."""
     ak = pytest.importorskip("awkward")
     events = ak.zip({"Muon": _muons((25.0, 0.1, 0.0, True))}, depth_limit=1)
 
-    with pytest.raises(ValueError, match="iso_objects expression for 'Muon'"):
-        columns._selected_objects(events, {"collection": "Muon",
-                                           "expression": "obj.noSuchField > 1"},
-                                  DEFAULTS)
+    with pytest.raises(ValueError, match="collection"):
+        columns._selected_objects(events, "muon_sel_foriso",
+                                  {"expression": "events.Muon.pt > 10"})
 
 
-def test_isolation_fields_come_from_the_config():
-    """One dR field per iso_objects entry -- including a new one."""
+def test_a_broken_expression_names_the_selection_and_the_expression():
     ak = pytest.importorskip("awkward")
-    settings = columns.configure({"parameters": {"iso_objects": {
-        "drMuon": MUON_SEL,
-        "drSoftMuon": {"collection": "Muon",
-                       "expression": "obj.pt > 1"},
-    }}})
+    events = ak.zip({"Muon": _muons((25.0, 0.1, 0.0, True))}, depth_limit=1)
+
+    with pytest.raises(ValueError, match="muon_sel_foriso"):
+        columns._selected_objects(events, "muon_sel_foriso",
+                                  {"collection": "Muon",
+                                   "expression": "events.Muon.noSuchField > 1"})
+
+
+def test_isolation_reads_its_cuts_from_selections_yaml():
+    """The prompt-object cut is an ordinary selection, not a columns.yaml parameter."""
+    ak = pytest.importorskip("awkward")
 
     ctx = _ctx(ak.zip({"Muon": _muons((25.0, 0.05, 0.0, True))}, depth_limit=1),
-               settings)
+               selections=ISO_SELS)
     ctx.clusters = {"csc": ak.Array([[{"eta": 0.0, "phi": 0.0}]])}
     columns._step_cluster_isolation(ctx)
 
     assert "drMuon" in ctx.clusters["csc"].fields
-    assert "drSoftMuon" in ctx.clusters["csc"].fields
+    # No Jet collection in this event, so drJet is skipped rather than faked.
     assert "drJet" not in ctx.clusters["csc"].fields
+
+
+def test_a_missing_iso_selection_is_fatal():
+    """Silently dropping drMuon would just empty every isolation plot."""
+    ak = pytest.importorskip("awkward")
+
+    ctx = _ctx(ak.zip({"Muon": _muons((25.0, 0.05, 0.0, True))}, depth_limit=1),
+               selections={"jet_sel_foriso": JET_SEL})
+    ctx.clusters = {"csc": ak.Array([[{"eta": 0.0, "phi": 0.0}]])}
+
+    with pytest.raises(ValueError, match="muon_sel_foriso"):
+        columns._step_cluster_isolation(ctx)
 
 
 def test_isolation_measures_dr_only_against_selected_objects():
     """A cluster next to a muon that fails the ID is isolated, not vetoed."""
     ak = pytest.importorskip("awkward")
 
-    settings = columns.configure(
-        {"parameters": {"iso_objects": {"drMuon": MUON_SEL}}})
-
     def run(passes_id):
         ctx = _ctx(ak.zip({"Muon": _muons((25.0, 0.05, 0.0, passes_id))},
-                          depth_limit=1), settings)
+                          depth_limit=1), selections=ISO_SELS)
         ctx.clusters = {"csc": ak.Array([[{"eta": 0.0, "phi": 0.0}]])}
         columns._step_cluster_isolation(ctx)
         return float(ak.flatten(ctx.clusters["csc"].drMuon)[0])
@@ -366,7 +407,7 @@ def test_grid_and_data_share_the_clustering_and_isolation_settings():
     study (or both) without anyone noticing.
     """
     shared = ("cluster_eps", "cluster_min_samples", "rpc_min_samples",
-              "match_min_hits", "jerc", "jerc_era", "jerc_algo", "iso_objects")
+              "match_min_hits", "jerc", "jerc_era", "jerc_algo")
 
     grid, _ = _params("configs_mds_signal")
     data, _ = _params("configs_mds_data")
@@ -378,7 +419,7 @@ def test_grid_and_data_share_the_clustering_and_isolation_settings():
 def test_the_reference_set_agrees_with_the_grid():
     """configs_mds is the reco-only reference for the same clusters."""
     shared = ("cluster_eps", "cluster_min_samples", "rpc_min_samples",
-              "match_min_hits", "iso_objects")
+              "match_min_hits")
 
     reference, _ = _params("configs_mds")
     grid, _ = _params("configs_mds_signal")
@@ -396,17 +437,29 @@ def test_data_set_runs_no_truth_steps():
     assert not [s for s in steps if s.startswith("llp")]
 
 
-@pytest.mark.parametrize("iso, msg", [
-    ("nope", "must be a mapping"),
-    ({"drMuon": {"collection": "Muon"}}, "collection' and 'expression'"),
-    ({"drMuon": {"collection": "Muon", "expression": "x", "extra": 1}},
-     "collection' and 'expression'"),
-    ({"drMuon": {"collection": "", "expression": "x"}}, "non-empty string"),
-    ({"dr Muon": {"collection": "Muon", "expression": "x"}}, "identifier"),
-])
-def test_bad_iso_objects_raises(iso, msg):
-    with pytest.raises(ValueError, match=msg):
-        columns.configure({"parameters": {"iso_objects": iso}})
+def test_iso_objects_is_no_longer_a_parameter():
+    """The prompt-object cut is a selection now; a stale columns.yaml must say so."""
+    with pytest.raises(ValueError, match="iso_objects"):
+        columns.configure({"parameters": {"iso_objects": {"drMuon": {}}}})
+
+
+def test_the_overlaid_sets_share_one_prompt_object_definition():
+    """configs_mds, _signal and _data are drawn on one canvas, so a cluster in
+    each must have been isolated against the same objects -- which _include
+    makes true by construction rather than by three files agreeing."""
+    from pathlib import Path
+
+    from suep_plot.histograms import load_selection_defs
+    from custom.helpers import ISO_SELECTIONS
+
+    repo = Path(__file__).resolve().parent.parent
+    defs = [load_selection_defs(repo / "configs" / c / "selections.yaml")
+            for c in ("configs_mds", "configs_mds_signal", "configs_mds_data")]
+
+    for name in ISO_SELECTIONS.values():
+        entries = [d.get(name) for d in defs]
+        assert all(e is not None for e in entries), f"{name} missing from a set"
+        assert entries.count(entries[0]) == len(entries), f"{name} differs between sets"
 
 
 # ── first-hit chamber: where a cluster starts (punch-through handle) ──────────
@@ -474,9 +527,9 @@ def test_no_module_holds_settings_of_its_own():
     passes it down.  A module-level PARAMS is exactly what used to let a worker
     silently cluster with the defaults while the parent printed the config's.
     """
-    from custom import clustering, isolation, llp, params
+    from custom import clustering, helpers, llp, params
 
-    for mod in (columns, clustering, isolation, llp, params):
+    for mod in (columns, clustering, helpers, llp, params):
         assert not hasattr(mod, "PARAMS"), f"{mod.__name__} kept a global PARAMS"
         assert not hasattr(mod, "STEPS"), f"{mod.__name__} kept a global STEPS"
 

@@ -1,11 +1,17 @@
-"""Cluster isolation: dR from a cluster to the nearest prompt object.
+"""Assorted helpers for the derived columns: object selection, isolation, jet ID.
 
-Which reconstructed objects count as prompt activity is config, not code (the
-``iso_objects`` parameter): :func:`_selected_objects` evaluates one
-``columns.yaml`` selection expression and :func:`_dr_to_nearest` measures the
-dR from every cluster centroid to the closest survivor.  :func:`_jet_id`
-supplies the official jsonpog jet-ID decision those expressions can call, since
-2024 NanoAOD no longer stores ``Jet_jetId``.
+Which reconstructed objects count as prompt activity is config, not code, and it
+is config in the ordinary place: :func:`_selected_objects` evaluates one
+**selections.yaml** entry, so a prompt-object cut is written exactly like every
+other object cut in the package.  :func:`_cluster_isolation` measures the dR
+from every cluster centroid to the closest survivor of
+:data:`ISO_SELECTIONS`.
+
+:func:`_jet_id` is the official jsonpog jet-ID decision, which 2024 NanoAOD no
+longer stores as ``Jet_jetId``.  The ``jet_id`` step attaches it to
+``events.Jet`` as a plain column, so a selection asks for
+``events.Jet.tightLepVetoId`` rather than calling a function that only exists
+inside one expression scope.
 """
 
 from __future__ import annotations
@@ -45,34 +51,56 @@ def _dr_to_nearest(clusters, objects):
 _SAFE_BUILTINS = {"abs": abs, "len": len, "min": min, "max": max}
 
 
-def _selected_objects(events, selection, settings):
-    """Objects passing *selection*, or None when the collection is absent.
+# The selections.yaml entries the cluster isolation is measured against, and
+# the dR field each one produces.  Both are object-level selections over a
+# prompt collection; see docs/derived-columns.md.
+ISO_SELECTIONS = {"drMuon": "muon_sel_foriso", "drJet": "jet_sel_foriso"}
 
-    *selection* is ``{"collection": <NanoAOD collection>, "expression": <per-object
-    boolean>}``, exactly as written in ``columns.yaml``.  The expression sees
-    ``obj`` (the collection), ``events``/``ev``, ``ak``, ``np``, the safe builtins
-    and ``jet_id``; nothing about any particular object type is hard-coded here.
+
+def _selected_objects(events, name, selection):
+    """Objects passing a selections.yaml entry, or None if its collection is absent.
+
+    *selection* is the entry as written -- a ``collection`` naming what the
+    per-object mask is over, and an ``expression`` in the ordinary config
+    dialect (``events.Muon.pt > 10``, the same one histograms.yaml uses).  A
+    missing collection is not an error: a file with no ``Muon`` branch simply
+    has no muon to be near, which :func:`_cluster_isolation` turns into the
+    "maximally isolated" sentinel.
     """
-    era = settings["jerc_era"]
-    collection = selection["collection"]
+    collection = selection.get("collection")
+    if not collection:
+        raise ValueError(
+            f"selections.yaml: '{name}' is used to select objects, so it needs a "
+            "'collection:' naming the collection its expression masks (e.g. Muon)")
     if collection not in events.fields:
         return None
 
-    objects = events[collection]
     try:
         keep = eval(  # noqa: S307 - trusted config expressions
             selection["expression"],
             {"__builtins__": _SAFE_BUILTINS},
-            {"obj": objects, "events": events, "ev": events, "ak": ak, "np": np,
-             "jet_id": lambda obj, level: _jet_id(obj, str(level).lower(),
-                                                  era)},
+            {"events": events, "ev": events, "ak": ak, "np": np},
         )
     except Exception as exc:
         raise ValueError(
-            f"columns.yaml: iso_objects expression for '{collection}' failed: "
+            f"selections.yaml: '{name}' failed on collection '{collection}': "
             f"{selection['expression']!r}\n  {type(exc).__name__}: {exc}") from exc
 
-    return objects[keep]
+    return events[collection][keep]
+
+
+def _cluster_isolation(clusters, objects):
+    """Attach one dR field per :data:`ISO_SELECTIONS` entry to *clusters*.
+
+    *objects* maps the dR field name to the selected collection (or None when
+    that collection is absent from the file, in which case the field is
+    skipped -- a config referencing it then fails at expression validation
+    rather than filling zeros).
+    """
+    for field, objs in objects.items():
+        if objs is not None:
+            clusters = ak.with_field(clusters, _dr_to_nearest(clusters, objs), field)
+    return clusters
 
 
 @functools.lru_cache(maxsize=None)
