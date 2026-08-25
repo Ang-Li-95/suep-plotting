@@ -18,26 +18,23 @@ re-run.
 
 1. [Repository layout](#repository-layout)
 2. [Requirements](#requirements)
-3. [Setup](#setup) — [install](#1-install-the-package), [grid proxy](#2-grid-proxy-for-xrootd-inputs), [tests](#3-check-the-install)
+3. [Setup](#setup)
 4. [Quick start](#quick-start)
 5. [The commands](#the-commands) — `suep-run`, `suep-plot`, `suep-submit`, `suep-status`, `suep-reweight`
 6. [Config sets in this repo](#config-sets-in-this-repo)
-7. [Derived-column settings](#derived-column-settings-columnsyaml)
-8. [Configuration reference](#configuration-reference)
-   - [samples.yaml](#samplesyaml)
-   - [histograms.yaml](#histogramsyaml)
-   - [selections.yaml](#selectionsyaml)
-   - [corrections.yaml](#correctionsyaml)
-   - [reweights.yaml](#reweightsyaml)
-   - [derived_plots.yaml](#derived_plotsyaml)
-9. [Expression language](#expression-language)
-10. [Running locally](#running-locally)
-11. [Running on Slurm](#running-on-slurm)
-12. [Helper scripts](#helper-scripts)
-13. [How it works internally](#how-it-works-internally)
-14. [Corrections & the scipy compat shim](#corrections--the-scipy-compat-shim)
-15. [Recipes](#recipes)
-16. [Troubleshooting](#troubleshooting)
+7. [Running locally](#running-locally)
+8. [Running on Slurm](#running-on-slurm)
+9. [The MDS LLP cluster study](#the-mds-llp-cluster-study) — the analysis this package was written for
+10. [Helper scripts](#helper-scripts)
+11. [How it works internally](#how-it-works-internally)
+12. [Corrections & the scipy compat shim](#corrections--the-scipy-compat-shim)
+13. [Environment knobs](#environment-knobs)
+14. [Recipes](#recipes)
+15. [Troubleshooting](#troubleshooting)
+
+**Reference docs:**
+[`docs/configuration.md`](docs/configuration.md) — every YAML file and directive ·
+[`docs/derived-columns.md`](docs/derived-columns.md) — `custom/`: the LLP and cluster collections and their settings
 
 ---
 
@@ -56,11 +53,11 @@ suep-plotting/
 │   │   ├── reweights.yaml           # event-/object-level reweighting (expressions & maps)
 │   │   ├── derived_plots.yaml       # profiles/projections/efficiency/ratio at plot time
 │   │   └── columns.yaml             # optional: parameters + enabled steps of derive()
-│   └── configs_mds_grid/  configs_mds_gen/  configs_mds_data/  …
+│   └── configs_mds_signal/  configs_mds_gen/  configs_mds_data/  …
 │                                    # the other config sets (see "Config sets")
 ├── custom/                          # derive(events) -> events hook: LLP + DBSCAN
 │   ├── columns.py                   #   derive() itself + the step pipeline
-│   ├── params.py                    #   constants, defaults, columns.yaml reader
+│   ├── params.py                    #   PARAM_SPEC: the columns.yaml schema
 │   ├── clustering.py                #   DBSCAN of one rechit system
 │   ├── llp.py                       #   events.llp + per-LLP rechit spread
 │   └── isolation.py                 #   cluster dR to the nearest prompt object
@@ -68,12 +65,16 @@ suep-plotting/
 │   ├── compare_eps.py               # overlay two DBSCAN-eps processings
 │   ├── compare_sig_bkg.py           # matched signal clusters vs background clusters
 │   ├── compare_style.py             # shared suep-plot styling for the above
-│   └── event_display.py             # r-z rechit event display, coloured by cluster
+│   ├── event_display.py             # r-z rechit event display, coloured by cluster
+│   ├── dump_config.py               # print a config set fully expanded (refactor check)
+│   └── smoke_test.sh                # ~1 min end-to-end run+plot over a single file
+├── docs/                            # configuration.md (YAML reference),
+│                                    # derived-columns.md (custom/ reference)
 ├── studies/                         # written-up one-off studies (own READMEs)
 ├── tests/                           # pytest unit tests (no ROOT files needed)
 ├── reproduce.sh                     # one-shot local reproduction of the MDS plots
-├── README_mds.md                    # the MDS LLP cluster study, step by step
 └── src/suep_plot/
+    ├── config.py                    # the one YAML reader: _extends / _repeat / _include / _registry
     ├── _compat.py                   # scipy shim so coffea.lookup_tools imports
     ├── processor.py                 # SuepProcessor(ProcessorABC) + Runner driver
     ├── histograms.py                # build hist.Hist from YAML, per-event & per-object fill
@@ -84,7 +85,6 @@ suep-plotting/
     ├── slurm.py                     # generates Slurm array job scripts
     ├── status.py                    # completion check + resubmission of failed tasks
     ├── cli.py                       # entry points (run/plot/submit/status/reweight)
-    └── cli_worker.py                # single-sample worker invoked by each Slurm task
 ```
 
 Everything below assumes you run from the repo root
@@ -343,27 +343,32 @@ suep-reweight <output dir> --hist <name> --num <sample> --den <sample> -o <map.y
 ```
 
 Writes a binned map (default: shape-only, clamped) to be referenced from
-`reweights.yaml`; see [reweights.yaml](#reweightsyaml).
+`reweights.yaml`; see [reweights.yaml](docs/configuration.md#reweightsyaml).
 
 ---
 
 ## Config sets in this repo
 
-A *config set* is one directory under `configs/` with the six YAML files.
-Samples are pulled from
-the shared registry [`datasets.yaml`](datasets.yaml) via `_include`, so all sets
-see the same datasets and differ only in what they fill.
+A *config set* is one directory under `configs/` with the six YAML files (plus
+an optional `columns.yaml`). Samples are pulled from the shared registry
+[`datasets.yaml`](datasets.yaml) via `_registry:`, so all sets see the same
+datasets and differ only in what they fill. Sets that are variations on another
+say so with `_extends:` and carry only the difference — see
+[`docs/configuration.md`](docs/configuration.md).
 
 | Config set | What it fills | Needs truth? |
 |---|---|---|
 | [`configs/configs_mds/`](configs/configs_mds/) | Reco-only DBSCAN CSC/DT/RPC cluster properties and shower shapes, ΔR to nearest muon/jet. Fills identically on samples without truth branches. | no |
-| [`configs/configs_mds_grid/`](configs/configs_mds_grid/) | Superset of the above plus everything truth-dependent: LLP collection, matched/unmatched cluster splits, efficiency chain, sig-vs-bkg overlays. Runs the full (mDark, T) signal grid. | yes |
+| [`configs/configs_mds_signal/`](configs/configs_mds_signal/) | Superset of the above plus everything truth-dependent: LLP collection, matched/unmatched cluster splits, efficiency chain, sig-vs-bkg overlays. Runs the full (mDark, T) signal grid. | yes |
 | [`configs/configs_mds_gen/`](configs/configs_mds_gen/) | Gen-level only: LLP kinematics, per-LLP matched-rechit counts, ΔR₉₀ maps. Its `columns.yaml` skips DBSCAN. | yes |
 | [`configs/configs_mds_data/`](configs/configs_mds_data/) | The same cluster plots on collision data / ZeroBias. | no |
 | [`configs/configs_mds_sigonly/`](configs/configs_mds_sigonly/) | Signal samples only — quick turnaround. | yes |
 | [`configs/configs_mds_trigger/`](configs/configs_mds_trigger/) | HLT/L1 MDS trigger studies. | yes |
 | [`configs/configs_mds_shape/`](configs/configs_mds_shape/) | Cluster shower-shape variables, signal-vs-background overlay in one histogram. | yes |
 | [`configs/configs_g4compare/`](configs/configs_g4compare/) | Geant4 / generator comparison of the shower simulation. | yes |
+| [`configs/configs_mds_rpcmerge/`](configs/configs_mds_rpcmerge/), [`_rpcmerge_data/`](configs/configs_mds_rpcmerge_data/) | `configs_mds_signal` / `configs_mds_data` with `rpc_mode: merge` — RPC rechits clustered with the system they overlap, plus the RPC timing histograms. `_extends` the reference set, so the two stay comparable plot for plot. | as the base |
+| [`configs/configs_mds_rpcmatch/`](configs/configs_mds_rpcmatch/), [`_rpcmatch_data/`](configs/configs_mds_rpcmatch_data/) | The same with `rpc_mode: match` — the clustering is untouched and RPC only dates the finished clusters. | as the base |
+| [`configs/configs_smoke/`](configs/configs_smoke/) | Not a study: one signal file, one histogram, `steps: [clusters]`. What [`scripts/smoke_test.sh`](scripts/smoke_test.sh) runs to prove the chain works after a framework change, in ~1 min. | no |
 
 Pick a set by which plots you want, then keep one output directory per
 (config set × clustering) combination — the pickles carry no record of which
@@ -384,435 +389,8 @@ intervals.
 
 For the full, step-by-step reproduction of the MDS LLP cluster study (which
 samples, which figures, what the plots mean) see
-[**README_mds.md**](README_mds.md); [`reproduce.sh`](reproduce.sh) runs the local
-version of it end to end.
-
----
-
-## Derived-column settings (`columns.yaml`)
-
-The knobs of `custom/columns.py` belong in the config directory, next to
-`histograms.yaml`, as an optional `columns.yaml`:
-
-```yaml
-parameters:
-  cluster_eps: 0.4            # DBSCAN eps — the ΔR radius in η–φ, all systems
-  cluster_min_samples: 10     # DBSCAN min_samples for CSC/DT (50 = standard MDS)
-  rpc_min_samples: 10         # DBSCAN min_samples for RPC (sparse system)
-  match_min_hits: 10          # cluster ↔ LLP truth-match threshold
-  dr_quantiles: [0.5, 0.8, 0.9]   # → llp.dr50/dr80/dr90
-  pair_max_hits: 2000
-  llpidx_convention: genpart  # or 'ordinal' (pre-Geant4-fix files)
-  # Which prompt objects the cluster ΔR is measured against
-  jerc: true                  # JEC (L1L2L3Res) on events.Jet + JER smearing on MC
-  jerc_era: 2024_Summer24     # jsonpog payload directory
-  jerc_algo: AK4PFPuppi
-  jerc_data_tag:              # null = the era's jec_tag_data from suep_plot.jme
-  iso_objects:                # one dR field per entry, selection written here
-    drMuon:
-      collection: Muon
-      expression: "(obj.pt > 10) & (abs(obj.eta) < 2.4) & obj.looseId"
-    drJet:
-      collection: Jet
-      expression: "(obj.pt > 20) & (abs(obj.eta) < 2.4) & (obj.neHEF < 0.8) & (obj.chHEF > 0.1) & jet_id(obj, 'tightlepveto')"
-steps: [jerc, clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]
-```
-
-Both blocks are optional; anything left out keeps the default shown above.
-The file is part of the run's identity — `suep-run` treats it like the other
-configs for the up-to-date check, so editing it reprocesses.
-
-`derive()` reads these settings once, at entry, and passes them down to the
-helpers, so nothing below it depends on module state. Nothing is installed at
-import time either: `configure()` has to run in **every process** that calls
-`derive()` — the CLI does it in the parent and again in each worker — and a
-process that skipped it raises on the first parameter read rather than falling
-back on the defaults. That distinction is the whole point: a worker silently
-running the defaults while the config asked for something else is a run whose
-histograms are wrong and whose logs look fine. A `columns.yaml` that fails
-validation installs nothing, so the settings already in force stay in force.
-An interactive user (a notebook, `scripts/event_display.py`) calls
-`custom.columns.configure()` with no argument for the defaults.
-
-`steps` selects which of the optional helpers `derive()` runs (the default is
-all of them):
-
-| Step | Attaches | Needs |
-|------|----------|-------|
-| `jerc` | nothing — rescales `events.Jet` pT/mass in place (JEC on data and MC, JER smearing on MC) | — |
-| `clusters` | `events.<sys>Cluster` (DBSCAN, ~35 % of `derive()`) | — |
-| `cluster_isolation` | `drMuon` / `drJet` on the clusters, measured against the selected muons/jets | `clusters` |
-| `llp` | `events.llp`: kinematics, decay vertex, volume flags | — |
-| `llp_hits` | `llp.nHits{CSC,DT,RPC,Total}` | `llp` |
-| `llp_reco` | `llp.reco*`, `nRecoCluster*`, `clusterHitFrac*` | `clusters`, `llp_hits` |
-| `llp_shape` | `llp.dr*` / `drPair*`, rechit `matchedLLP` / `drLLP` | `llp` |
-
-A step you leave out means its fields are *absent*, so a config referencing
-them fails at expression validation instead of quietly filling empty
-histograms. Unknown keys, unknown steps and unmet dependencies are fatal.
-See [`configs/configs_mds_gen/columns.yaml`](configs/configs_mds_gen/columns.yaml) for the
-gen-level-only set.
-
-#### Which muons and jets count as prompt activity
-
-`cluster_isolation` measures `drMuon` / `drJet` to the closest **selected**
-object, so a cluster sitting next to a muon that fails the ID counts as
-isolated rather than vetoed. Events with no selected muon (jet) at all get the
-sentinel `NO_OBJECT_DR = 999`, which passes any isolation cut and lands in the
-overflow of the ΔR histograms.
-
-Two details are specific to 2024 NanoAOD:
-
-- **The object selections live in the config, not in the code.** `iso_objects`
-  maps each dR field to a `collection` plus a per-object boolean `expression`,
-  evaluated by a single `_selected_objects(events, selection)`. Adding a field —
-  electrons, photons, HLT jets — is a config edit; nothing in
-  `custom/columns.py` knows about muons or jets specifically. In scope: `obj`
-  (the collection), `events`/`ev`, `ak`, `np`, the safe builtins, and
-  `jet_id(obj, "tight"|"tightlepveto")`.
-- **`Jet_jetId` is not stored any more**, which is why `jet_id()` exists: it
-  evaluates the ID from the PF energy fractions and multiplicities with the
-  official jsonpog `jetid.json.gz` (`AK4PUPPI_Tight` /
-  `AK4PUPPI_TightLeptonVeto`), so the thresholds stay in the central payload.
-- **JEC/JER rescale pT and mass only** — η and φ are untouched — so `jerc`
-  reaches ΔR *only* through the `iso_jet_pt` threshold. (`correct_jets` re-sorts
-  jets by the new pT, so the ordering moves, but ΔR-to-nearest is
-  order-invariant.)
-- **Data is corrected too**, with the era's `*_DATA` tag — `L1L2L3Res` is where
-  the residual corrections that exist for data live. Only the JER smearing is
-  MC-only, and `correct_jets` already switches it off when `GenJet` is absent.
-  The 2024 DATA compound declares an extra `run` input: one payload covers the
-  whole year and picks the residual IOV per event, so no run-range map is
-  needed. MC vs data is decided by `genWeight` (`has_truth` is False for the
-  non-SUEP MC too, so it cannot be used for this).
-
-### Environment knobs
-
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `X509_USER_PROXY` | — | Grid proxy for xrootd reads (see [Setup](#2-grid-proxy-for-xrootd-inputs)). |
-| `CORRECTIONLIB_DATA` | — | Searched first for `auto:` correction payloads, before cvmfs jsonpog-integration. |
-| `MPLBACKEND` | set to `Agg` | Forced headless by the CLI unless you override it. |
-
-Nothing about `derive()` is settable from the environment: the derived-column
-settings live in the config set, so a run is reproducible from its config
-directory alone and nothing has to be exported before `suep-run` or
-`suep-submit`. (The `MDS_CLUSTER_MIN_SAMPLES` / `MDS_CLUSTER_EPS` /
-`MDS_SKIP_CLUSTERING` / `MDS_LLPIDX_CONVENTION` variables older runs used are
-gone — put the values in `columns.yaml`. Output directories filled before the
-switch used the defaults above unless their command line says otherwise.)
-Because a rerun re-reads the config, `suep-status --resubmit` warns if
-`columns.yaml` was edited after the run was submitted.
-
-```bash
-# a variation on an existing config set: copy it, edit columns.yaml
-cp -r configs/configs_mds configs/configs_mds_minpts50
-sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs/configs_mds_minpts50/columns.yaml
-suep-run -c configs/configs_mds_minpts50 -o output_mds_minpts50 --chunk-size 10000
-```
-
----
-
-## Configuration reference
-
-All behaviour is controlled by the YAML files of a config set under `configs/`.
-
-### samples.yaml
-
-```yaml
-suep_mMed125_mDark2:
-  files:                                    # paths, globs, directories, or xrootd URLs
-    - "/path/to/NanoAOD/*.root"             # a directory is walked recursively for *.root
-  tree: Events                              # TTree name (default: Events)
-  is_data: false                            # true for collision data
-  xs: 1.0                                   # cross section in pb (MC; used by --lumi scaling)
-  label: "SUEP $m_{Med}$=125"               # legend label (LaTeX ok)
-  color: "tab:blue"                         # matplotlib color
-  linestyle: "--"                           # optional: dash pattern for step curves
-  group: signal                             # signal / background (data via is_data)
-  scale: 100                                # optional: draw signal x100 (legend shows "×100")
-```
-
-A `files:` entry may be a file, a glob (`*`/`?`), or a **directory** — local or
-xrootd — in which case it is walked recursively for `*.root`. `group` drives plot
-styling: `background` → stacked fill, `signal` → step overlay (or fill if alone),
-`is_data: true` → error bars.
-
-#### Central dataset registry
-
-Datasets are defined once in the top-level [`datasets.yaml`](datasets.yaml); each
-config picks the combination it needs instead of repeating the definitions:
-
-```yaml
-_include: ../../datasets.yaml    # one path or a list; relative to this samples.yaml
-
-suep_mDark2_temp1:            # registry entry, verbatim
-suep_temp2:                   # registry entry with per-study overrides
-  color: "black"
-  scale: 100
-dy:                           # same dataset under a different config name
-  _from: dy_central_50to120
-qcd_private:                  # full standalone definition — registry not required
-  files: ["/my/private/dir"]
-  xs: 1.0
-```
-
-Per-sample keys are merged over the registry entry (config wins). A name that is
-neither in the registry nor carries its own `files:` is an error listing the
-available datasets, so typos fail at startup rather than mid-run. Configs that
-define everything inline keep working unchanged — `_include` is optional.
-`sumw` (Σ genWeight) and `nevents` are recorded per sample in the pickle; when
-`--lumi` is passed to the plotter, each MC sample is normalized by
-`xs × lumi × 1000 / sumw` (data is never scaled; MC without `xs`/`sumw` is left
-raw with a warning).
-
-### histograms.yaml
-
-**The main file you edit to add plots.** Expressions use NanoEvents object syntax.
-
-```yaml
-jet_pt:
-  expression: "events.Jet.pt"               # per-jet pt (jagged)
-  bins: 60
-  lo: 0
-  hi: 600
-  label: "$p_{T}^{jet}$ [GeV]"
-  per_object: true                          # flatten jagged -> one entry per jet
-  selections: [baseline, high_ht]           # AND of these cuts (optional)
-  weight: "events.someScalarBranch"         # extra per-event weight (optional)
-```
-
-Fill-time fields (changing them requires re-running `suep-run`):
-
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `expression` | yes | — | NanoEvents expression (see [Expression language](#expression-language)). |
-| `bins` / `lo` / `hi` | yes* | — | Uniform axis binning. |
-| `edges` | yes* | — | Explicit bin edges for variable binning, e.g. `[0, 20, 40, 80, 160]` (alternative to `bins/lo/hi`). |
-| `per_object` | no | `false` | If `true`, expression returns a jagged array (e.g. one value per jet); it is flattened, with per-event weights repeated per object. Otherwise it must return one value per event. |
-| `selections` | no | `[]` | Selection names from `selections.yaml`, AND-ed. |
-| `weight` | no | — | Extra per-event weight (× genWeight × corrections). |
-| `variants` | no | — | Repeat this histogram under extra selections — see [`variants`](#the-same-plot-under-several-selections-variants). |
-
-Plot-time fields (take effect on the next `suep-plot`, **no reprocessing**):
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `label` | name | X-axis label (LaTeX between `$…$`). |
-| `blind` | `false` | Don't draw data for this histogram (signal regions). |
-| `rebin` | — | Merge N adjacent bins at plot time (1D only). |
-| `flow` | `sum` | Under/overflow is folded into the first/last bin, so nothing is lost off the axis; `none` drops it instead. |
-| `log_x` / `log_y` | `false` | Logarithmic axes for this histogram. |
-| `log_z` | `false` | Log color scale (2D histograms). |
-
-**2D histograms** use `expression_x`/`expression_y` with
-`bins_x/lo_x/hi_x/bins_y/lo_y/hi_y` (or `edges_x`/`edges_y`) and
-`label_x/label_y`. They render as colz and can feed the derived
-profile/projection plots.
-
-#### The same plot under several selections (`variants`)
-
-Cluster studies usually want every variable under the same handful of cuts
-(matched / unmatched, in-time / out-of-time, per station …). Write the variable
-once and list the cuts — the loader expands the (variable × selection) matrix:
-
-```yaml
-_variant_sets:                  # reusable; top-level '_' keys are not histograms
-  csc_match:
-    matched:   {selections: [csc_cluster_matched],   label_prefix: "matched "}
-    unmatched: {selections: [csc_cluster_unmatched], label_prefix: "unmatched "}
-
-csc_cluster_size:
-  expression: "events.cscCluster.size"
-  per_object: true
-  selections: [has_csc_cluster]     # base cuts: kept by every variant
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'CSC cluster $N_{\mathrm{hits}}$'
-  variants: csc_match               # or an inline mapping of the same shape
-```
-
-That yields three histograms — `csc_cluster_size` (base cuts only),
-`csc_cluster_size_matched` and `csc_cluster_size_unmatched` — and adding a third
-cut to `csc_match` adds one plot to *every* variable that references it.
-
-| Variant key | Effect |
-|---|---|
-| `selections` | **Appended** to the base `selections`, so base cuts keep applying. |
-| `label_prefix` / `label_suffix` | Decorate the base `label` (legends and axis titles stay distinguishable). |
-| any other key | Overrides the base outright — e.g. `log_y: false`, a different `hi`. |
-| `keep_base: false` | *On the histogram, not the variant:* drop the unselected version and keep only the variants. |
-
-Expansion happens where the YAML is read, so variants behave exactly like
-hand-written entries: they appear in `cutflow.txt`, the `index.html` gallery and
-`derived_plots.yaml` under their expanded names (`<name>_<variant>`), and their
-selection names are validated the same way. A variant that would overwrite an
-existing histogram, or an unknown variant-set name, is a fatal config error.
-
-### selections.yaml
-
-Named boolean cuts referenced by histograms.
-
-```yaml
-baseline:                                    # event-level
-  label: "Baseline"
-  expression: "ak.num(events.Jet) >= 1"
-
-good_jets:                                   # object-level
-  label: "$p_T^{jet} > 30$, $|\\eta| < 2.4$"
-  expression: "(events.Jet.pt > 30) & (abs(events.Jet.eta) < 2.4)"
-  level: object
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `expression` | yes | Boolean array. Event-level → one per event; object-level → jagged, matching a collection. |
-| `level` | no | `event` (default) or `object`. |
-| `label` | no | Human-readable label. |
-
-**Object-level** selections filter which objects enter a `per_object` histogram;
-applied to an event-level histogram they mean "require ≥1 passing object"
-(auto `ak.any(…, axis=1)`). Multiple selections on one histogram are AND-ed.
-
-Pre-defined: `baseline`, `high_ht`, `has_muon`, `has_csc_cluster`,
-`has_dt_cluster`, `met_gt50` (event-level) and `good_jets` (object-level).
-
-### corrections.yaml
-
-Scale factors, applied via coffea's tooling. All entries optional; an empty file
-means no corrections. Data samples are always skipped.
-
-```yaml
-pileup:
-  file: "auto:LUM/2024_Summer24/puWeights.json.gz"
-  name: "Collisions2024_goldenJSON"
-  inputs: ["events.Pileup.nTrueInt", "'nominal'"]
-  kind: event_weight
-  apply_to: all
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `file` | yes | correctionlib `.json(.gz)`, or `auto:POG/year/file` (resolved from `$CORRECTIONLIB_DATA`, then cvmfs jsonpog-integration). |
-| `name` | yes | Correction name inside the JSON. |
-| `inputs` | yes | Expressions passed to the evaluator **in the order the correction declares its inputs**. Bare string literals like `"'nominal'"` select a systematic/category axis. |
-| `kind` | yes | `event_weight` (one weight/event) or `object_sf` (one SF/object; per-event weight = product over objects). |
-| `apply_to` | no | `all` (default) or a list of sample groups. |
-
-For `object_sf`, jagged (per-object) inputs are flattened automatically and scalar
-inputs (the systematic string) are passed through, so the correctionlib string
-axis works correctly; the per-event weight is
-`ak.prod(ak.unflatten(sf, counts), axis=1)`. Each correction is registered into a
-`coffea.analysis_tools.Weights` object, so up/down systematics are a natural
-extension (`weights.add(name, nominal, up, down)`).
-
-### reweights.yaml
-
-Analysis-level **reweighting** for studies — flatten a spectrum, match MC
-kinematics to data, emulate a trigger turn-on. Weights multiply into the event
-weight alongside genWeight and `corrections.yaml` scale factors (all via
-coffea `Weights`), so they also show up in cutflows and `--lumi` scaling.
-Config errors here are fatal (they change physics results).
-
-Two kinds, auto-detected:
-
-```yaml
-soft_met_weight:                       # expression -> weight per event
-  expression: "1.0 / (1.0 + events.PuppiMET.pt / 200.0)"
-  apply_to: [background]
-
-jet_eta_flat:                          # object-level: product over objects
-  expression: "1.0 + 0.05 * abs(events.Jet.eta)"
-  level: object
-
-ht_shape:                              # binned map, looked up in `variable`
-  variable: "ak.sum(events.Jet.pt, axis=1)"
-  edges: [0, 100, 200, 400, 800, 2000]
-  weights: [1.25, 1.10, 1.00, 0.90, 0.75]
-  clamp: true
-  apply_to: [background]
-
-ht_dataMC:                             # map file generated by suep-reweight
-  file: ht_map.yaml
-  apply_to: [background]
-```
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `expression` | — | NanoEvents expression → weight (event-level scalar, or jagged with `level: object`). |
-| `variable` (+ `edges`, `weights`) | — | 1D binned lookup. 2D: `variable_x/variable_y`, `edges_x/edges_y`, nested `weights`. |
-| `file` | — | Load map fields from another YAML (relative to the config dir); entry keys override. |
-| `level` | `event` | `object`: one weight per object, event weight = product over objects (empty events → 1). |
-| `apply_to` | `all` | Sample groups to reweight (MC only). |
-| `samples` | — | Explicit sample list (overrides `apply_to`; may include data). |
-| `clamp` | `false` | Binned maps: out-of-range values use the nearest bin (default: weight 1 outside). |
-| `fill_only` | `false` | Don't apply globally; only used where a histogram sets `weight: "@<name>"`. |
-
-**Per-object fill weighting:** a histogram's `weight` may be a jagged
-expression or a `"@<map name>"` reference. For `per_object` histograms each
-object then carries its own weight (e.g. reweight the jet-pT spectrum and look
-at other jet variables); for event-level histograms the per-object weights are
-multiplied into one weight per event. Mark such maps `fill_only: true` or the
-weight is applied twice (the processor warns).
-
-**Deriving a map from processed samples** — the classic "reweight MC to match
-data in X" study:
-
-```bash
-suep-run -c configs/configs_mds -o output                 # 1. fill histograms as usual
-suep-reweight output/ --hist ht \
-    --num data_2024 --den qcd \
-    -o configs/configs_mds/ht_map.yaml        # 2. map = shape ratio data/MC
-# 3. reference it in configs/configs_mds/reweights.yaml (ht_dataMC above), then
-suep-run -c configs/configs_mds -o output                 # 4. only affected samples re-run
-```
-
-The generated map stores the histogram's own fill expression, bin edges and
-the (by default normalized, shape-only) ratio; `--no-normalize` keeps the
-absolute ratio, `--no-clamp` gives weight 1 outside the map range. 2D
-histograms produce 2D maps. Bins with an empty denominator get weight 1.
-
-### derived_plots.yaml
-
-Computed at **plot time** from saved histograms — no reprocessing. Types:
-`profile_x`/`profile_y` (from a 2D hist), `projection_x`/`projection_y`,
-`efficiency` (Clopper–Pearson errors), `ratio`. See the file header for fields.
-
----
-
-## Expression language
-
-Expressions in `histograms.yaml`, `selections.yaml`, `corrections.yaml`,
-`reweights.yaml`, and any `weight` are `eval`'d with these names in scope
-(histogram `weight` fields may instead reference a reweight map as
-`"@<name>"`):
-
-- `events` — the coffea NanoEvents array (also aliased `ev`)
-- `ak` — awkward, `np` — numpy
-- builtins `abs`, `len`, `min`, `max`
-
-Because objects carry NanoAOD behaviours you get vectors and helpers for free:
-
-```python
-events.Jet.pt                                  # jagged per-jet pt
-ak.num(events.Muon)                            # muons per event
-ak.sum(events.Jet.pt, axis=1)                  # scalar HT
-abs(events.Jet.eta) < 2.4                      # object-level mask
-ak.firsts(events.Jet.pt)                       # None-safe leading jet
-(events.Muon[:, 0] + events.Muon[:, 1]).mass   # dimuon mass (needs ≥2 muons)
-events.Jet.nearest(events.Muon).delta_r(events.Jet)   # ΔR to nearest muon
-```
-
-Collections in the MDSNano file include `Jet`, `Muon`, `Electron`, `PuppiMET`,
-`GenMET`, `Pileup`, `PFCand`, `SUEPGenPart`, `cscMDSHLTCluster`, `dtMDSHLTCluster`.
-A typo (e.g. `events.Jet.ptX`) is caught: the processor runs a one-time expression
-check on a small slice (with `custom/columns.py` derived fields attached) and
-prints a warning listing any expressions that fail.
-
-Expressions that produce missing values are safe: `None` entries (from
-`ak.firsts` on empty events, `nearest` with no partner, …) are dropped
-automatically during filling, with event weights kept aligned.
+[**the MDS study section below**](#the-mds-llp-cluster-study);
+[`reproduce.sh`](reproduce.sh) runs the local version of it end to end.
 
 ---
 
@@ -991,7 +569,306 @@ print(data["sumw"], data["nevents"])
 
 ---
 
+## The MDS LLP cluster study
+
+Analysis of two SUEP MDSNANO signal points (ggH, mMed=125, mDark=2, cτ=5 m,
+`temp=1` / `temp=2`) read over xrootd from VBC EOS. The derived collections
+(LLPs, DBSCAN CSC/DT/RPC clusters, cluster↔LLP matching) are built in
+[`custom/columns.py`](custom/columns.py); the plots are split over two config
+sets by whether they need gen information:
+
+| config | contents | output |
+| --- | --- | --- |
+| [`configs/configs_mds/`](configs/configs_mds/) | reco-only DBSCAN cluster properties and shower shapes, incl. ΔR to the closest muon / jet — fills identically on samples without truth branches | `output_mds*/` |
+| [`configs/configs_mds_signal/`](configs/configs_mds_signal/) | everything truth-dependent: the LLP collection, the truth-matched/unmatched cluster splits, the efficiency chain, the matched fractions and the signal-vs-background overlays; runs the full (mDark, T) grid | `output_mds_grid/` |
+
+Both use the same `derive()`, so pick the config set
+by which plots you want; `configs/configs_mds_signal/` is the superset of the fills.
+
+Two configurations are produced:
+
+| folder | DBSCAN min cluster size (CSC/DT) | how |
+| --- | --- | --- |
+| `output_mds/` | 10 | `configs/configs_mds/columns.yaml` |
+| `output_mds_minpts50/` | 50 (standard MDS) | copy of that config with `cluster_min_samples: 50` |
+
+RPC clustering is always `min_samples=10` (sparse system). **Never pass `--lumi`** —
+`xs=1.0` in `configs/configs_mds/samples.yaml` is a placeholder and lumi scaling would
+distort the Clopper–Pearson efficiency intervals.
+
+---
+
+### RPC with the CSC and DT clusters (a time for each shower)
+
+RPC is the only muon subdetector whose MDSNano rechits carry timing at all, so
+it is what can date a CSC or DT cluster.  The barrel wheels (`Region == 0`) sit
+at the DT radii and the endcap disks (`|Region| == 1`) at the CSC z, so each RPC
+rechit pairs with one of the two.  There are two ways to use that, chosen by one
+line in `columns.yaml`, and both drop `events.rpcCluster` — every RPC rechit
+already belongs to a CSC or a DT cluster, so clustering it again on its own
+would double count it:
+
+| `rpc_mode` | config sets | what happens |
+| --- | --- | --- |
+| `merge` | `configs_mds_rpcmerge/`, `configs_mds_rpcmerge_data/` | the RPC rechits go **into the DBSCAN** with the system they overlap, so a shower crossing both detectors is one cluster instead of two |
+| `match` | `configs_mds_rpcmatch/`, `configs_mds_rpcmatch_data/` | the DBSCAN is exactly the reference CSC/DT one and the RPC rechits are **associated afterwards** — nearest cluster centroid within `cluster_eps` — so they date a cluster without being able to create one |
+
+```yaml
+parameters:
+  rpc_mode: merge      # or: match
+```
+
+Both attach the same fields to the same two collections, so one set of plots
+reads either and the two can be compared plot for plot.  The difference that
+matters is what RPC is allowed to do to the *clustering*: under `merge` an RPC
+rechit counts towards `min_samples`, and in data only ~19 % of RPC rechits sit
+at BX 0 (essentially flat over −2…+2), so RPC noise can push a background
+cluster over threshold.  Under `match` it cannot, and every cluster variable is
+bit-identical to a reference run.  Merging in exchange joins a shower that
+straddles the two detectors, and lets RPC hits bridge a gap in the CSC/DT hit
+density.
+
+Positional resolution is *not* what separates them: measuring the ΔR spread of
+gen-matched rechits about the shower centroid on one signal file, endcap RPC is
+1.4× wider than CSC (0.053 vs 0.037) and barrel RPC is slightly *tighter* than
+DT (0.046 vs 0.057) — both far inside `eps = 0.4`.
+
+Each cluster gains its RPC content (`nRPCHits`, `rpcHitFrac`,
+`firstSystem`) and the RPC estimate of **when** it happened:
+
+| field | meaning |
+| --- | --- |
+| `rpcTime`, `rpcTimeMedian`, `rpcTimeSpread` | mean / median / RMS of the RPC rechit times, over the hits with a valid one |
+| `rpcTimeWeighted`, `rpcTimeErr` | `1/σ²`-weighted mean from the per-hit `TimeError`, and its uncertainty |
+| `rpcTimeValidFrac` | fraction of the cluster's RPC hits that had a valid time at all |
+| `rpcBx`, `rpcBxMedian`, `rpcBxSpread` | mean / median / RMS bunch crossing (× 25 ns for a time) |
+| `rpcOutOfTimeFrac`, `nRPCHitsBx0` | fraction of the cluster's RPC hits outside the in-time BX, and the count inside it |
+
+All of them are NaN on a cluster with no RPC hit (the `<sys>_cluster_has_rpc`
+selection filters those out), and the CSC `time` (mean `Tpeak`) is unchanged by
+either mode: the two detectors are on different clocks, so the RPC estimate is
+reported apart rather than averaged in.  `rpcHitFrac` means the same thing in
+both — the RPC share of the cluster's hits — which under `match` is
+`n / (size + n)`, since matching leaves those hits out of `size`.
+`firstSystem` is always the primary system under `match`, so the
+`first_not_rpc` selections simply pass everything there.
+
+**The rest of this section describes `rpc_mode: merge` specifically.**  The
+merged-in RPC hits keep their
+own layer and chamber ids (offset by +1000 in `firstChamber`, so a cluster whose
+innermost hit is an RPC one lands in the overflow of the chamber-code plots and
+`firstSystem` says so); the CSC/DT hits keep the ids they always had, so
+`nLayer`, `firstChamber` and `firstStation` stay comparable with the reference
+run except for the RPC hits now inside the cluster.  The `first_chamber` /
+`first_station` histograms are cut to clusters whose innermost hit belongs to
+the primary system (`<sys>_cluster_first_not_rpc`) — on this file that is 93 %
+of the CSC clusters but only 70 % of the DT ones, since the barrel RPC layers
+sit inside the DT stations; `<sys>_cluster_first_system` counts all three.
+
+> **The rechit time is not filled in any MDSNano production so far.**
+> `rpcRecHits_Time` is 0 with `TimeError` −1 throughout — checked on the Gen3
+> signal, on DY and on ZeroBias 2024C — so every `rpcTime*` field is NaN and its
+> histograms come out empty by construction (that is deliberate: averaging the
+> placeholder zeros would report every cluster as perfectly in time).  The
+> **bunch crossing is filled** and carries real structure, so today's RPC time
+> estimate is `rpcBx * 25` ns, plotted as `<sys>_cluster_rpc_time_from_bx`.
+> Filling `rpcRecHits_Time` in the ntuplizer is what would turn the fine-time
+> fields on; nothing here has to change for that.
+
+### Rejecting out-of-time background
+
+Timing here rejects *out-of-time* activity — previous/later-BX pile-up, cavern
+background, noise. In-time pile-up is not a timing problem; that is what the
+isolation and shape variables are for.
+
+On **CSC** the handle is the rechit time, and it is the cluster's *spread*, not
+its mean, that discriminates (on one signal file: gen-matched clusters have an
+RMS of 5.9 ns, unmatched ones 18.3 ns, with both means at ~1.5 ns). Every
+cluster of a system whose rechits carry a time therefore gets
+
+| field | meaning |
+| --- | --- |
+| `time` | mean rechit time (CSC `Tpeak`) — unchanged |
+| `timeSpread` | RMS of those times over the cluster |
+| `ootHitFrac` | fraction of them outside ±`oot_time_cut` (12.5 ns by default) |
+
+On **DT** there is no rechit time at all, so the equivalent handle is the RPC
+content of the merged cluster — `rpcBxSpread`, `rpcOutOfTimeFrac`,
+`nRPCHitsBx0` — which is how the standard CMS DT muon-shower search times its
+clusters. The same split shows up there: matched clusters have a BX RMS of
+0.31 against 0.82 for unmatched ones, while both means sit at ~0.1.
+
+> **Do not take the rejection factor from MC.** The BX composition is wildly
+> different in data: BX = 0 holds 77 % of the RPC hits in the signal MC, 61 %
+> in DY, but only 19 % in ZeroBias 2024C, where the distribution is essentially
+> flat over −2…+2 (an unmodelled uniform cavern/noise background filling the
+> readout window). The CSC picture matches: `|Tpeak| < 12.5` ns keeps 61 % of
+> signal-MC rechits and 22 % of ZeroBias ones. The real rejection is therefore
+> much *larger* than MC suggests — measure it in ZeroBias, and take only the
+> signal efficiency from MC.
+
+The two config sets are **generated**, not hand-written — they are
+`configs_mds_signal/` and `configs_mds_data/` with the RPC-cluster blocks pruned,
+the "reconstructable" hit counts widened to the merged system
+(`nHitsCSC + nHitsRPCEndcap`, `nHitsDT + nHitsRPCBarrel`) and the RPC timing
+histograms added, so everything the two studies share stays identical by
+construction:
+
+```bash
+```
+
+Running them is the usual pair of commands:
+
+```bash
+suep-run  -c configs/configs_mds_rpcmerge -o output_mds_rpcmerge --chunk-size 10000 --workers 8
+suep-plot output_mds_rpcmerge -o output_mds_rpcmerge/plots -c configs/configs_mds_rpcmerge -j 8
+```
+
+---
+
+### What lives where
+
+- [`configs/configs_mds/`](configs/configs_mds/) — the reco-only fills: cluster
+  properties and shower shapes, incl. `<sys>_cluster_dr_muon` / `_dr_jet`, and
+  the reco-only event masks (`has_<sys>_cluster`).
+- [`configs/configs_mds_signal/`](configs/configs_mds_signal/) — all truth fills
+  and the efficiency numerator/denominator pairs (LLP η is signed, 60 bins
+  −3..3, not \|η\|); the object/event masks (fiducial, ≥10 hits, matched
+  cluster), written once per system under `_repeat`; and the derived plots —
+  the factorized efficiency chain with detector-station bands, matched
+  fractions, sig-vs-bkg overlays.
+- [`configs/configs_mds_gen/`](configs/configs_mds_gen/) — the gen-level-only
+  subset (LLPs + matched rechits); its `columns.yaml` drops the DBSCAN steps.
+- [`custom/`](custom/) — `derive()` and its helpers: [`params.py`](custom/params.py)
+  (`PARAM_SPEC`, the `columns.yaml` schema), [`clustering.py`](custom/clustering.py)
+  (DBSCAN), [`llp.py`](custom/llp.py) (`events.llp` and the per-LLP rechit
+  spread), [`isolation.py`](custom/isolation.py) (cluster → prompt-object ΔR).
+  Everything stays reachable through `custom.columns`. See
+  [`docs/derived-columns.md`](docs/derived-columns.md).
+
+---
+
+### Event display (r–z rechit picture of the clusters)
+
+[`scripts/event_display.py`](scripts/event_display.py) draws one figure per
+event with every CSC/DT rechit at its global (|z|, r), coloured by DBSCAN
+cluster — the same clustering `derive()` uses (`-c <config set>` reads that
+set's `columns.yaml`, so the display clusters exactly as its histograms were
+filled). One colour per cluster (CSC and
+DT are told apart by position, not by colour or marker) and the marker is the
+hit-level truth: `o` for a rechit carrying an `llpIdx`, `x` for one that does
+not, so the LLP shower and the activity DBSCAN swept up with it stay visible
+separately. Noise hits are light grey dots, the grey boxes are the ME/MB
+chambers and the solenoid (`drawRZ()`, DT drawn from |z| = 0), and an open star
+marks the truth shower position (`llpSim*`) of each truth-matched cluster.
+RPC is not drawn. The chamber layout is a z > 0 quarter view, so the display is
+folded to |z| and a −z cluster lands on the same picture as a +z one.
+
+```bash
+conda activate mds
+export X509_USER_PROXY=$HOME/private/.proxy
+python scripts/event_display.py -c configs/configs_mds -d suep_mDark2_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
+```
+
+Figures land in `/groups/hephy/cms/ang.li/suep_plots/event_display/` as
+`evd_<dataset>_<file>_ev<entry>.png`. Useful flags: `--zoom` crops to the
+clustered hits (a shower is a few tens of cm across, the full view is mostly
+empty), `--with-etaphi` adds the η–φ panel the clustering actually runs in,
+`--matched-only` / `--min-size` pick interesting events, `--systems csc`
+restricts to one system, and `-f <file.root> --entries 3 7` draws specific
+entries of a specific file. It
+works on background/data too (`-d dy_2mu_50to120`, `-d zerobias_2024C`); those
+have no truth branches, so every cluster is labelled "unmatched".
+
+---
+
+### Gen-level rechit spread of one LLP
+
+These plots live only in `configs/configs_mds_gen/`, a trimmed, self-contained config —
+LLP gen kinematics, per-LLP matched-rechit counts, the ΔR plots below, and 2D
+maps of CSC nHits and ΔR₉₀ against |η| / pT / energy / boost (sections `4d`–`4f`;
+their `profile_x` curves are in `derived_plots.yaml`), and nothing else (68
+histograms against 237, signal samples only, since the background has no
+`SUEPGenPart`). It touches no cluster collection, so its
+[`columns.yaml`](configs/configs_mds_gen/columns.yaml) enables only the
+`llp`/`llp_hits`/`llp_shape` steps and skips DBSCAN (~35 % of `derive()`).
+`events.<sys>Cluster` and `llp.reco*` are then deliberately *not* attached, so a
+config that needs them fails at expression validation instead of quietly
+filling empty histograms. `configs/configs_mds/` + `configs/configs_mds_signal/` keep the full
+reconstruction study (clusters, efficiencies) and do not repeat these
+rechit-spread plots.
+
+The `4d`/`4e` maps show that the CSC is an endcap: both the hit count and ΔR₉₀
+turn on at |η| ≈ 1, plateau across the endcap, and fall off past |η| ≈ 2.4, in
+lockstep — so |η| drives both axes of `llp_dr90_vs_nhits_csc`. At fixed nHits,
+ΔR₉₀ is larger at high |η| (the η-φ metric stretches toward the beamline). nHits
+saturates with LLP energy (~40 hits) while ΔR₉₀ peaks near 20 GeV and then
+declines, the high-energy compact-shower regime behind the turnover in the
+nHits map.
+
+The `4f` maps add the boost. The gen `llp.openingAngle` (3D angle between the
+two decay daughters) falls as a clean 1/βγ curve — a more boosted LLP decays
+into a tighter pair. But ΔR₉₀ vs opening angle is **non-monotonic**: it peaks
+near 0.3 rad and falls off on both sides. Toward small angle (high boost) the
+two daughter showers merge and ΔR₉₀ drops to the single-shower floor (~0.08 at
+these |η|) — the boost/collimation effect. Toward wide angle (low boost) ΔR₉₀
+also drops, because the rechits are then dominated by a single daughter (the
+other leaves the CSC acceptance or too few hits). The controlled
+`llp_dr90_vs_betagamma_ctrl` (fixed 1.6<|η|<2.2, nHits<25) isolates the boost
+side: past the βγ≈5 peak, ΔR₉₀ falls with boost as expected. So a raw
+`dR₉₀ vs βγ` profile is confounded (|η| and nHits both rise with βγ); the
+collimation shows only once those are pinned.
+
+These answer "how wide is the rechit shower of a single LLP", from truth only
+(`cscRechits_llpIdx` etc.), with no clustering involved. Per LLP, over the
+rechits carrying its `llpIdx`:
+
+| plot | field | meaning |
+| --- | --- | --- |
+| `llp_nhits_<sys>` | `nHits<SYS>` | matched rechits per LLP |
+| `llp_drpair_min/max_<sys>` | `drPairMin/Max<SYS>` | smallest / largest ΔR between two of its rechits |
+| `llp_dr{50,80,90}_<sys>`, `llp_drmax_<sys>` | `dr50/dr80/dr90/drMax<SYS>` | radius around the rechit centroid holding 50/80/90/100 % of them |
+| `<sys>_rechit_dr_llp` | `<coll>.drLLP` | hit-weighted: every matched rechit's ΔR to its LLP's centroid |
+
+`<sys>` is `csc`, `dt`, `rpc` or `total` (the three pooled). The `_hits10`
+variants keep only LLPs with ≥10 matched rechits — the number a DBSCAN cluster
+needs to be truth-matched, and the regime where a cone size is meaningful.
+LLPs with <2 matched rechits have no ΔR and drop out of the fill.
+
+Results on `suep_temp1` (500k events, median over LLPs with the [16 %, 84 %]
+band; DBSCAN currently runs with eps = 0.2). `suep_temp2` agrees to within
+≈0.01 everywhere, so the numbers barely depend on the SUEP temperature:
+
+| system | ΔR(50 %) | ΔR(80 %) | ΔR(90 %) |
+| --- | --- | --- | --- |
+| CSC | 0.031 [0.006, 0.105] | 0.042 [0.007, 0.151] | 0.048 [0.008, 0.185] |
+| CSC, ≥10 hits | 0.048 [0.017, 0.127] | 0.067 [0.023, 0.185] | 0.077 [0.025, 0.229] |
+| DT | 0.074 [0.023, 0.124] | 0.113 [0.032, 0.189] | 0.129 [0.038, 0.222] |
+| RPC | 0.053 [0.024, 0.125] | 0.067 [0.027, 0.165] | 0.072 [0.027, 0.188] |
+
+Hit-weighted (pooling all matched rechits instead of averaging over LLPs) the
+containment radii are 0.053 / 0.134 / 0.205 for CSC and 0.088 / 0.163 / 0.226
+for DT at 50 / 80 / 90 %. The closest pair of rechits of one LLP sits at
+ΔR ≈ 1e-3 (CSC/DT strip granularity) and the farthest at ΔR ≈ 0.1 (CSC) to
+0.22 (DT).
+
+---
+
 ## Helper scripts
+
+Two of these are about the framework rather than the physics:
+
+- **`bash scripts/smoke_test.sh [outdir]`** — processes one signal file through
+  [`configs/configs_smoke/`](configs/configs_smoke/) (one histogram, no truth,
+  no isolation) and plots it. Run it after changing anything in `src/` or
+  `custom/`: it exercises run → pickle → plot in about a minute instead of the
+  several a real config set takes. It is not a physics check.
+- **`python scripts/dump_config.py <config set>...`** — prints a config set's
+  *fully expanded* definitions (after `_extends` / `_repeat` / `_include` /
+  `_registry`) as canonical YAML. Dump before a change to the config layer and
+  `diff` after: an empty diff proves the expansion is unchanged without
+  reprocessing a single ROOT file.
+
 
 Standalone tools under `scripts/`. They read the same pickles `suep-plot` reads
 and reuse its styling helpers (`compare_style.py`), so figures come out with the
@@ -1006,14 +883,14 @@ python scripts/compare_eps.py output_mds_dr02 output_mds_dr04 compare_dr02_vs_dr
 ```
 
 **Signal (truth-matched) clusters vs background clusters** — the signal's
-`<var>_matched` histograms come from a `configs/configs_mds_grid` run, the background's
+`<var>_matched` histograms come from a `configs/configs_mds_signal` run, the background's
 inclusive `<var>` from a `configs/configs_mds` run; both configs define the inclusive
 histograms identically, so the axes match and nothing needs refilling. Also
 writes `separation.txt` (total-variation distance per variable):
 
 ```bash
 python scripts/compare_sig_bkg.py output_mds_grid output_mds_data sigbkg_dir \
-    --suffix _matched -c configs/configs_mds_grid
+    --suffix _matched -c configs/configs_mds_signal
 ```
 
 **Event display** — r–z picture of every CSC/DT rechit, coloured by DBSCAN
@@ -1032,7 +909,7 @@ Useful flags: `--zoom` (crop to the clustered hits), `--with-etaphi` (add the
 interesting events), `--systems csc`, and `-f <file.root> --entries 3 7` for
 specific entries. It works on background/data too — those have no truth
 branches, so every cluster is labelled "unmatched". See
-[README_mds.md](README_mds.md#event-display-rz-rechit-picture-of-the-clusters)
+[the MDS study section below](#event-display-rz-rechit-picture-of-the-clusters)
 for what the markers mean.
 
 `studies/` holds written-up one-off analyses (each with its own README and
@@ -1102,6 +979,43 @@ release) provides the symbol, and it changes nothing in the shared environment.
 
 ---
 
+## Environment knobs
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `X509_USER_PROXY` | — | Grid proxy for xrootd reads (see [Setup](#2-grid-proxy-for-xrootd-inputs)). |
+| `CORRECTIONLIB_DATA` | — | Searched first for `auto:` correction payloads, before cvmfs jsonpog-integration. |
+| `MPLBACKEND` | set to `Agg` | Forced headless by the CLI unless you override it. |
+
+Nothing about `derive()` is settable from the environment: the derived-column
+settings live in the config set, so a run is reproducible from its config
+directory alone and nothing has to be exported before `suep-run` or
+`suep-submit`. (The `MDS_CLUSTER_MIN_SAMPLES` / `MDS_CLUSTER_EPS` /
+`MDS_SKIP_CLUSTERING` / `MDS_LLPIDX_CONVENTION` variables older runs used are
+gone — put the values in `columns.yaml`. Output directories filled before the
+switch used the defaults above unless their command line says otherwise.)
+Because a rerun re-reads the config, `suep-status --resubmit` warns if
+`columns.yaml` was edited after the run was submitted.
+
+A variation on an existing config set is an `_extends` plus the one line that
+differs — never a copy, which drifts the moment someone adds a plot to one of
+the two:
+
+```bash
+mkdir -p configs/configs_mds_minpts50
+for f in samples histograms selections corrections reweights derived_plots; do
+    printf '_extends: ../configs_mds\n' > "configs/configs_mds_minpts50/$f.yaml"
+done
+cat > configs/configs_mds_minpts50/columns.yaml <<'EOF'
+_extends: ../configs_mds
+parameters:
+  cluster_min_samples: 50
+EOF
+suep-run -c configs/configs_mds_minpts50 -o output_mds_minpts50 --chunk-size 10000
+```
+
+---
+
 ## Recipes
 
 **Add a histogram** — append to `histograms.yaml`:
@@ -1123,7 +1037,7 @@ muon_dxy:
   per_object: true
 ```
 
-**Add a sample** — append to `samples.yaml` (see [samples.yaml](#samplesyaml)).
+**Add a sample** — append to `samples.yaml` (see [samples.yaml](docs/configuration.md#samplesyaml)).
 
 **Add a selection** — append to `selections.yaml`:
 
@@ -1142,7 +1056,7 @@ large_csc_cluster:
 product into the weight.
 
 **Reweight events or objects for a study** — see
-[reweights.yaml](#reweightsyaml): expression- or map-based, event- or
+[reweights.yaml](docs/configuration.md#reweightsyaml): expression- or map-based, event- or
 object-level, with `suep-reweight` to derive data/MC maps from processed
 histograms.
 
@@ -1272,7 +1186,7 @@ hundreds.  Local directories work the same way.  Listing happens each time
 | Warning listing expressions that failed the check | Typo or missing branch. The processor validates every expression once on a small slice with `derive()` applied — fix the expression, or the histogram fills empty. |
 | `ERROR: configs is not a config set` | `-c` must name one set, e.g. `configs/configs_mds`; `configs/` only holds them. The message lists the available sets. |
 | `configs/configs_mds_gen` fails at validation on `events.<sys>Cluster` | Expected: its `columns.yaml` omits the `clusters` step, so the cluster collections are deliberately absent. Use a config set that doesn't reference them, or add the step. |
-| `ERROR in columns.yaml: ...` | Unknown key/parameter/step, or a step whose dependency is not enabled — see the table in [Derived-column settings](#derived-column-settings-columnsyaml). Fatal by design: a typo here would mean silently different histograms. |
+| `ERROR in columns.yaml: ...` | Unknown key/parameter/step, or a step whose dependency is not enabled — see the table in [docs/derived-columns.md](docs/derived-columns.md#steps). Fatal by design: a typo here would mean silently different histograms. |
 | Merged output looks inconsistent | Shards filled with different derived-column settings. Keep the knobs in the config set's `columns.yaml` (not in `$MDS_*`) and one output directory per (config set × clustering). |
 | Plots have no labels / wrong colors | `suep-plot` was called without `-c <config set>`, so styling fell back to defaults. |
 | Empty or truncated pickles after a Slurm run | `suep-status -o <dir>` finds them; `--resubmit` reruns exactly those tasks. |

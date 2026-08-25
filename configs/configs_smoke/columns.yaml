@@ -1,0 +1,5 @@
+# The cheap end of derive(): one cluster collection, no truth, no isolation.
+# 'clusters' is ~35% of derive() on its own but it is what the smoke test is
+# for -- it is the step that a config or clustering change actually moves.
+_extends: ../configs_mds
+steps: [clusters]

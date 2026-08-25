@@ -24,6 +24,30 @@ def _parse_formats(spec: str) -> tuple[str, ...]:
     return formats or ("png", "pdf")
 
 
+def _parse_file_range(spec: str | None) -> tuple[int, int] | None:
+    if not spec:
+        return None
+    try:
+        start, end = spec.split(":")
+        return int(start), int(end)
+    except ValueError:
+        raise SystemExit(f"ERROR: --file-range must be START:END, got '{spec}'")
+
+
+def _read_file_list(path: str | None, samples: list[str] | None) -> list[str] | None:
+    """The frozen file list of one shard (see ``suep-submit --files-per-job``)."""
+    if not path:
+        return None
+    if not samples or len(samples) != 1:
+        raise SystemExit("ERROR: --file-list replaces one sample's 'files:', so it "
+                         "needs exactly one -s/--samples")
+    with open(path) as f:
+        files = [line.strip() for line in f if line.strip()]
+    if not files:
+        raise SystemExit(f"ERROR: file list '{path}' is empty")
+    return files
+
+
 def _is_config_set(path: str) -> bool:
     """A config set is a directory holding the YAML files, not a parent of them.
 
@@ -56,6 +80,16 @@ def run(argv=None):
     parser.add_argument("--workers", type=int, default=1, help="Local worker processes (coffea FuturesExecutor); 1 = iterative")
     parser.add_argument("-f", "--force", action="store_true",
                         help="Reprocess even when the output pickle is newer than configs and inputs")
+    parser.add_argument("--file-list", default=None, metavar="PATH",
+                        help="Process exactly the files listed in PATH (one per line) "
+                             "instead of resolving the sample's 'files:'; needs a "
+                             "single --samples")
+    parser.add_argument("--file-range", default=None, metavar="START:END",
+                        help="Process only files [START, END) of the sample's "
+                             "resolved file list")
+    parser.add_argument("--part", default=None, metavar="TAG",
+                        help="Shard tag: write <sample>.part<TAG>.pkl, which "
+                             "suep-plot sums back into one sample")
     parser.add_argument("--plot", action="store_true",
                         help="Plot after processing (writes to <output-dir>/plots)")
     parser.add_argument("--lumi", type=float, default=None, help="(with --plot) luminosity [/fb] for label + MC scaling")
@@ -69,7 +103,9 @@ def run(argv=None):
 
     from .processor import run_all
     run_all(args.config_dir, args.output_dir, args.samples, args.chunk_size,
-            args.workers, force=args.force)
+            args.workers, force=args.force,
+            file_range=_parse_file_range(args.file_range),
+            part=args.part, file_list=_read_file_list(args.file_list, args.samples))
 
     if args.plot:
         os.environ.setdefault("MPLBACKEND", "Agg")

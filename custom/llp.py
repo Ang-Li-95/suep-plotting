@@ -14,7 +14,7 @@ import numpy as np
 from numba import njit
 
 from .params import CSC_RMAX, CSC_ZMAX, CSC_ZMIN, DT_RMAX, DT_RMIN, DT_ZMAX
-from .params import LLP_PDGID, PARAMS, RPC_EC_RMAX, RPC_EC_ZMAX, RPC_EC_ZMIN, STEPS
+from .params import LLP_PDGID, RPC_EC_RMAX, RPC_EC_ZMAX, RPC_EC_ZMIN
 
 
 def _llpidx_is_genpart_index(events):
@@ -120,14 +120,14 @@ def _build_llps(events):
     })
 
 
-def _empty_llps(events, params=None, steps=None):
+def _empty_llps(events, settings):
     """Zero-length llp collection (background samples without SUEPGenPart).
 
     Same fields as the real collection — for the enabled steps only, so the
     presence of a field means the same thing on signal and background.
     """
-    p = PARAMS if params is None else params
-    enabled = STEPS if steps is None else steps
+    p = settings
+    enabled = settings.steps
     counts = np.zeros(len(events), dtype=np.int64)
 
     def empty(dtype):
@@ -151,21 +151,21 @@ def _empty_llps(events, params=None, steps=None):
         boo += ["reco" + sys for sys in systems] + ["reco"]
     if "llp_shape" in enabled:
         f64 += [f + sys for sys in ("CSC", "DT", "RPC", "Total")
-                for f in _dr_field_names(p)]
+                for f in _dr_field_names(settings)]
     fields = {f: empty(np.float64) for f in f64}
     fields.update({f: empty(np.int64) for f in i64})
     fields.update({f: empty(np.bool_) for f in boo})
     return ak.zip(fields)
 
 
-def _dr_field_names(params=None):
+def _dr_field_names(settings):
     """Names of the per-LLP rechit-spread fields (without the system suffix)."""
-    p = PARAMS if params is None else params
+    p = settings
     return ("drPairMin", "drPairMax", "drMax") + tuple(
         f"dr{int(round(q * 100))}" for q in p["dr_quantiles"])
 
 
-def _llp_rechit_dr(events, coll_names, keys, hit_dr=None, params=None):
+def _llp_rechit_dr(events, coll_names, keys, settings, hit_dr=None):
     """Eta-phi spread of the rechits truth-matched to each LLP.
 
     Pools the rechit collections named in ``coll_names`` (one system, or all
@@ -197,7 +197,7 @@ def _llp_rechit_dr(events, coll_names, keys, hit_dr=None, params=None):
     pair_min = np.full(n_llp, np.nan)
     pair_max = np.full(n_llp, np.nan)
     dr_max = np.full(n_llp, np.nan)
-    quantiles = (PARAMS if params is None else params)["dr_quantiles"]
+    quantiles = settings["dr_quantiles"]
     dr_q = np.full((len(quantiles), n_llp), np.nan)
 
     def result():
@@ -240,7 +240,7 @@ def _llp_rechit_dr(events, coll_names, keys, hit_dr=None, params=None):
                pair_min, pair_max, dr_max, dr_q,
                hit_dr if hit_dr is not None else np.empty(0),
                hit_dr is not None,
-               int((PARAMS if params is None else params)["pair_max_hits"]))
+               int(settings["pair_max_hits"]))
     return result()
 
 
@@ -253,8 +253,9 @@ def _dr_kernel(ev_off, hit_eta, hit_phi, hit_idx, hit_src, keys_flat, llp_off,
     Every array is flat and preallocated by the caller; the five output arrays
     are written in place.  ``ev_off`` slices the matched-hit arrays per event,
     ``llp_off`` slices ``keys_flat`` and the output rows per event.
-    ``pair_max_hits`` is passed in rather than read from :data:`PARAMS`, which
-    numba would freeze into the cached machine code at first compile.
+    ``pair_max_hits`` is passed in as an argument, which it must be: numba
+    would freeze a module-level constant into the cached machine code at the
+    first compile.
 
     Compiled because the groups are tiny (~3 rechits per LLP): in numpy this
     loop was ~17x slower, spending almost all of it on per-call dispatch rather

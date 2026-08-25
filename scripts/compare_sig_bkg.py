@@ -1,7 +1,7 @@
 """Overlay gen-matched signal clusters against all background clusters.
 
 The two populations live in different output directories: the signal's
-``<var>_matched`` histograms come from a configs/configs_mds_grid run (truth needed),
+``<var>_matched`` histograms come from a configs/configs_mds_signal run (truth needed),
 the background's inclusive ``<var>`` from a configs/configs_mds run (the background has
 no truth branches, so *all* its clusters are the fake/pile-up reference).
 Because both configs define the inclusive histograms identically, the axes
@@ -24,7 +24,6 @@ import argparse
 import os
 import sys
 
-import matplotlib.pyplot as plt
 import mplhep as hep
 import numpy as np
 
@@ -147,7 +146,7 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag
     on the variable: a DY-derived cut can be an artifact of DY's dimuon
     selection while the same variable separates cleanly from minimum bias.
     """
-    fig, ax = plt.subplots(figsize=style.FIGSIZE)
+    fig, ax, _rax = style.figure()
     colors = style.palette()
 
     def is_data(sample):
@@ -206,7 +205,7 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("sig_out", help="output dir of the configs/configs_mds_grid run")
+    p.add_argument("sig_out", help="output dir of the configs/configs_mds_signal run")
     p.add_argument("bkg_out", help="output dir of the configs/configs_mds run")
     p.add_argument("dest", help="directory for the comparison figures")
     p.add_argument("--suffix", default="_matched",
@@ -254,7 +253,7 @@ def main():
             f"no signal histogram ends with '{args.suffix}' in {args.sig_out} "
             f"({len(sig_keys)} histograms found).\n"
             "That run's config defines no gen-matched histograms -- either process it "
-            "with a config that does (e.g. configs/configs_mds_grid), or pass --suffix '' to "
+            "with a config that does (e.g. configs/configs_mds_signal), or pass --suffix '' to "
             "compare the inclusive signal histograms with the background ones.")
 
     bkg_tag = bkg_label(args.bkg_suffix)

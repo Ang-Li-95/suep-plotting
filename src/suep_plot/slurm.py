@@ -160,10 +160,10 @@ export PYTHONPATH="{repo_root}/src:$PYTHONPATH"
 # would fail with "Operation not permitted".
 export X509_USER_PROXY="${{X509_USER_PROXY:-{proxy_path}}}"
 
-python -m suep_plot.cli_worker \\
+python -m suep_plot.cli run \\
     --config-dir "{config_dir}" \\
     --output-dir "{output_dir}" \\
-    --sample "$SAMPLE" \\
+    --samples "$SAMPLE" \\
     --chunk-size {chunk_size} \\
     --workers {max(workers, 1)} \\
     --force \\

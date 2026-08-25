@@ -162,13 +162,17 @@ def test_isolation_cuts_are_identical_in_the_grid_and_data_configs():
     """The two studies are meant to be overlaid, so the cuts must not drift."""
     from pathlib import Path
 
+    from suep_plot.histograms import load_selection_defs
+
     repo = Path(__file__).resolve().parent.parent
     sels = {}
-    for cfg in ("configs_mds_grid", "configs_mds_data"):
-        text = (repo / "configs" / cfg / "selections.yaml").read_text()
-        sels[cfg] = {k: v for k, v in yaml.safe_load(text).items() if "_iso_" in k}
+    for cfg in ("configs_mds_signal", "configs_mds_data"):
+        # Through the loader, so a set that writes its cuts once under _repeat
+        # is compared on the selections it actually produces.
+        defs = load_selection_defs(repo / "configs" / cfg / "selections.yaml")
+        sels[cfg] = {k: v for k, v in defs.items() if "_iso_" in k}
 
-    grid, data = sels["configs_mds_grid"], sels["configs_mds_data"]
+    grid, data = sels["configs_mds_signal"], sels["configs_mds_data"]
     assert set(grid) == set(data) and len(grid) == 6, sorted(set(grid) ^ set(data))
     for name in grid:
         assert grid[name] == data[name], f"{name} differs between the two configs"

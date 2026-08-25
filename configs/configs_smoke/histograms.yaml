@@ -1,0 +1,8 @@
+# One histogram: enough to prove the whole chain runs and fills.
+csc_cluster_size:
+  expression: "events.cscCluster.size"
+  per_object: true
+  bins: 50
+  lo: 0
+  hi: 500
+  label: 'CSC cluster $N_{\mathrm{hits}}$'

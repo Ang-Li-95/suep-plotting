@@ -10,7 +10,6 @@ the same CMS style, labels, and png+pdf output as ``suep-plot``.
 import os
 import sys
 
-import matplotlib.pyplot as plt
 import mplhep as hep
 import numpy as np
 
@@ -29,9 +28,7 @@ def compare(h_a, h_b, sample, sample_defs, name, hist_cfg, label_a, label_b, des
     if norm_a is None or norm_b is None:
         return False
 
-    fig, (ax, rax) = plt.subplots(
-        2, 1, figsize=style.FIGSIZE_RATIO, sharex=True,
-        gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06})
+    fig, ax, rax = style.figure(ratio=True)
 
     colors = style.palette()
     for sh, label, n, color in ((norm_a, label_a, na, colors[0]),

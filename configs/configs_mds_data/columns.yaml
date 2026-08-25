@@ -2,7 +2,7 @@
 # and the README's "Derived-column settings" section).
 #
 # The clustering and isolation numbers are pinned to exactly the values in
-# configs_mds_grid/columns.yaml -- the two runs are overlaid, so a cluster here
+# configs_mds_signal/columns.yaml -- the two runs are overlaid, so a cluster here
 # and a cluster there must have been built and isolated the same way.  Leaving
 # either set on the module defaults would make that agreement accidental.
 parameters:

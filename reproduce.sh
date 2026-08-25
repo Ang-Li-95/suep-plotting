@@ -1,6 +1,6 @@
 #!/bin/bash
 # Reproduce the MDS LLP cluster-study plots locally (both min-cluster-size folders).
-# For the Slurm path and full notes see README_mds.md.
+# For the Slurm path and full notes see README.md.
 #
 #   bash reproduce.sh
 #
@@ -24,16 +24,23 @@ suep-run  -c configs/configs_mds -o output_mds_min10 --chunk-size 10000 --worker
 suep-plot output_mds_min10 -o output_mds_min10/plots -c configs/configs_mds -j 8
 
 # ── variant: DBSCAN min cluster size = 50 (CSC/DT) -> output_mds_min50/
-# Its own config directory: one line of columns.yaml differs, so the two runs
-# stay reproducible without anything having to be exported.
-rm -rf configs/configs_mds_min50 && cp -r configs/configs_mds configs/configs_mds_min50
-sed -i 's/cluster_min_samples: 10/cluster_min_samples: 50/' configs/configs_mds_min50/columns.yaml
+# Its own config directory, but only the one line that differs: _extends pulls
+# the rest from configs_mds, so the two runs cannot drift apart.
+mkdir -p configs/configs_mds_min50
+for f in samples histograms selections corrections reweights derived_plots; do
+    printf '_extends: ../configs_mds\n' > "configs/configs_mds_min50/$f.yaml"
+done
+cat > configs/configs_mds_min50/columns.yaml <<'EOF'
+_extends: ../configs_mds
+parameters:
+  cluster_min_samples: 50
+EOF
 suep-run  -c configs/configs_mds_min50 -o output_mds_min50 --chunk-size 10000 --workers 8
 suep-plot output_mds_min50 -o output_mds_min50/plots -c configs/configs_mds_min50 -j 8
 
 # ── truth-level plots over the (mDark, T) grid: LLPs, matched clusters, effs ──
-suep-run  -c configs/configs_mds_grid -o output_mds_grid --chunk-size 10000 --workers 8
-suep-plot output_mds_grid -o output_mds_grid/plots -c configs/configs_mds_grid -j 8
+suep-run  -c configs/configs_mds_signal -o output_mds_grid --chunk-size 10000 --workers 8
+suep-plot output_mds_grid -o output_mds_grid/plots -c configs/configs_mds_signal -j 8
 
 echo
 echo "Done. Galleries:"

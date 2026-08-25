@@ -70,7 +70,7 @@ def cluster_labels(eta, phi, eps, min_samples):
                   metric="precomputed").fit_predict(dmat)
 
 
-def read_event(arrays, i, systems):
+def read_event(arrays, i, systems, settings):
     """Flat per-system numpy arrays for one event, with the DBSCAN labels."""
     out = {}
     for sys_ in systems:
@@ -81,13 +81,13 @@ def read_event(arrays, i, systems):
         if f"{coll}_llpIdx" in arrays.fields:
             hits.update({b: ak.to_numpy(arrays[f"{coll}_{b}"][i])
                          for b in TRUTH_BRANCHES})
-        eps, min_samples = columns._dbscan_params(sys_)
+        eps, min_samples = columns._dbscan_params(sys_, settings)
         hits["label"] = cluster_labels(hits["Eta"], hits["Phi"], eps, min_samples)
         out[sys_] = hits
     return out
 
 
-def cluster_summary(hits):
+def cluster_summary(hits, settings):
     """Per-cluster (label, size, matched llpIdx or -1) for one system."""
     summary = []
     for k in range(hits["label"].max() + 1):
@@ -100,7 +100,7 @@ def cluster_summary(hits):
                 uniq, cnt = np.unique(idx, return_counts=True)
                 best, nbest = int(uniq[cnt.argmax()]), int(cnt.max())
         summary.append((k, int(m.sum()),
-                        best if nbest >= columns.PARAMS["match_min_hits"] else -1))
+                        best if nbest >= settings["match_min_hits"] else -1))
     return summary
 
 
@@ -163,7 +163,7 @@ def set_zoom(ax, x, y, floor):
     ax.set_ylim(y.min() - pad, y.max() + pad)
 
 
-def draw_event(event, meta, out_path, zoom=False, with_etaphi=False,
+def draw_event(event, meta, out_path, settings, zoom=False, with_etaphi=False,
                is_data=False):
     ncol = 2 if with_etaphi else 1
     fig, axes = plt.subplots(1, ncol, figsize=(9.0 * ncol, 7.5))
@@ -191,7 +191,7 @@ def draw_event(event, meta, out_path, zoom=False, with_etaphi=False,
             if with_etaphi:
                 axes[1].scatter(hits["Eta"][noise], hits["Phi"][noise], s=4,
                                 c="0.8", marker=".", linewidths=0, zorder=1)
-        for k, size, llp in cluster_summary(hits):
+        for k, size, llp in cluster_summary(hits, settings):
             m = hits["label"] == k
             color = colors[icolor % len(colors)]
             icolor += 1
@@ -288,14 +288,12 @@ def main():
     args = p.parse_args()
 
     # Cluster exactly like the histograms of that config set were filled.
-    # Unconditional: custom/columns.py installs nothing at import time, so the
-    # no-config-dir run is what puts the defaults in place.
-    columns.configure(
+    settings = columns.configure(
         load_columns_config(Path(args.config_dir) / "columns.yaml")
         if args.config_dir else None)
-    eps, min_samples = columns._dbscan_params("csc")
+    eps, min_samples = columns._dbscan_params("csc", settings)
     print(f"DBSCAN: eps={eps}, min_samples={min_samples} (CSC/DT), "
-          f"match_min_hits={columns.PARAMS['match_min_hits']}")
+          f"match_min_hits={settings['match_min_hits']}")
 
     systems = [s.strip() for s in args.systems.split(",") if s.strip()]
     unknown = set(systems) - set(SYSTEMS)
@@ -334,8 +332,9 @@ def main():
         for i in entries:
             if ndrawn >= args.nevents:
                 break
-            event = read_event(arrays, i, systems)
-            summaries = {s: cluster_summary(h) for s, h in event.items()}
+            event = read_event(arrays, i, systems, settings)
+            summaries = {s: cluster_summary(h, settings)
+                         for s, h in event.items()}
             clusters = [c for cs in summaries.values() for c in cs]
             if args.entries is None:
                 if not clusters:
@@ -348,7 +347,7 @@ def main():
             meta = (f"{tag} — {Path(path).name}, entry {i}\n"
                     f"{nhit} rechits, {len(clusters)} clusters")
             out_path = outdir / f"evd_{tag}_{Path(path).stem}_ev{i}.png"
-            draw_event(event, meta, out_path, zoom=args.zoom,
+            draw_event(event, meta, out_path, settings, zoom=args.zoom,
                        with_etaphi=args.with_etaphi, is_data=is_data)
             print(f"{out_path}  ({nhit} hits, "
                   + ", ".join(f"{SYSTEMS[s]['label']}:{len(cs)}"

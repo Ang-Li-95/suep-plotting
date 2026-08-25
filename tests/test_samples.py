@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from suep_plot.config import ConfigError
 from suep_plot.processor import _resolve_files, load_samples
 
 
@@ -37,7 +38,7 @@ def test_explicit_files_and_globs_still_work(tmp_path):
 def test_registry_entry_used_verbatim(tmp_path):
     _write(tmp_path / "datasets.yaml",
            {"sig": {"files": ["/data/sig"], "xs": 2.0, "color": "tab:blue"}})
-    path = _write(tmp_path / "samples.yaml", {"_include": "datasets.yaml", "sig": None})
+    path = _write(tmp_path / "samples.yaml", {"_registry": "datasets.yaml", "sig": None})
 
     assert load_samples(path) == {
         "sig": {"files": ["/data/sig"], "xs": 2.0, "color": "tab:blue"}}
@@ -47,7 +48,7 @@ def test_registry_entry_with_overrides_and_alias(tmp_path):
     _write(tmp_path / "datasets.yaml",
            {"sig": {"files": ["/data/sig"], "xs": 2.0, "color": "tab:blue"}})
     path = _write(tmp_path / "samples.yaml", {
-        "_include": "datasets.yaml",
+        "_registry": "datasets.yaml",
         "sig": {"color": "black"},
         "sig_copy": {"_from": "sig", "label": "same data, other name"},
     })
@@ -68,16 +69,16 @@ def test_standalone_definition_needs_no_registry(tmp_path):
 
 def test_unknown_registry_entry_raises(tmp_path):
     _write(tmp_path / "datasets.yaml", {"sig": {"files": ["/data/sig"]}})
-    path = _write(tmp_path / "samples.yaml", {"_include": "datasets.yaml", "typo": None})
+    path = _write(tmp_path / "samples.yaml", {"_registry": "datasets.yaml", "typo": None})
 
-    with pytest.raises(KeyError, match="typo"):
+    with pytest.raises(ConfigError, match="typo"):
         load_samples(path)
 
 
-def test_missing_include_raises(tmp_path):
-    path = _write(tmp_path / "samples.yaml", {"_include": "nope.yaml", "sig": None})
+def test_missing_registry_raises(tmp_path):
+    path = _write(tmp_path / "samples.yaml", {"_registry": "nope.yaml", "sig": None})
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ConfigError, match="nope.yaml"):
         load_samples(path)
 
 

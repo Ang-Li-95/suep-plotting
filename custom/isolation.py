@@ -15,7 +15,6 @@ import functools
 import awkward as ak
 import numpy as np
 
-from .params import PARAMS
 
 
 # drMuon / drJet in events with no reconstructed muon / jet at all.  Such a
@@ -46,7 +45,7 @@ def _dr_to_nearest(clusters, objects):
 _SAFE_BUILTINS = {"abs": abs, "len": len, "min": min, "max": max}
 
 
-def _selected_objects(events, selection, params=None):
+def _selected_objects(events, selection, settings):
     """Objects passing *selection*, or None when the collection is absent.
 
     *selection* is ``{"collection": <NanoAOD collection>, "expression": <per-object
@@ -54,7 +53,7 @@ def _selected_objects(events, selection, params=None):
     ``obj`` (the collection), ``events``/``ev``, ``ak``, ``np``, the safe builtins
     and ``jet_id``; nothing about any particular object type is hard-coded here.
     """
-    era = (PARAMS if params is None else params)["jerc_era"]
+    era = settings["jerc_era"]
     collection = selection["collection"]
     if collection not in events.fields:
         return None

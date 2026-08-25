@@ -1,11 +1,13 @@
-# Datasets come from the central registry; see ../../datasets.yaml.
+# configs_mds_rpcmatch_data/samples.yaml -- rpc_mode: match.
 #
-# Same fills as configs_mds/, with ZeroBias data added: the reco-only cluster
-# histograms of this study need no truth branches, so data fills them exactly
-# like the MC (clusters are unmatched, hasTruth False).
-_include: ../../datasets.yaml
+# The DBSCAN is exactly the rpc_mode: separate one for CSC and DT, and the RPC
+# rechits are associated to the finished clusters afterwards -- so they can date
+# a cluster without being able to create one, and every cluster variable is
+# bit-identical to the reference run.  The per-LLP hit denominators therefore
+# stay the reference ones.
+#
+# Everything not named below is inherited from ../configs_mds_data, so the two
+# studies stay comparable plot for plot by construction.  A 'name:' with no
+# value deletes an inherited definition; see src/suep_plot/config.py.
 
-suep_mDark2_temp1:
-suep_mDark2_temp2:
-dy_2mu_50to120:
-zerobias_2024C:
+_extends: ../configs_mds_data

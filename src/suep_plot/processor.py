@@ -28,6 +28,7 @@ from coffea import processor
 from coffea.analysis_tools import Weights
 from coffea.nanoevents import NanoAODSchema
 
+from .config import load_config_file
 from .corrections import apply_corrections, build_correctors, load_correction_defs
 from .histograms import (
     _compile_expr,
@@ -46,46 +47,10 @@ NanoAODSchema.warn_missing_crossrefs = False
 def load_samples(path: str) -> dict:
     """Read a config's ``samples.yaml`` -> {name: cfg}.
 
-    A samples.yaml may pull definitions from one or more shared dataset
-    registries listed under the reserved ``_include`` key (paths relative to
-    the samples.yaml).  Each entry is then either
-
-    * ``name:`` (empty) — take the registry entry verbatim;
-    * ``name: {…}`` — registry entry with these keys overridden;
-    * ``name: {_from: other, …}`` — as above but based on registry entry
-      ``other``, so one dataset can appear under several config names;
-    * a full standalone definition, as before, needing no registry at all.
+    Definitions normally come from the shared registry named by ``_registry:``;
+    see :mod:`suep_plot.config` for that and the other config directives.
     """
-    path = Path(path)
-    with open(path) as f:
-        raw = yaml.safe_load(f) or {}
-
-    includes = raw.pop("_include", [])
-    if isinstance(includes, str):
-        includes = [includes]
-    registry: dict = {}
-    for inc in includes:
-        inc_path = Path(inc) if Path(inc).is_absolute() else path.parent / inc
-        if not inc_path.exists():
-            raise FileNotFoundError(f"{path}: _include file not found: {inc_path}")
-        with open(inc_path) as f:
-            registry.update(yaml.safe_load(f) or {})
-
-    samples = {}
-    for name, cfg in raw.items():
-        cfg = dict(cfg or {})
-        base_name = cfg.pop("_from", name)
-        base = registry.get(base_name)
-        if base is None:
-            if not cfg.get("files"):
-                known = ", ".join(sorted(registry)) or "(no _include)"
-                raise KeyError(
-                    f"{path}: sample '{name}' has no 'files' and no registry "
-                    f"entry '{base_name}'. Available: {known}")
-            samples[name] = cfg
-        else:
-            samples[name] = {**base, **cfg}
-    return samples
+    return load_config_file(path)
 
 
 def _split_xrootd_url(url: str) -> tuple[str, str]:
@@ -162,25 +127,21 @@ def load_columns_config(path: str) -> dict:
     custom-columns module's business (``parameters`` / ``steps`` for the MDS
     module); it is only forwarded here.
     """
-    path = Path(path)
-    if not path.exists():
-        return {}
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    return load_config_file(path)
 
 
 def _load_custom_columns(columns_cfg: dict | None = None):
-    """Import custom/columns.py if present -> (derive_fn or None).
+    """Import custom/columns.py if present -> (derive_fn, settings) or (None, None).
 
-    When the module exposes ``configure()``, it is called with the config
-    directory's ``columns.yaml`` before any chunk is processed, so per-config
-    parameters and enabled steps take effect.  A bad columns.yaml is fatal: it
-    changes what the derived columns *mean*, so it must not degrade to a
-    warning and silently different histograms.
+    The settings are resolved here, once, and handed to the processor -- which
+    passes them to ``derive()`` and pickles them to its workers, so a worker
+    cannot end up running on settings its parent never chose.  A bad
+    columns.yaml is fatal: it changes what the derived columns *mean*, so it
+    must not degrade to a warning and silently different histograms.
     """
     repo_root = Path(__file__).resolve().parent.parent.parent
     if not (repo_root / "custom" / "columns.py").exists():
-        return None
+        return None, None
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     try:
@@ -188,8 +149,9 @@ def _load_custom_columns(columns_cfg: dict | None = None):
         # columns.py imports its helpers from sibling modules, so reload the
         # whole package: reloading columns.py alone would re-bind its names to
         # the already-cached submodules and an edit there would be ignored.
-        # In dependency order -- params.py owns the settings objects the other
-        # modules import, so it goes first and columns.py last.
+        # (This is for a live notebook kernel; a fresh suep-run imports once.)
+        # In dependency order -- params.py owns the schema the other modules
+        # import, so it goes first and columns.py last.
         helpers = sorted(n for n in sys.modules if n.startswith("custom.")
                          and n not in ("custom.columns", "custom.params"))
         for name in ["custom.params", *helpers]:
@@ -198,66 +160,39 @@ def _load_custom_columns(columns_cfg: dict | None = None):
         importlib.reload(mod)
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: could not load custom/columns.py: {e}")
-        return None
+        return None, None
+
     derive_fn = getattr(mod, "derive", None)
+    configure = getattr(mod, "configure", None)
+    if configure is None:
+        if columns_cfg:
+            print("WARNING: columns.yaml ignored: custom/columns.py has no configure()")
+        return derive_fn, None
+    try:
+        settings = configure(columns_cfg)
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(f"ERROR in columns.yaml: {e}")
     if derive_fn is not None:
         print("Custom columns: loaded derive()")
-    configure = getattr(mod, "configure", None)
-    if configure is not None:
-        try:
-            params, steps = configure(columns_cfg)
-        except Exception as e:  # noqa: BLE001
-            raise SystemExit(f"ERROR in columns.yaml: {e}")
-        print(f"                steps  {list(steps)}")
-        print(f"                params {dict(params)}")
-    elif columns_cfg:
-        print("WARNING: columns.yaml ignored: custom/columns.py has no configure()")
-    return derive_fn
-
-
-# The columns.yaml settings this process has applied, so the (cheap) call is
-# made once per worker and not once per chunk.
-_columns_cfg_applied = ()
-
-
-def _apply_columns_config(derive_fn, columns_cfg):
-    """Make columns.yaml take effect in *this* process.
-
-    The worker processes of a multi-worker run import custom/columns.py fresh,
-    so the ``configure()`` call the CLI made in the parent never reached them
-    and they silently ran on the module defaults.  That went unnoticed while
-    every config set spelled the defaults out; a config that changes a
-    parameter (``rpc_mode``, a different ``cluster_min_samples``, a shorter
-    ``steps`` list) needs the settings re-applied where derive() actually runs.
-
-    custom/params.py no longer seeds the defaults at import, so a worker that
-    somehow skipped this now raises in derive() instead of quietly filling
-    histograms with the wrong settings -- this call is what keeps that from
-    happening, not what keeps it from being noticed.
-    """
-    global _columns_cfg_applied
-    if columns_cfg == _columns_cfg_applied:
-        return
-    module = sys.modules.get(getattr(derive_fn, "__module__", ""))
-    configure = getattr(module, "configure", None)
-    if configure is not None:
-        configure(columns_cfg)
-    _columns_cfg_applied = columns_cfg
+        print(f"                steps  {list(settings.steps)}")
+        print(f"                params {settings.params}")
+    return derive_fn, settings
 
 
 class SuepProcessor(processor.ProcessorABC):
     """Fill YAML-defined histograms for one sample chunk."""
 
     def __init__(self, hist_defs, sel_defs, correctors, sample_defs, derive_fn=None,
-                 reweighters=None, columns_cfg=None):
+                 reweighters=None, settings=None):
         self.hist_defs = hist_defs
         self.sel_defs = sel_defs
         self.correctors = correctors
         self.sample_defs = sample_defs
         self.derive_fn = derive_fn
         self.reweighters = reweighters or {}
-        # Pickled along to the workers, which re-apply it themselves.
-        self.columns_cfg = columns_cfg or {}
+        # The resolved columns.yaml.  Pickled to the workers along with the
+        # rest of the processor, so a worker cannot run on other settings.
+        self.settings = settings
 
     def process(self, events):
         dataset = events.metadata["dataset"]
@@ -266,8 +201,7 @@ class SuepProcessor(processor.ProcessorABC):
         group = cfg.get("group", "")
 
         if self.derive_fn is not None:
-            _apply_columns_config(self.derive_fn, self.columns_cfg)
-            events = self.derive_fn(events)
+            events = self.derive_fn(events, self.settings)
 
         n = len(events)
         weights = Weights(n, storeIndividual=False)
@@ -323,7 +257,7 @@ class SuepProcessor(processor.ProcessorABC):
 
 
 def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
-                          reweighters=None):
+                          reweighters=None, settings=None):
     """Best-effort check: evaluate each expression on a small slice and warn.
 
     Restores clear feedback for typo'd fields, which otherwise silently produce
@@ -358,7 +292,7 @@ def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn
 
     if derive_fn is not None:
         try:
-            events = derive_fn(events)
+            events = derive_fn(events, settings)
         except Exception as e:  # noqa: BLE001
             print(f"  (custom derive() failed during validation: {e})")
 
@@ -509,10 +443,10 @@ def run_all(
             print("         proceeding without corrections")
 
     columns_cfg = load_columns_config(config_dir / "columns.yaml")
-    derive_fn = _load_custom_columns(columns_cfg)
+    derive_fn, settings = _load_custom_columns(columns_cfg)
 
     proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
-                         reweighters, columns_cfg)
+                         reweighters, settings)
     rw_files = tuple(str(rw.include_path) for rw in reweighters.values()
                      if rw.include_path is not None)
     if workers and workers > 1:
@@ -558,7 +492,7 @@ def run_all(
 
         if not validated:
             _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs,
-                                  derive_fn, reweighters)
+                                  derive_fn, reweighters, settings)
             validated = True
 
         t0 = time.time()

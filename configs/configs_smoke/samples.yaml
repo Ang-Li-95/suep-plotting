@@ -1,0 +1,4 @@
+# One signal point, for the smoke test only.
+_registry: ../../datasets.yaml
+
+suep_mDark2_temp1:

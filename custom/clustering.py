@@ -16,7 +16,6 @@ from __future__ import annotations
 import awkward as ak
 import numpy as np
 
-from .params import PARAMS
 
 # Which detector a merged cluster's hit came from (the ``source`` per-hit array
 # and the per-cluster ``firstSystem`` field).
@@ -350,7 +349,7 @@ def _rpc_time(times, errors, bx):
     return out
 
 
-def _cluster_hits(hits, eps, min_samples, merged=False, params=None):
+def _cluster_hits(hits, eps, min_samples, settings, merged=False):
     """DBSCAN one (possibly merged) flat hit collection -> cluster records.
 
     ``hits`` is a :func:`_flat_hits` dict, or several of them run through
@@ -367,8 +366,8 @@ def _cluster_hits(hits, eps, min_samples, merged=False, params=None):
     """
     from sklearn.cluster import DBSCAN
 
-    p = PARAMS if params is None else params
-    match_min_hits, oot_cut = p["match_min_hits"], p["oot_time_cut"]
+    match_min_hits = settings["match_min_hits"]
+    oot_cut = settings["oot_time_cut"]
     counts = hits["counts"]
     offsets = np.concatenate([[0], np.cumsum(counts)])
     eta, phi = hits["eta"], hits["phi"]
@@ -512,19 +511,13 @@ def _cluster_hits(hits, eps, min_samples, merged=False, params=None):
                    for f, v in out.items()})
 
 
-def _cluster_system(rechits, timefield, eps, min_samples, system="csc",
-                    params=None):
-    """DBSCAN-cluster one rechit system -> jagged record array of clusters.
-
-    *params* are the resolved settings (:data:`PARAMS` when omitted); the
-    pipeline always passes them explicitly, so nothing below derive() reads
-    the module-level settings.
-    """
+def _cluster_system(rechits, timefield, eps, min_samples, settings, system="csc"):
+    """DBSCAN-cluster one rechit system -> jagged record array of clusters."""
     return _cluster_hits(_flat_hits(rechits, timefield, system), eps,
-                         min_samples, params=params)
+                         min_samples, settings)
 
 
-def _cluster_merged(components, eps, min_samples, params=None):
+def _cluster_merged(components, eps, min_samples, settings):
     """DBSCAN-cluster several rechit collections together.
 
     ``components`` is a list of ``(rechits, timefield, system)``; the first
@@ -536,4 +529,4 @@ def _cluster_merged(components, eps, min_samples, params=None):
     """
     hits = _merge_hits([_flat_hits(rechits, timefield, system)
                         for rechits, timefield, system in components])
-    return _cluster_hits(hits, eps, min_samples, merged=True, params=params)
+    return _cluster_hits(hits, eps, min_samples, settings, merged=True)

@@ -1,0 +1,2 @@
+has_csc_cluster:
+  expression: "ak.num(events.cscCluster) >= 1"

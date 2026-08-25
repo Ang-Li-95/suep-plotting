@@ -1,0 +1,13 @@
+# configs_mds_rpcmatch_data/corrections.yaml -- rpc_mode: match.
+#
+# The DBSCAN is exactly the rpc_mode: separate one for CSC and DT, and the RPC
+# rechits are associated to the finished clusters afterwards -- so they can date
+# a cluster without being able to create one, and every cluster variable is
+# bit-identical to the reference run.  The per-LLP hit denominators therefore
+# stay the reference ones.
+#
+# Everything not named below is inherited from ../configs_mds_data, so the two
+# studies stay comparable plot for plot by construction.  A 'name:' with no
+# value deletes an inherited definition; see src/suep_plot/config.py.
+
+_extends: ../configs_mds_data

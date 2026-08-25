@@ -1,5 +1,5 @@
 # Datasets come from the central registry; see ../../datasets.yaml.
-_include: ../../datasets.yaml
+_registry: ../../datasets.yaml
 
 suep_temp2_preG4fix:
 suep_temp2_postG4fix:

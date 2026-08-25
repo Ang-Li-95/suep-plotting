@@ -8,16 +8,16 @@
 # ZeroBias data.
 # Everything truth-dependent — the LLP collection, the truth-matched /
 # unmatched cluster splits, the efficiency chain, the matched fractions and
-# the signal-vs-background overlays — lives in configs_mds_grid/.
+# the signal-vs-background overlays — lives in configs_mds_signal/.
 
 # ── Per-system cluster variant sets ───────────────────────────────
 # Isolation splits applied to every cluster variable below, on top of the
 # inclusive version.  Spelled identically to the iso_* entries of
-# configs_mds_grid/histograms.yaml, so a data plot and its signal counterpart
+# configs_mds_signal/histograms.yaml, so a data plot and its signal counterpart
 # carry the same name and the same cut and can be overlaid directly.
 #
 # Nothing here needs truth, which is what keeps this config set runnable on
-# ZeroBias data; the matched / unmatched splits stay in configs_mds_grid/.
+# ZeroBias data; the matched / unmatched splits stay in configs_mds_signal/.
 _variant_sets:
   csc_variants:
     iso_muon:  {selections: [csc_cluster_iso_muon],  label_prefix: "muon-isolated "}

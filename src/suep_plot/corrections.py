@@ -19,16 +19,15 @@ import os
 
 import awkward as ak
 import numpy as np
-import yaml
 
 # Ensure the scipy/_lazywhere shim is applied before coffea.lookup_tools loads.
 from . import _compat  # noqa: F401
+from .config import load_config_file
 from .histograms import _compile_expr
 
 
 def load_correction_defs(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    return load_config_file(path)
 
 
 def _resolve_file(file_spec: str) -> str:

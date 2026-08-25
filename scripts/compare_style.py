@@ -20,17 +20,20 @@ import mplhep as hep  # noqa: E402
 from suep_plot.plot import (  # noqa: E402
     DEFAULT_FORMATS,
     _cms_label,
+    _figure,
     _is_2d_hist,
     _prep_1d,
     merge_results,
+    palette,
 )
 
 hep.style.use("CMS")
 
-# Figure geometry copied from suep_plot.plot so the two sets of figures can sit
-# side by side in the same talk.
-FIGSIZE = (10, 8)
-FIGSIZE_RATIO = (10, 10)
+# Figure geometry comes from suep_plot.plot itself -- these scripts are meant to
+# sit next to suep-plot's own output in the same talk, so a divergence here is a
+# bug rather than a style choice.  `figure()` is its `_figure`: figure(), or
+# figure(ratio=True) for a main panel with a ratio panel under it.
+figure = _figure
 LEGEND_FONTSIZE = 18
 DPI = 150
 
@@ -42,10 +45,6 @@ def cms_label(ax, lumi=None, has_data=False):
     header drops "Simulation".
     """
     _cms_label(ax, lumi=lumi, has_data=has_data)
-
-
-def palette() -> list[str]:
-    return plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
 
 # ── loading ───────────────────────────────────────────────────────

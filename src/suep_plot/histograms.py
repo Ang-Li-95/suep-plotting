@@ -19,7 +19,8 @@ import functools
 import awkward as ak
 import hist
 import numpy as np
-import yaml
+
+from .config import load_config_file
 
 
 def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
@@ -103,13 +104,11 @@ def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
 
 
 def load_histogram_defs(path: str) -> dict:
-    with open(path) as f:
-        return expand_variants(yaml.safe_load(f) or {}, str(path))
+    return expand_variants(load_config_file(path), str(path))
 
 
 def load_selection_defs(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    return load_config_file(path)
 
 
 def is_2d(cfg: dict) -> bool:

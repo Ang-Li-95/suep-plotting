@@ -59,3 +59,19 @@ def test_qos_directive_is_emitted_only_when_asked(config_set, tmp_path):
     assert "#SBATCH --qos=c_medium" in _generate(
         config_set, tmp_path, qos="c_medium", time_limit="20:00:00")
     assert "--qos" not in _generate(config_set, tmp_path)
+
+
+def test_tasks_run_suep_run_itself(config_set, tmp_path):
+    """One command for both paths: job.sh invokes the same CLI a user does.
+
+    The Slurm tasks used to call a private `suep_plot.cli_worker` with its own
+    flag set, so the shard options were unavailable interactively and the two
+    entry points could drift.
+    """
+    script = _generate(config_set, tmp_path)
+
+    assert "python -m suep_plot.cli run" in script
+    assert "cli_worker" not in script
+    # The per-task shard, frozen at submission time.
+    assert '--file-list "$FILE_LIST"' in script
+    assert '--part "$PART"' in script
