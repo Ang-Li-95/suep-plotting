@@ -45,8 +45,8 @@ suep-plotting/
 ├── pyproject.toml                   # package metadata, dependencies, console scripts
 ├── datasets.yaml                    # central dataset registry (paths, xs, labels)
 ├── configs/                         # one subdirectory per config set
-│   ├── _common/                     # fragments several sets _include
-│   │   └── prompt_objects.yaml      #   the muon/jet cuts the isolation uses
+│   ├── common/                      # the reco histograms + selections every study shares
+│   ├── common_gen/                  # + the gen-level ones (extends common)
 │   ├── configs_mds/                 # a "config set" = these files
 │   │   ├── samples.yaml             # which datasets to run, cross sections, styling
 │   │   ├── histograms.yaml          # histogram definitions (NanoEvents expressions)
@@ -352,7 +352,11 @@ Writes a binned map (default: shape-only, clamped) to be referenced from
 ## Config sets in this repo
 
 A *config set* is one directory under `configs/` with the six YAML files (plus
-an optional `columns.yaml`). Samples are pulled from the shared registry
+an optional `columns.yaml`). Two of them are not studies but **bases**:
+[`configs/common/`](configs/common/) holds the reco-level cluster histograms and
+selections every study shares, and [`configs/common_gen/`](configs/common_gen/)
+extends it with everything that needs gen information. A study is then mostly a
+`_extends:` line plus what is genuinely its own. Samples are pulled from the shared registry
 [`datasets.yaml`](datasets.yaml) via `_registry:`, so all sets see the same
 datasets and differ only in what they fill. Sets that are variations on another
 say so with `_extends:` and carry only the difference — see
@@ -360,7 +364,9 @@ say so with `_extends:` and carry only the difference — see
 
 | Config set | What it fills | Needs truth? |
 |---|---|---|
-| [`configs/configs_mds/`](configs/configs_mds/) | Reco-only DBSCAN CSC/DT/RPC cluster properties and shower shapes, ΔR to nearest muon/jet. Fills identically on samples without truth branches. | no |
+| [`configs/common/`](configs/common/) | **Base, not a study.** The reco-level cluster histograms, selections and derived plots shared by everything, `rpc_mode: match`, the four reco steps. | no |
+| [`configs/common_gen/`](configs/common_gen/) | **Base, not a study.** `common` plus the LLP collection, the truth splits, the efficiency chain and the four gen steps. | yes |
+| [`configs/configs_mds/`](configs/configs_mds/) | Reco-only DBSCAN CSC/DT/RPC cluster properties and shower shapes, ΔR to nearest muon/jet, inclusive (no splits). Just `_extends: ../common`. | no |
 | [`configs/configs_mds_signal/`](configs/configs_mds_signal/) | Superset of the above plus everything truth-dependent: LLP collection, matched/unmatched cluster splits, efficiency chain, sig-vs-bkg overlays. Runs the full (mDark, T) signal grid. | yes |
 | [`configs/configs_mds_gen/`](configs/configs_mds_gen/) | Gen-level only: LLP kinematics, per-LLP matched-rechit counts, ΔR₉₀ maps. Its `columns.yaml` skips DBSCAN. | yes |
 | [`configs/configs_mds_data/`](configs/configs_mds_data/) | The same cluster plots on collision data / ZeroBias. | no |
@@ -368,8 +374,7 @@ say so with `_extends:` and carry only the difference — see
 | [`configs/configs_mds_trigger/`](configs/configs_mds_trigger/) | HLT/L1 MDS trigger studies. | yes |
 | [`configs/configs_mds_shape/`](configs/configs_mds_shape/) | Cluster shower-shape variables, signal-vs-background overlay in one histogram. | yes |
 | [`configs/configs_g4compare/`](configs/configs_g4compare/) | Geant4 / generator comparison of the shower simulation. | yes |
-| [`configs/configs_mds_rpcmerge/`](configs/configs_mds_rpcmerge/), [`_rpcmerge_data/`](configs/configs_mds_rpcmerge_data/) | `configs_mds_signal` / `configs_mds_data` with `rpc_mode: merge` — RPC rechits clustered with the system they overlap, plus the RPC timing histograms. `_extends` the reference set, so the two stay comparable plot for plot. | as the base |
-| [`configs/configs_mds_rpcmatch/`](configs/configs_mds_rpcmatch/), [`_rpcmatch_data/`](configs/configs_mds_rpcmatch_data/) | The same with `rpc_mode: match` — the clustering is untouched and RPC only dates the finished clusters. | as the base |
+| [`configs/configs_mds_rpcmerge/`](configs/configs_mds_rpcmerge/), [`_rpcmerge_data/`](configs/configs_mds_rpcmerge_data/) | The default studies with `rpc_mode: merge` instead of `match` — RPC rechits clustered *with* the system they overlap, so they also count towards the per-LLP hit totals. A handful of `_extends` overrides. | as the base |
 | [`configs/configs_smoke/`](configs/configs_smoke/) | Not a study: one signal file, one histogram, `steps: [clusters]`. What [`scripts/smoke_test.sh`](scripts/smoke_test.sh) runs to prove the chain works after a framework change, in ~1 min. | no |
 
 Pick a set by which plots you want, then keep one output directory per
@@ -612,13 +617,20 @@ would double count it:
 
 | `rpc_mode` | config sets | what happens |
 | --- | --- | --- |
-| `merge` | `configs_mds_rpcmerge/`, `configs_mds_rpcmerge_data/` | the RPC rechits go **into the DBSCAN** with the system they overlap, so a shower crossing both detectors is one cluster instead of two |
-| `match` | `configs_mds_rpcmatch/`, `configs_mds_rpcmatch_data/` | the DBSCAN is exactly the reference CSC/DT one and the RPC rechits are **associated afterwards** — nearest cluster centroid within `cluster_eps` — so they date a cluster without being able to create one |
+| `match` **(default)** | `configs/common/` — so every live study | the DBSCAN is the CSC/DT one and the RPC rechits are **associated afterwards** — nearest cluster centroid within `cluster_eps` — so they date a cluster without being able to create one |
+| `merge` | `configs_mds_rpcmerge/`, `configs_mds_rpcmerge_data/` | the RPC rechits go **into the DBSCAN** with the system they overlap, so a shower crossing both detectors is one cluster instead of two, and they count towards the per-LLP hit totals |
+| `separate` | only the retired sets (`configs_mds_gen/`, `_shape/`, `_trigger/`) | three independent DBSCAN runs and a standalone `events.rpcCluster` — the historical layout |
 
 ```yaml
 parameters:
-  rpc_mode: merge      # or: match
+  rpc_mode: merge      # the default is match; separate is the old layout
 ```
+
+`match` is the default because it leaves the cluster variables and the signal
+region exactly those of the standard MDS analysis: RPC contributes nothing to
+the density estimate, which matters because RPC rechit times are flat in BX in
+data (~19 % at BX 0 in ZeroBias), so merged, RPC noise can push a background
+cluster over `min_samples`.
 
 Both attach the same fields to the same two collections, so one set of plots
 reads either and the two can be compared plot for plot.  The difference that
@@ -640,9 +652,6 @@ Each cluster gains its RPC content (`nRPCHits`, `rpcHitFrac`,
 
 | field | meaning |
 | --- | --- |
-| `rpcTime`, `rpcTimeMedian`, `rpcTimeSpread` | mean / median / RMS of the RPC rechit times, over the hits with a valid one |
-| `rpcTimeWeighted`, `rpcTimeErr` | `1/σ²`-weighted mean from the per-hit `TimeError`, and its uncertainty |
-| `rpcTimeValidFrac` | fraction of the cluster's RPC hits that had a valid time at all |
 | `rpcBx`, `rpcBxMedian`, `rpcBxSpread` | mean / median / RMS bunch crossing (× 25 ns for a time) |
 | `rpcOutOfTimeFrac`, `nRPCHitsBx0` | fraction of the cluster's RPC hits outside the in-time BX, and the count inside it |
 
@@ -667,15 +676,20 @@ the primary system (`<sys>_cluster_first_not_rpc`) — on this file that is 93 %
 of the CSC clusters but only 70 % of the DT ones, since the barrel RPC layers
 sit inside the DT stations; `<sys>_cluster_first_system` counts all three.
 
-> **The rechit time is not filled in any MDSNano production so far.**
-> `rpcRecHits_Time` is 0 with `TimeError` −1 throughout — checked on the Gen3
-> signal, on DY and on ZeroBias 2024C — so every `rpcTime*` field is NaN and its
-> histograms come out empty by construction (that is deliberate: averaging the
-> placeholder zeros would report every cluster as perfectly in time).  The
-> **bunch crossing is filled** and carries real structure, so today's RPC time
-> estimate is `rpcBx * 25` ns, plotted as `<sys>_cluster_rpc_time_from_bx`.
-> Filling `rpcRecHits_Time` in the ntuplizer is what would turn the fine-time
-> fields on; nothing here has to change for that.
+> **The RPC rechit time is not filled in any MDSNano production, so nothing is
+> derived from it.**  `rpcRecHits_Time` is exactly 0 with `TimeError` exactly
+> −1 throughout — checked over 841k rechits on the Gen3 signal, on central DY
+> and on ZeroBias 2024C, one distinct value each — while `Bx` spans −3..4.  A
+> mean, median, spread or `1/σ²`-weighted time built on that says nothing, and
+> averaging the placeholder zeros would report every cluster as perfectly in
+> time, so the `rpcTime*` fields were removed rather than left to fill empty
+> histograms.  The RPC time estimate is `rpcBx * 25` ns, plotted as
+> `<sys>_cluster_rpc_time_from_bx`.
+>
+> If a production ever fills `rpcRecHits_Time`, add the fields back in
+> `custom/clustering.py:_rpc_time` and their histograms in
+> `configs/common/histograms.yaml`; `test_no_cluster_field_is_derived_from_the_rpc_rechit_time`
+> is the reminder that they are gone on purpose.
 
 ### Rejecting out-of-time background
 
@@ -745,9 +759,8 @@ suep-plot output_mds_rpcmerge -o output_mds_rpcmerge/plots -c configs/configs_md
   (`PARAM_SPEC`, the `columns.yaml` schema), [`clustering.py`](custom/clustering.py)
   (DBSCAN), [`llp.py`](custom/llp.py) (`events.llp` and the per-LLP rechit
   spread), [`helpers.py`](custom/helpers.py) (object selection, isolation ΔR,
-  the jet ID). The prompt-object cuts themselves are ordinary selections in
-  [`configs/_common/prompt_objects.yaml`](configs/_common/prompt_objects.yaml),
-  shared by the three sets that are overlaid.
+  the jet ID). The prompt-object cuts themselves are ordinary selections, written
+  out in each set's `selections.yaml` as `muon_sel_foriso` / `jet_sel_foriso`.
   Everything stays reachable through `custom.columns`. See
   [`docs/derived-columns.md`](docs/derived-columns.md).
 
@@ -840,8 +853,8 @@ variants keep only LLPs with ≥10 matched rechits — the number a DBSCAN clust
 needs to be truth-matched, and the regime where a cone size is meaningful.
 LLPs with <2 matched rechits have no ΔR and drop out of the fill.
 
-Results on `suep_temp1` (500k events, median over LLPs with the [16 %, 84 %]
-band; DBSCAN currently runs with eps = 0.2). `suep_temp2` agrees to within
+Results on `suep_mDark2_temp1` (500k events, median over LLPs with the [16 %, 84 %]
+band; DBSCAN currently runs with eps = 0.2). `suep_mDark2_temp2` agrees to within
 ≈0.01 everywhere, so the numbers barely depend on the SUEP temperature:
 
 | system | ΔR(50 %) | ΔR(80 %) | ΔR(90 %) |
@@ -1184,7 +1197,7 @@ hundreds.  Local directories work the same way.  Listing happens each time
 
 | Symptom | Cause / fix |
 |---|---|
-| `suep-run` reports "up to date" and does nothing | Incremental skip: only configs, the `custom/` modules and input files are tracked, not `src/suep_plot/` code. Pass `--force`. |
+| `suep-run` reports "up to date" and does nothing | Incremental skip. It tracks the config set — including anything reached through `_extends` / `_include` / `_registry` — the `custom/` modules, and the input files, but **not** `src/suep_plot/` code. Pass `--force` after editing the package itself. |
 | xrootd errors / "no such file" on `root://eos.grid.vbc.ac.at` | Expired or unset proxy. `export X509_USER_PROXY=$HOME/private/.proxy` and re-run `voms-proxy-init` (see [Setup](#2-grid-proxy-for-xrootd-inputs)). Don't force `XrdSecPROTOCOL`. |
 | Local run dies with process/fork errors | Login-node process cap — drop `--workers`, or submit with `suep-submit`. |
 | Killed for memory | Lower `--chunk-size` (10000 is right for the MDS configs, where DBSCAN runs per chunk), or raise `--mem` on Slurm. |

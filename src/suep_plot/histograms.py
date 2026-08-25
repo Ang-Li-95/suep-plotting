@@ -104,7 +104,10 @@ def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
 
 
 def load_histogram_defs(path: str) -> dict:
-    return expand_variants(load_config_file(path), str(path))
+    # with_fragments: expand_variants reads _variant_sets off the result,
+    # including ones inherited through _extends.
+    return expand_variants(load_config_file(path, with_fragments=True),
+                           str(path))
 
 
 def load_selection_defs(path: str) -> dict:

@@ -173,7 +173,8 @@ def test_isolation_cuts_are_identical_in_the_grid_and_data_configs():
         sels[cfg] = {k: v for k, v in defs.items() if "_iso_" in k}
 
     grid, data = sels["configs_mds_signal"], sels["configs_mds_data"]
-    assert set(grid) == set(data) and len(grid) == 6, sorted(set(grid) ^ set(data))
+    # CSC and DT only: the default rpc_mode: match builds no RPC cluster.
+    assert set(grid) == set(data) and len(grid) == 4, sorted(set(grid) ^ set(data))
     for name in grid:
         assert grid[name] == data[name], f"{name} differs between the two configs"
 
@@ -186,8 +187,11 @@ def test_isolation_selections_keep_clusters_with_no_muon_or_jet():
 
     from suep_plot.histograms import build_histograms, fill_histograms, load_histogram_defs
 
+    from suep_plot.histograms import load_selection_defs
+
     repo = Path(__file__).resolve().parent.parent / "configs" / "configs_mds_data"
-    sels = yaml.safe_load((repo / "selections.yaml").read_text())
+    # Through the loader: the study inherits these from ../common.
+    sels = load_selection_defs(repo / "selections.yaml")
     defs = load_histogram_defs(repo / "histograms.yaml")
     use = {k: defs[k] for k in ("csc_cluster_size", "csc_cluster_size_iso_muon")}
 

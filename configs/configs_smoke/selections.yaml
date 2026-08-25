@@ -1,5 +1,14 @@
-# The prompt-object cuts the cluster isolation reads.
-_include: ../_common/prompt_objects.yaml
+# ── Prompt objects the cluster isolation is measured against ──────
+# Same cuts as the real studies; the smoke test only checks the chain runs.
+muon_sel_foriso:
+  level: object
+  collection: Muon
+  expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
+
+jet_sel_foriso:
+  level: object
+  collection: Jet
+  expression: "(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId"
 
 has_csc_cluster:
   expression: "ak.num(events.cscCluster) >= 1"

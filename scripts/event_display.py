@@ -10,7 +10,7 @@ histograms are filled from -- pass ``-c <config set>`` to pick up that set's
 
     conda activate mds
     export X509_USER_PROXY=$HOME/private/.proxy
-    python scripts/event_display.py -d suep_temp1 -n 5
+    python scripts/event_display.py -d suep_mDark2_temp1 -n 5
 
 The chamber layout covers z > 0 only, so the display is folded to |z|; a
 cluster in the -z endcap therefore lands on the same picture as one in +z (the

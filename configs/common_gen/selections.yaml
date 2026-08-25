@@ -1,0 +1,56 @@
+# ── Gen-level (truth) selections, shared by the truth studies ─────
+# Extends ../common with the masks that need gen information: the LLP decay
+# volume and reconstruction flags, and the truth-matched / unmatched split of
+# the clusters.  The reco-only masks come from ../common, including the
+# systems axis, which is CSC and DT only under the default rpc_mode: match.
+
+_extends: ../common
+
+_axes:
+  # LLP hit counts only exist for the two systems that can seed a cluster --
+  # which under rpc_mode: match is the same pair as the systems axis.
+  hit_systems:
+    - {SYS: csc, SYSU: CSC}
+    - {SYS: dt,  SYSU: DT}
+
+_repeat:
+  - over: systems
+    defs:
+      llp_in_<SYS>:
+        level: object
+        expression: "events.llp.in<SYSU>"
+      llp_reco_<SYS>:
+        level: object
+        expression: "events.llp.reco<SYSU>"
+      # Cluster truth-matched to an LLP (>= match_min_hits rechits sharing one
+      # llpIdx), and its complement: the fake / pile-up-like clusters.
+      <SYS>_cluster_matched:
+        level: object
+        expression: "events.<SYS>Cluster.matched"
+      <SYS>_cluster_unmatched:
+        level: object
+        expression: "~events.<SYS>Cluster.matched"
+      has_matched_<SYS>:
+        expression: "ak.any(events.<SYS>Cluster.matched, axis=1)"
+
+  # LLP is "reconstructable": >= 10 of its truth rechits in the system.
+  - over: hit_systems
+    defs:
+      llp_hits10_<SYS>:
+        level: object
+        expression: "events.llp.nHits<SYSU> >= 10"
+
+# ── The whole muon system, not one subdetector ────────────────────
+# The RPC decay volume still matters for the fiducial definition even though
+# RPC no longer forms clusters of its own.
+llp_in_rpc:
+  level: object
+  expression: "events.llp.inRPC"
+llp_in_ms:
+  level: object
+  expression: "events.llp.inCSC | events.llp.inDT | events.llp.inRPC"
+llp_reco_any:
+  level: object
+  expression: "events.llp.reco"
+has_llp_in_ms:
+  expression: "ak.any(events.llp.inCSC | events.llp.inDT | events.llp.inRPC, axis=1)"

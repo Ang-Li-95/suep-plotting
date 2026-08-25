@@ -1,20 +1,3 @@
-# custom/columns.py settings for this config set (see that module's docstring
-# and the README's "Derived-column settings" section).
-#
-# Pinned to the same values as configs_mds/columns.yaml, not left to the module
-# defaults: this set and configs_mds_data/ are overlaid against each other, so
-# the clustering and the isolation-object definitions have to be identical by
-# construction rather than by both happening to inherit today's defaults.
-parameters:
-  cluster_eps: 0.4
-  cluster_min_samples: 10
-  rpc_min_samples: 10
-  match_min_hits: 10
-  llpidx_convention: genpart
-  jerc: true                 # JEC on events.Jet first (data too); JER smearing on MC
-  # The prompt objects the cluster drMuon / drJet are measured against are an
-  # ordinary object selection, so they live in selections.yaml
-  # (muon_sel_foriso / jet_sel_foriso, shared via ../_common/prompt_objects.yaml).
-
-# Everything: this is the truth superset of the study.
-steps: [jerc, jet_id, clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]
+# ── The truth study ───────────────────────────────────────────────
+# The shared settings plus the gen-level steps; see ../common_gen.
+_extends: ../common_gen

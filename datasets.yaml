@@ -3,8 +3,8 @@
 # One definition per dataset; configs pull them in via
 #
 #   _include: ../datasets.yaml
-#   suep_temp1:                 # verbatim
-#   suep_temp2:                 # with overrides
+#   suep_mDark2_temp1:          # verbatim
+#   suep_mDark2_temp2:          # with overrides
 #     color: "black"
 #   dy:                         # same dataset under another config name
 #     _from: dy_central_50to120
@@ -16,8 +16,10 @@
 #
 # The Gen3 grid is ggH, mMed=125, ctau=5 m, scanned in (mDark, temperature):
 # mDark = 2 / 5 / 12 GeV x T = 1 / 2, all named suep_mDark<M>_temp<T>.
-# The mDark=2 points were called suep_temp1 / suep_temp2 until 2026-08-13;
-# configs still using the old names fail to load (see the list in README_mds).
+# The mDark=2 points were called suep_temp1 / suep_temp2 until 2026-08-13, and
+# are the same datasets under the new names; every config set was repointed on
+# 2026-08-25, so the old names appear only in studies/ (which reads its own
+# frozen pickles).
 suep_mDark2_temp1:
   files:
   - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
@@ -81,7 +83,7 @@ suep_mDark12_temp2:
   linestyle: '--'
   group: signal
 # Gen2 T=2: the post-G4-fix leg of configs_g4compare, pinned so that comparison
-# keeps its original production when suep_temp2 moves to a newer one.
+# keeps its original production when suep_mDark2_temp2 moves to a newer one.
 suep_temp2_gen2:
   files:
   - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
@@ -120,6 +122,16 @@ zerobias_2024C:
   is_data: true
   label: ZeroBias 2024C
   color: black
+  group: data
+# Cosmics data (118 files, whole crab production).  Same truth-less path as
+# ZeroBias; useful as a muon-system-noise / non-collision control sample.
+cosmics_2024C:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/Cosmics/MDSnano_Run2024C-v1/260824_145424
+  tree: Events
+  is_data: true
+  label: Cosmics 2024C
+  color: dimgray
   group: data
 dy_central_50to120:
   files:

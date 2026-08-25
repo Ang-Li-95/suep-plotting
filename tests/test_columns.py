@@ -274,6 +274,27 @@ def test_isolation_reads_its_cuts_from_selections_yaml():
     assert "drJet" not in ctx.clusters["csc"].fields
 
 
+def test_the_prompt_object_counts_come_from_the_same_selection():
+    """`events.n_<selection>` must count exactly what the isolation used.
+
+    The alternative -- restating the cut in a histogram expression -- is two
+    copies that drift, and the multiplicity plot would then disagree with the
+    isolation and with its own cutflow row.
+    """
+    ak = pytest.importorskip("awkward")
+
+    muons = _muons((25.0, 0.05, 0.0, True),    # passes
+                   (25.0, 0.20, 1.0, False),   # fails looseId
+                   (5.0, 0.30, 2.0, True))     # fails pt
+    ctx = _ctx(ak.zip({"Muon": muons}, depth_limit=1), selections=ISO_SELS)
+    ctx.clusters = {"csc": ak.Array([[{"eta": 0.0, "phi": 0.0}]])}
+    columns._step_cluster_isolation(ctx)
+
+    assert ak.to_list(ctx.events.n_muon_sel_foriso) == [1]
+    # No Jet collection here, so no count is invented for it.
+    assert "n_jet_sel_foriso" not in ctx.events.fields
+
+
 def test_a_missing_iso_selection_is_fatal():
     """Silently dropping drMuon would just empty every isolation plot."""
     ak = pytest.importorskip("awkward")
@@ -445,8 +466,12 @@ def test_iso_objects_is_no_longer_a_parameter():
 
 def test_the_overlaid_sets_share_one_prompt_object_definition():
     """configs_mds, _signal and _data are drawn on one canvas, so a cluster in
-    each must have been isolated against the same objects -- which _include
-    makes true by construction rather than by three files agreeing."""
+    each must have been isolated against the same objects.
+
+    Each set writes the cuts out, so that a cut can be retuned in one study
+    without silently moving the others -- which means nothing but this test
+    stops the three from drifting apart when they are meant to move together.
+    Retuning the isolation?  Change all three."""
     from pathlib import Path
 
     from suep_plot.histograms import load_selection_defs
@@ -598,22 +623,19 @@ def test_merged_cluster_absorbs_the_rpc_hits_and_times_them():
     assert len(merged[0]) == 1
     assert merged[0].size[0] == 10 and merged[0].nRPCHits[0] == 4
     assert merged[0].rpcHitFrac[0] == pytest.approx(0.4)
-    assert merged[0].rpcTime[0] == pytest.approx(10.5)
-    assert merged[0].rpcTimeMedian[0] == pytest.approx(10.5)
-    # Equal per-hit errors -> the weighted mean is the plain one, sigma/sqrt(N)
-    assert merged[0].rpcTimeWeighted[0] == pytest.approx(10.5)
-    assert merged[0].rpcTimeErr[0] == pytest.approx(0.5)
+    # The cluster's own time is still the primary system's (CSC Tpeak),
+    # unchanged by the RPC hits it absorbed.
     assert merged[0].time[0] == pytest.approx(float(solo[0].time[0]))
 
 
-def test_an_unfilled_rpc_time_is_nan_and_the_bx_carries_the_timing():
-    """MDSNano stores Time = 0 / TimeError = -1: that is no measurement.
+def test_the_bx_carries_the_rpc_timing():
+    """The BX is the only RPC timing there is: the rechit time is never filled.
 
-    Averaging the placeholder zeros would report every cluster as perfectly
-    in time.  The bunch crossing is filled, so it is what dates the cluster.
+    Every MDSNano production stores Time = 0 / TimeError = -1, so a mean or a
+    weighted time computed from it would report every cluster as perfectly in
+    time.  Only the bunch crossing is a measurement, so only it is kept.
     """
     import awkward as ak
-    import numpy as np
 
     csc = _csc_rechits([(200.0, 0.0, 700.0, 2, 21)] * 6)
     eta, phi = float(csc.Eta[0][0]), float(csc.Phi[0][0])
@@ -625,15 +647,20 @@ def test_an_unfilled_rpc_time_is_nan_and_the_bx_carries_the_timing():
                                      settings=DEFAULTS)
 
     assert merged[0].nRPCHits[0] == 4
-    assert merged[0].rpcTimeValidFrac[0] == 0.0
-    for field in ("rpcTime", "rpcTimeMedian", "rpcTimeWeighted", "rpcTimeErr"):
-        assert np.isnan(merged[0][field][0])
     assert merged[0].rpcBx[0] == pytest.approx(0.75)
     assert merged[0].rpcBxMedian[0] == pytest.approx(0.5)
     assert merged[0].rpcOutOfTimeFrac[0] == pytest.approx(0.5)
 
 
-def test_a_merged_cluster_without_rpc_hits_has_no_rpc_time():
+def test_no_cluster_field_is_derived_from_the_rpc_rechit_time():
+    """The placeholder Time = 0 must not reach a histogram through any field."""
+    from custom.clustering import RPC_CLUSTER_FIELDS
+
+    assert not [f for f in RPC_CLUSTER_FIELDS if f.startswith("rpcTime")], \
+        "an rpcTime* field is back; MDSNano still does not fill the rechit time"
+
+
+def test_a_merged_cluster_without_rpc_hits_has_no_rpc_timing():
     """NaN, not 0: a cluster the RPC never saw is undated, not dated at zero."""
     import numpy as np
 
@@ -645,7 +672,7 @@ def test_a_merged_cluster_without_rpc_hits_has_no_rpc_time():
                                      settings=DEFAULTS)
 
     assert merged[0].nRPCHits[0] == 0
-    for field in ("rpcTime", "rpcTimeMedian", "rpcTimeWeighted", "rpcTimeErr"):
+    for field in ("rpcBx", "rpcBxMedian", "rpcBxSpread", "rpcOutOfTimeFrac"):
         assert np.isnan(merged[0][field][0])
 
 

@@ -1,13 +1,1 @@
-# configs_mds_rpcmerge/samples.yaml -- rpc_mode: merge.
-#
-# The RPC rechits are clustered *together with* the system they overlap --
-# barrel RPC (Region == 0) with DT, endcap RPC with CSC -- so this run has
-# cscCluster and dtCluster only, and each carries the RPC timing of its own
-# hits.  Because the RPC hits are inside the cluster, they also count towards
-# the per-LLP hit totals that define "reconstructable in this system".
-#
-# Everything not named below is inherited from ../configs_mds_signal, so the two
-# studies stay comparable plot for plot by construction.  A 'name:' with no
-# value deletes an inherited definition; see src/suep_plot/config.py.
-
 _extends: ../configs_mds_signal

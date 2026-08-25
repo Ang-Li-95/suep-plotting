@@ -1,693 +1,127 @@
+# ── Reco-only cluster histograms, with the isolation splits ───────
+# The fills come from ../common; this set adds the isolation splits (no
+# truth here -- it also runs on ZeroBias data).
 
-# ── Reco-level histograms for the MDS cluster study ───────────────
-# DBSCAN cluster properties from the derived collections in
-# custom/columns.py (events.cscCluster / dtCluster / rpcCluster).
-#
-# Nothing here uses gen-level information, so every histogram fills
-# identically on signal, on background samples without truth branches, and on
-# ZeroBias data.
-# Everything truth-dependent — the LLP collection, the truth-matched /
-# unmatched cluster splits, the efficiency chain, the matched fractions and
-# the signal-vs-background overlays — lives in configs_mds_signal/.
+_extends: ../common
 
-# ── Per-system cluster variant sets ───────────────────────────────
-# Isolation splits applied to every cluster variable below, on top of the
-# inclusive version.  Spelled identically to the iso_* entries of
-# configs_mds_signal/histograms.yaml, so a data plot and its signal counterpart
-# carry the same name and the same cut and can be overlaid directly.
-#
-# Nothing here needs truth, which is what keeps this config set runnable on
-# ZeroBias data; the matched / unmatched splits stay in configs_mds_signal/.
 _variant_sets:
   csc_variants:
-    iso_muon:  {selections: [csc_cluster_iso_muon],  label_prefix: "muon-isolated "}
-    iso_jet:   {selections: [csc_cluster_iso_jet],   label_prefix: "jet-isolated "}
     iso_both:
-      selections: [csc_cluster_iso_muon, csc_cluster_iso_jet]
-      label_prefix: "muon+jet-isolated "
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - csc_cluster_iso_muon
+      - csc_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - csc_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - csc_cluster_iso_muon
   dt_variants:
-    iso_muon:  {selections: [dt_cluster_iso_muon],   label_prefix: "muon-isolated "}
-    iso_jet:   {selections: [dt_cluster_iso_jet],    label_prefix: "jet-isolated "}
     iso_both:
-      selections: [dt_cluster_iso_muon, dt_cluster_iso_jet]
-      label_prefix: "muon+jet-isolated "
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - dt_cluster_iso_muon
+      - dt_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - dt_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - dt_cluster_iso_muon
   rpc_variants:
-    iso_muon:  {selections: [rpc_cluster_iso_muon],  label_prefix: "muon-isolated "}
-    iso_jet:   {selections: [rpc_cluster_iso_jet],   label_prefix: "jet-isolated "}
     iso_both:
-      selections: [rpc_cluster_iso_muon, rpc_cluster_iso_jet]
-      label_prefix: "muon+jet-isolated "
-
-# ── (3) DBSCAN cluster properties: CSC ─────────────────────────────
-csc_cluster_n:
-  expression: "ak.num(events.cscCluster)"
-  bins: 6
-  lo: 0
-  hi: 6
-  label: '$N_{\mathrm{CSC\ clusters}}$'
-  log_y: true
-
-csc_cluster_size:
-  expression: "events.cscCluster.size"
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'CSC cluster $N_{\mathrm{hits}}$'
-  log_y: true
-  variants: csc_variants
-
-csc_cluster_eta:
-  expression: "events.cscCluster.eta"
-  per_object: true
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'CSC cluster $\eta$'
-  variants: csc_variants
-
-csc_cluster_phi:
-  expression: "events.cscCluster.phi"
-  per_object: true
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'CSC cluster $\phi$'
-  variants: csc_variants
-
-csc_cluster_eta_spread:
-  expression: "events.cscCluster.etaSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'CSC cluster $\eta$ spread'
-  variants: csc_variants
-
-csc_cluster_phi_spread:
-  expression: "events.cscCluster.phiSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'CSC cluster $\phi$ spread'
-  variants: csc_variants
-
-csc_cluster_nstation:
-  expression: "events.cscCluster.nStation"
-  per_object: true
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'CSC cluster $N_{\mathrm{stations}}$'
-  variants: csc_variants
-
-csc_cluster_time:
-  expression: "events.cscCluster.time"
-  per_object: true
-  bins: 60
-  lo: -30
-  hi: 90
-  label: 'CSC cluster mean $t_{\mathrm{peak}}$ [ns]'
-  log_y: true
-  variants: csc_variants
-
-# ── (3) DBSCAN cluster properties: DT ──────────────────────────────
-dt_cluster_n:
-  expression: "ak.num(events.dtCluster)"
-  bins: 6
-  lo: 0
-  hi: 6
-  label: '$N_{\mathrm{DT\ clusters}}$'
-  log_y: true
-
-dt_cluster_size:
-  expression: "events.dtCluster.size"
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'DT cluster $N_{\mathrm{hits}}$'
-  log_y: true
-  variants: dt_variants
-
-dt_cluster_eta:
-  expression: "events.dtCluster.eta"
-  per_object: true
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'DT cluster $\eta$'
-  variants: dt_variants
-
-dt_cluster_phi:
-  expression: "events.dtCluster.phi"
-  per_object: true
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'DT cluster $\phi$'
-  variants: dt_variants
-
-dt_cluster_eta_spread:
-  expression: "events.dtCluster.etaSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'DT cluster $\eta$ spread'
-  variants: dt_variants
-
-dt_cluster_phi_spread:
-  expression: "events.dtCluster.phiSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'DT cluster $\phi$ spread'
-  variants: dt_variants
-
-dt_cluster_nstation:
-  expression: "events.dtCluster.nStation"
-  per_object: true
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'DT cluster $N_{\mathrm{stations}}$'
-  variants: dt_variants
-
-# ── (3) DBSCAN cluster properties: RPC ─────────────────────────────
-rpc_cluster_n:
-  expression: "ak.num(events.rpcCluster)"
-  bins: 6
-  lo: 0
-  hi: 6
-  label: '$N_{\mathrm{RPC\ clusters}}$'
-  log_y: true
-
-rpc_cluster_size:
-  expression: "events.rpcCluster.size"
-  per_object: true
-  bins: 30
-  lo: 0
-  hi: 60
-  label: 'RPC cluster $N_{\mathrm{hits}}$'
-  log_y: true
-  variants: rpc_variants
-
-rpc_cluster_eta:
-  expression: "events.rpcCluster.eta"
-  per_object: true
-  bins: 50
-  lo: -3
-  hi: 3
-  label: 'RPC cluster $\eta$'
-  variants: rpc_variants
-
-rpc_cluster_phi:
-  expression: "events.rpcCluster.phi"
-  per_object: true
-  bins: 32
-  lo: -3.2
-  hi: 3.2
-  label: 'RPC cluster $\phi$'
-  variants: rpc_variants
-
-rpc_cluster_eta_spread:
-  expression: "events.rpcCluster.etaSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'RPC cluster $\eta$ spread'
-  variants: rpc_variants
-
-rpc_cluster_phi_spread:
-  expression: "events.rpcCluster.phiSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 0.4
-  label: 'RPC cluster $\phi$ spread'
-  variants: rpc_variants
-
-rpc_cluster_nstation:
-  expression: "events.rpcCluster.nStation"
-  per_object: true
-  bins: 5
-  lo: 0
-  hi: 5
-  label: 'RPC cluster $N_{\mathrm{stations}}$'
-  variants: rpc_variants
-
-rpc_cluster_time:
-  expression: "events.rpcCluster.time"
-  per_object: true
-  bins: 60
-  lo: -30
-  hi: 90
-  label: 'RPC cluster mean time [ns]'
-  log_y: true
-  variants: rpc_variants
-
-csc_cluster_nlayer:
-  expression: "events.cscCluster.nLayer"
-  per_object: true
-  bins: 12
-  lo: 0
-  hi: 12
-  label: 'CSC cluster $N_{\mathrm{layers}}$'
-  variants: csc_variants
-
-dt_cluster_nlayer:
-  expression: "events.dtCluster.nLayer"
-  per_object: true
-  # a DT cluster spans several chambers, so nLayer runs past the 12 layers
-  # of a single chamber; the old 0-12 range overflowed ~99% of the entries
-  bins: 60
-  lo: 0
-  hi: 60
-  label: 'DT cluster $N_{\mathrm{layers}}$'
-  variants: dt_variants
-
-rpc_cluster_nlayer:
-  expression: "events.rpcCluster.nLayer"
-  per_object: true
-  bins: 12
-  lo: 0
-  hi: 12
-  label: 'RPC cluster $N_{\mathrm{layers}}$'
-  variants: rpc_variants
-
-# ── (3c) Cluster shower-shape discriminants ───────────────────────
-# Variable set and binning taken from configs_mds_shape/histograms.yaml
-# (layer-occupancy spread and station span separate localized LLP
-# showers from muon punch-through).
-
-csc_cluster_station_span:
-  expression: "events.cscCluster.stationSpan"
-  per_object: true
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'CSC cluster station span (max-min)'
-  variants: csc_variants
-
-# First-hit chamber code (see _flat_chamber_code in custom/columns.py):
-# station*10 + ring for CSC, station*10 + |wheel| for DT,
-# station*10 + ring (+100 in the endcap) for RPC.
-csc_cluster_first_chamber:
-  expression: "events.cscCluster.firstChamber"
-  per_object: true
-  bins: 50
-  lo: -0.5
-  hi: 49.5
-  label: 'CSC cluster first-hit chamber (ME station/ring)'
-  variants: csc_variants
-
-csc_cluster_first_station:
-  expression: "events.cscCluster.firstStation"
-  per_object: true
-  bins: 6
-  lo: -0.5
-  hi: 5.5
-  label: 'CSC cluster first-hit station'
-  variants: csc_variants
-
-csc_cluster_avg_station:
-  expression: "events.cscCluster.avgStation"
-  per_object: true
-  bins: 30
-  lo: 1
-  hi: 4
-  label: 'CSC cluster $\langle$station$\rangle$'
-  variants: csc_variants
-
-csc_cluster_max_station_frac:
-  expression: "events.cscCluster.maxStationFrac"
-  per_object: true
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'CSC cluster max station hit fraction'
-  variants: csc_variants
-
-csc_cluster_layer_hits_mean:
-  expression: "events.cscCluster.layerHitsMean"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 120
-  label: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{chamber}\rangle$'
-  log_y: true
-  variants: csc_variants
-
-csc_cluster_layer_hits_rms:
-  expression: "events.cscCluster.layerHitsRMS"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 80
-  label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)'
-  log_y: true
-  variants: csc_variants
-
-csc_cluster_layer_hits_relrms:
-  expression: "events.cscCluster.layerHitsRelRMS"
-  per_object: true
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{chamber}$'
-  variants: csc_variants
-
-csc_cluster_max_layer_frac:
-  expression: "events.cscCluster.maxLayerFrac"
-  per_object: true
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'CSC cluster max chamber hit fraction'
-  variants: csc_variants
-
-csc_cluster_nzlayer:
-  expression: "events.cscCluster.nZLayer"
-  per_object: true
-  bins: 30
-  lo: 0.5
-  hi: 30.5
-  label: 'CSC cluster $N_{\mathrm{z-layers}}$'
-  variants: csc_variants
-
-csc_cluster_zlayer_hits_mean:
-  expression: "events.cscCluster.zLayerHitsMean"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 40
-  label: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{z-layer}\rangle$'
-  log_y: true
-  variants: csc_variants
-
-csc_cluster_zlayer_hits_rms:
-  expression: "events.cscCluster.zLayerHitsRMS"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 20
-  label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{z-layer}$)'
-  log_y: true
-  variants: csc_variants
-
-csc_cluster_zlayer_hits_relrms:
-  expression: "events.cscCluster.zLayerHitsRelRMS"
-  per_object: true
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{z-layer}$'
-  variants: csc_variants
-
-csc_cluster_max_zlayer_frac:
-  expression: "events.cscCluster.maxZLayerFrac"
-  per_object: true
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'CSC cluster max z-layer hit fraction'
-  variants: csc_variants
-
-csc_cluster_r_spread:
-  expression: "events.cscCluster.rSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 200
-  label: 'CSC cluster $r$ spread [cm]'
-  variants: csc_variants
-
-csc_cluster_z_spread:
-  expression: "events.cscCluster.zSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 250
-  label: 'CSC cluster $z$ spread [cm]'
-  variants: csc_variants
-
-dt_cluster_station_span:
-  expression: "events.dtCluster.stationSpan"
-  per_object: true
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'DT cluster station span (max-min)'
-  variants: dt_variants
-
-dt_cluster_first_chamber:
-  expression: "events.dtCluster.firstChamber"
-  per_object: true
-  bins: 50
-  lo: -0.5
-  hi: 49.5
-  label: 'DT cluster first-hit chamber (MB station/wheel)'
-  variants: dt_variants
-
-dt_cluster_first_station:
-  expression: "events.dtCluster.firstStation"
-  per_object: true
-  bins: 6
-  lo: -0.5
-  hi: 5.5
-  label: 'DT cluster first-hit station'
-  variants: dt_variants
-
-dt_cluster_avg_station:
-  expression: "events.dtCluster.avgStation"
-  per_object: true
-  bins: 30
-  lo: 1
-  hi: 4
-  label: 'DT cluster $\langle$station$\rangle$'
-  variants: dt_variants
-
-dt_cluster_max_station_frac:
-  expression: "events.dtCluster.maxStationFrac"
-  per_object: true
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'DT cluster max station hit fraction'
-  variants: dt_variants
-
-dt_cluster_layer_hits_mean:
-  expression: "events.dtCluster.layerHitsMean"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 20
-  label: 'DT cluster $\langle N_{\mathrm{hits}}/\mathrm{layer}\rangle$'
-  log_y: true
-  variants: dt_variants
-
-dt_cluster_layer_hits_rms:
-  expression: "events.dtCluster.layerHitsRMS"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 10
-  label: 'DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)'
-  log_y: true
-  variants: dt_variants
-
-dt_cluster_layer_hits_relrms:
-  expression: "events.dtCluster.layerHitsRelRMS"
-  per_object: true
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'DT cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
-  variants: dt_variants
-
-dt_cluster_max_layer_frac:
-  expression: "events.dtCluster.maxLayerFrac"
-  per_object: true
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'DT cluster max layer hit fraction'
-  variants: dt_variants
-
-dt_cluster_r_spread:
-  expression: "events.dtCluster.rSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 200
-  label: 'DT cluster $r$ spread [cm]'
-  variants: dt_variants
-
-dt_cluster_z_spread:
-  expression: "events.dtCluster.zSpread"
-  per_object: true
-  bins: 40
-  lo: 0
-  hi: 250
-  label: 'DT cluster $z$ spread [cm]'
-  variants: dt_variants
-
-rpc_cluster_station_span:
-  expression: "events.rpcCluster.stationSpan"
-  per_object: true
-  bins: 4
-  lo: -0.5
-  hi: 3.5
-  label: 'RPC cluster station span (max-min)'
-  variants: rpc_variants
-
-rpc_cluster_first_chamber:
-  expression: "events.rpcCluster.firstChamber"
-  per_object: true
-  bins: 150
-  lo: -0.5
-  hi: 149.5
-  label: 'RPC cluster first-hit chamber (+100 endcap)'
-  variants: rpc_variants
-
-rpc_cluster_first_station:
-  expression: "events.rpcCluster.firstStation"
-  per_object: true
-  bins: 6
-  lo: -0.5
-  hi: 5.5
-  label: 'RPC cluster first-hit station'
-  variants: rpc_variants
-
-rpc_cluster_max_station_frac:
-  expression: "events.rpcCluster.maxStationFrac"
-  per_object: true
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'RPC cluster max station hit fraction'
-  variants: rpc_variants
-
-rpc_cluster_layer_hits_relrms:
-  expression: "events.rpcCluster.layerHitsRelRMS"
-  per_object: true
-  bins: 30
-  lo: 0
-  hi: 3
-  label: 'RPC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'
-  variants: rpc_variants
-
-rpc_cluster_max_layer_frac:
-  expression: "events.rpcCluster.maxLayerFrac"
-  per_object: true
-  bins: 21
-  lo: 0
-  hi: 1.05
-  label: 'RPC cluster max layer hit fraction'
-  variants: rpc_variants
-
-# ── (8) Cluster isolation from prompt muons / jets ────────────────
-# events.<sys>Cluster.drMuon / .drJet: dR from the cluster centroid to the
-# closest reconstructed Muon / Jet in the event (custom/columns.py).  Events
-# with no muon (no jet) carry the sentinel NO_OBJECT_DR = 999, which overflows
-# the axis and is folded into the last bin ('flow: sum', the default): that bin
-# therefore counts the clusters with no prompt object to be measured against,
-# on top of the few genuine entries above the axis maximum.
-# Punch-through and muon-bremsstrahlung clusters pile up near 0; a displaced
-# decay has no prompt object pointing at it and populates the tail.
-
-csc_cluster_dr_muon:
-  expression: "events.cscCluster.drMuon"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 6
-  label: 'CSC cluster $\Delta R$(closest muon)'
-  log_y: true
-  variants: csc_variants
-
-csc_cluster_dr_jet:
-  expression: "events.cscCluster.drJet"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 6
-  label: 'CSC cluster $\Delta R$(closest jet)'
-  log_y: true
-  variants: csc_variants
-
-dt_cluster_dr_muon:
-  expression: "events.dtCluster.drMuon"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 6
-  label: 'DT cluster $\Delta R$(closest muon)'
-  log_y: true
-  variants: dt_variants
-
-dt_cluster_dr_jet:
-  expression: "events.dtCluster.drJet"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 6
-  label: 'DT cluster $\Delta R$(closest jet)'
-  log_y: true
-  variants: dt_variants
-
-rpc_cluster_dr_muon:
-  expression: "events.rpcCluster.drMuon"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 6
-  label: 'RPC cluster $\Delta R$(closest muon)'
-  log_y: true
-  variants: rpc_variants
-
-rpc_cluster_dr_jet:
-  expression: "events.rpcCluster.drJet"
-  per_object: true
-  bins: 60
-  lo: 0
-  hi: 6
-  label: 'RPC cluster $\Delta R$(closest jet)'
-  log_y: true
-
-  variants: rpc_variants
-# 2D: dR to the closest muon vs to the closest jet, to see whether the two
-# select the same clusters.
-csc_cluster_dr_muon_vs_jet:
-  expression_x: "events.cscCluster.drMuon"
-  expression_y: "events.cscCluster.drJet"
-  per_object: true
-  bins_x: 60
-  lo_x: 0
-  hi_x: 6
-  bins_y: 60
-  lo_y: 0
-  hi_y: 6
-  label_x: 'CSC cluster $\Delta R$(closest muon)'
-  label_y: 'CSC cluster $\Delta R$(closest jet)'
-  log_z: true
-  variants: csc_variants
-
-dt_cluster_dr_muon_vs_jet:
-  expression_x: "events.dtCluster.drMuon"
-  expression_y: "events.dtCluster.drJet"
-  per_object: true
-  bins_x: 60
-  lo_x: 0
-  hi_x: 6
-  bins_y: 60
-  lo_y: 0
-  hi_y: 6
-  label_x: 'DT cluster $\Delta R$(closest muon)'
-  label_y: 'DT cluster $\Delta R$(closest jet)'
-  log_z: true
-  variants: dt_variants
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - rpc_cluster_iso_muon
+      - rpc_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - rpc_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - rpc_cluster_iso_muon
+
+# ── The inherited reco variables, split by the sets above ─────────
+# Each line overrides one key of a histogram defined in ../common; the
+# binning, expression and label come from there.  Add a cluster variable to
+# ../common and give it a line here for it to be split too.
+
+csc_cluster_size: {variants: csc_variants}
+csc_cluster_eta: {variants: csc_variants}
+csc_cluster_phi: {variants: csc_variants}
+csc_cluster_eta_spread: {variants: csc_variants}
+csc_cluster_phi_spread: {variants: csc_variants}
+csc_cluster_nstation: {variants: csc_variants}
+csc_cluster_time: {variants: csc_variants}
+csc_cluster_nlayer: {variants: csc_variants}
+csc_cluster_station_span: {variants: csc_variants}
+csc_cluster_first_chamber: {selections: [csc_cluster_first_not_rpc], variants: csc_variants}
+csc_cluster_first_station: {selections: [csc_cluster_first_not_rpc], variants: csc_variants}
+csc_cluster_avg_station: {variants: csc_variants}
+csc_cluster_max_station_frac: {variants: csc_variants}
+csc_cluster_layer_hits_mean: {variants: csc_variants}
+csc_cluster_layer_hits_rms: {variants: csc_variants}
+csc_cluster_layer_hits_relrms: {variants: csc_variants}
+csc_cluster_max_layer_frac: {variants: csc_variants}
+csc_cluster_nzlayer: {variants: csc_variants}
+csc_cluster_zlayer_hits_mean: {variants: csc_variants}
+csc_cluster_zlayer_hits_rms: {variants: csc_variants}
+csc_cluster_zlayer_hits_relrms: {variants: csc_variants}
+csc_cluster_max_zlayer_frac: {variants: csc_variants}
+csc_cluster_r_spread: {variants: csc_variants}
+csc_cluster_z_spread: {variants: csc_variants}
+csc_cluster_dr_muon: {variants: csc_variants}
+csc_cluster_dr_jet: {variants: csc_variants}
+csc_cluster_dr_muon_vs_jet: {variants: csc_variants}
+csc_cluster_first_system: {variants: csc_variants}
+csc_cluster_n_rpc_hits: {variants: csc_variants}
+csc_cluster_n_rpc_hits_bx0: {variants: csc_variants}
+csc_cluster_oot_hit_frac: {variants: csc_variants}
+csc_cluster_rpc_bx: {variants: csc_variants}
+csc_cluster_rpc_bx_median: {variants: csc_variants}
+csc_cluster_rpc_bx_spread: {variants: csc_variants}
+csc_cluster_rpc_hit_frac: {variants: csc_variants}
+csc_cluster_rpc_out_of_time_frac: {variants: csc_variants}
+csc_cluster_rpc_time_from_bx: {variants: csc_variants}
+csc_cluster_time_spread: {variants: csc_variants}
+
+dt_cluster_size: {variants: dt_variants}
+dt_cluster_eta: {variants: dt_variants}
+dt_cluster_phi: {variants: dt_variants}
+dt_cluster_eta_spread: {variants: dt_variants}
+dt_cluster_phi_spread: {variants: dt_variants}
+dt_cluster_nstation: {variants: dt_variants}
+dt_cluster_nlayer: {variants: dt_variants}
+dt_cluster_station_span: {variants: dt_variants}
+dt_cluster_first_chamber: {selections: [dt_cluster_first_not_rpc], variants: dt_variants}
+dt_cluster_first_station: {selections: [dt_cluster_first_not_rpc], variants: dt_variants}
+dt_cluster_avg_station: {variants: dt_variants}
+dt_cluster_max_station_frac: {variants: dt_variants}
+dt_cluster_layer_hits_mean: {variants: dt_variants}
+dt_cluster_layer_hits_rms: {variants: dt_variants}
+dt_cluster_layer_hits_relrms: {variants: dt_variants}
+dt_cluster_max_layer_frac: {variants: dt_variants}
+dt_cluster_r_spread: {variants: dt_variants}
+dt_cluster_z_spread: {variants: dt_variants}
+dt_cluster_dr_muon: {variants: dt_variants}
+dt_cluster_dr_jet: {variants: dt_variants}
+dt_cluster_dr_muon_vs_jet: {variants: dt_variants}
+dt_cluster_first_system: {variants: dt_variants}
+dt_cluster_n_rpc_hits: {variants: dt_variants}
+dt_cluster_n_rpc_hits_bx0: {variants: dt_variants}
+dt_cluster_rpc_bx: {variants: dt_variants}
+dt_cluster_rpc_bx_median: {variants: dt_variants}
+dt_cluster_rpc_bx_spread: {variants: dt_variants}
+dt_cluster_rpc_hit_frac: {variants: dt_variants}
+dt_cluster_rpc_out_of_time_frac: {variants: dt_variants}
+dt_cluster_rpc_time_from_bx: {variants: dt_variants}
+
+# The CSC Tpeak against the RPC BX of the same cluster.
+csc_cluster_time_vs_rpc_bx_time: {variants: csc_variants}

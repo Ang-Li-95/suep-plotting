@@ -1,24 +1,4 @@
-# custom/columns.py settings for this config set (see that module's docstring
-# and the README's "Derived-column settings" section).
-#
-# The clustering and isolation numbers are pinned to exactly the values in
-# configs_mds_signal/columns.yaml -- the two runs are overlaid, so a cluster here
-# and a cluster there must have been built and isolated the same way.  Leaving
-# either set on the module defaults would make that agreement accidental.
-parameters:
-  cluster_eps: 0.4
-  cluster_min_samples: 10
-  rpc_min_samples: 10
-  match_min_hits: 10         # sets cluster.matched, which the clusters step fills
-  jerc: true                 # JEC on events.Jet first (data too); JER smearing on MC
-  # The prompt objects the cluster drMuon / drJet are measured against are an
-  # ordinary object selection, so they live in selections.yaml
-  # (muon_sel_foriso / jet_sel_foriso, shared via ../_common/prompt_objects.yaml).
-
-# Reco-only: no histogram or selection here touches events.llp, so the four
-# truth steps are dropped -- 4x faster derive() (23s -> 6s per 500 signal
-# events) with bit-identical clusters, since cluster.matched / hasTruth are
-# filled by the clusters step itself.  events.llp is deliberately absent, so a
-# gen-dependent expression added here fails validation instead of filling empty.
-# llpidx_convention is omitted for the same reason: only the llp step reads it.
-steps: [jerc, jet_id, clusters, cluster_isolation]
+# ── Reco-only, incl. collision data ───────────────────────────────
+# Nothing but the shared settings: ../common is already reco-only, so no
+# histogram or selection here touches events.llp.
+_extends: ../common

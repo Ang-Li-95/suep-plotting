@@ -28,7 +28,7 @@ from coffea import processor
 from coffea.analysis_tools import Weights
 from coffea.nanoevents import NanoAODSchema
 
-from .config import load_config_file
+from .config import FILL_CONFIG_FILES, config_sources, load_config_file
 from .corrections import apply_corrections, build_correctors, load_correction_defs
 from .histograms import (
     _compile_expr,
@@ -333,9 +333,10 @@ def _inputs_mtime(files: list[str], config_dir: Path,
     """
     import os
 
-    paths = [config_dir / f for f in
-             ("samples.yaml", "histograms.yaml", "selections.yaml",
-              "corrections.yaml", "reweights.yaml", "columns.yaml")]
+    # Every file the set actually reads, not just the ones in its directory:
+    # a set that _extends a reference set or _includes a shared fragment is
+    # out of date when *those* change too (see config.config_sources).
+    paths = list(config_sources(config_dir, FILL_CONFIG_FILES))
     repo_root = Path(__file__).resolve().parent.parent.parent
     # Every module of the custom-columns package, not just columns.py: the
     # helpers live in sibling files and editing one changes the fills too.

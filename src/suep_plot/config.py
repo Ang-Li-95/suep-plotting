@@ -5,11 +5,14 @@ so the three directives below mean the same thing wherever they appear —
 ``histograms.yaml``, ``selections.yaml``, ``samples.yaml``, ``columns.yaml``,
 ``corrections.yaml``, ``reweights.yaml`` and ``derived_plots.yaml`` alike.
 
-``_extends: ../configs_mds_signal``
+``_extends: ../common`` (or a list, ``[../common, ../common_gen]``)
     Inherit the same-named file from another config set.  This file's keys are
     merged over the inherited ones (deeply, for nested mappings), and
-    ``some_name: null`` *deletes* an inherited definition.  Chains are
-    followed, so a set may extend a set that extends a base.
+    ``some_name: null`` *deletes* an inherited definition -- or, nested,
+    removes one key of it (``some_hist: {variants: null}``).  With a list the
+    bases are merged left to right and this file merges over the result, so a
+    study can compose ``common`` with ``common_gen`` instead of chaining.
+    Chains are followed too, and a cycle is an error.
 
 ``_include: [../../datasets.yaml, more.yaml]``
     Merge in definitions from shared fragment files.  Unlike ``_extends``,
@@ -123,17 +126,21 @@ def _substitute(node, values: dict):
     return node
 
 
-def _expand_repeats(raw: dict, path: Path) -> dict:
-    """Replace the ``_repeat`` blocks with the definitions they generate."""
+def _expand_repeats(raw: dict, path: Path, inherited_axes: dict):
+    """Replace the ``_repeat`` blocks with the definitions they generate.
+
+    Returns ``(defs, axes)``.  Axes are inherited: a base set can define the
+    systems axis once and everything extending it can loop over it.
+    """
     blocks = raw.get("_repeat")
+    axes = {**inherited_axes, **(raw.get("_axes") or {})}
     if not blocks:
-        return {k: v for k, v in raw.items() if k not in ("_axes", "_repeat")}
+        return {k: v for k, v in raw.items() if k != "_repeat"}, axes
     if not isinstance(blocks, list):
         raise ConfigError(f"ERROR in {path}: _repeat must be a list of "
                           "{over, defs} blocks")
 
-    axes = raw.get("_axes") or {}
-    out = {k: v for k, v in raw.items() if k not in ("_axes", "_repeat")}
+    out = {k: v for k, v in raw.items() if k != "_repeat"}
 
     for i, block in enumerate(blocks):
         if not isinstance(block, dict) or "over" not in block or "defs" not in block:
@@ -157,7 +164,7 @@ def _expand_repeats(raw: dict, path: Path) -> dict:
                         f"ERROR in {path}: _repeat[{i}] generates '{name}', which "
                         "this file already defines")
                 out[name] = cfg
-    return out
+    return out, axes
 
 
 def _resolve_registry(defs: dict, registry: dict, path: Path) -> dict:
@@ -179,15 +186,29 @@ def _resolve_registry(defs: dict, registry: dict, path: Path) -> dict:
     return out
 
 
-def load_config_file(path: str | Path, *, _seen=None) -> dict:
+def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
+                     _seen=None) -> dict:
     """Load one config file with ``_extends`` / ``_include`` / ``_repeat`` applied.
 
     A missing file loads as ``{}``, so an optional config (``columns.yaml``,
     ``reweights.yaml``) needs no special case at the call site.  Directive keys
     are consumed here; what comes back is definitions only.
+
+    What comes back is definitions only: ``_``-prefixed keys are directives or
+    reusable fragments, never definitions, so they are stripped.  Pass
+    *with_fragments* to keep them -- ``load_histogram_defs`` does, because
+    ``expand_variants`` reads ``_variant_sets`` off the merged result.
+
+    Pass a set as *sources* to collect every file that was actually read,
+    including the ones reached through ``_extends`` / ``_include`` /
+    ``_registry``.  :func:`config_sources` uses it so the up-to-date check can
+    see a config a set only inherits -- otherwise editing a shared fragment
+    leaves every run that includes it silently "up to date".
     """
     path = Path(path)
     raw = _read(path)
+    if sources is not None and path.exists():
+        sources.add(path.resolve())
 
     _seen = _seen or []
     resolved = path.resolve()
@@ -196,15 +217,20 @@ def load_config_file(path: str | Path, *, _seen=None) -> dict:
         raise ConfigError(f"ERROR: circular _extends: {chain}")
 
     merged: dict = {}
+    axes: dict = {}
 
-    parent = raw.pop("_extends", None)
-    if parent is not None:
+    parents = raw.pop("_extends", None) or []
+    if isinstance(parents, str):
+        parents = [parents]
+    for parent in parents:
         base_dir = Path(parent) if Path(parent).is_absolute() else path.parent / parent
         base_path = base_dir / path.name
         if not base_dir.is_dir():
             raise ConfigError(f"ERROR in {path}: _extends config set not found: "
                               f"{base_dir}")
-        merged = load_config_file(base_path, _seen=[*_seen, resolved])
+        merged = _merge(merged, load_config_file(
+            base_path, with_fragments=True, sources=sources, _seen=[*_seen, resolved]))
+        axes.update(merged.pop("_axes", {}) or {})
 
     includes = raw.pop("_include", [])
     if isinstance(includes, str):
@@ -213,11 +239,15 @@ def load_config_file(path: str | Path, *, _seen=None) -> dict:
         inc_path = Path(inc) if Path(inc).is_absolute() else path.parent / inc
         if not inc_path.exists():
             raise ConfigError(f"ERROR in {path}: _include file not found: {inc_path}")
-        merged = _merge(merged, load_config_file(inc_path, _seen=[*_seen, resolved]))
+        merged = _merge(merged, load_config_file(
+            inc_path, with_fragments=True, sources=sources, _seen=[*_seen, resolved]))
+        axes.update(merged.pop("_axes", {}) or {})
 
     registry_spec = raw.pop("_registry", None)
 
-    defs = _expand_repeats(raw, path)
+    defs, axes = _expand_repeats(raw, path, axes)
+    if axes:
+        defs["_axes"] = axes
     if registry_spec is not None:
         specs = [registry_spec] if isinstance(registry_spec, str) else registry_spec
         registry: dict = {}
@@ -226,7 +256,44 @@ def load_config_file(path: str | Path, *, _seen=None) -> dict:
             if not reg_path.exists():
                 raise ConfigError(f"ERROR in {path}: _registry file not found: "
                                   f"{reg_path}")
-            registry.update(load_config_file(reg_path, _seen=[*_seen, resolved]))
+            registry.update(load_config_file(reg_path, sources=sources,
+                                             _seen=[*_seen, resolved]))
         defs = _resolve_registry(defs, registry, path)
 
-    return _merge(merged, defs)
+    out = _merge(merged, defs)
+    if not with_fragments:
+        out = {k: v for k, v in out.items() if not str(k).startswith("_")}
+    return out
+
+
+# The files a config set is made of.
+CONFIG_FILES = ("samples.yaml", "histograms.yaml", "selections.yaml",
+                "corrections.yaml", "reweights.yaml", "derived_plots.yaml",
+                "columns.yaml")
+
+# The subset that decides what lands in the pickles.  derived_plots.yaml is
+# deliberately absent: it is read by suep-plot only, so editing a profile or an
+# efficiency must not force every sample to be reprocessed.
+FILL_CONFIG_FILES = tuple(f for f in CONFIG_FILES if f != "derived_plots.yaml")
+
+
+def config_sources(config_dir: str | Path, files=CONFIG_FILES) -> set:
+    """Every YAML file a config set actually reads, directives followed.
+
+    A set that inherits half its definitions from elsewhere -- ``_extends`` on a
+    reference set, ``_include`` of a shared fragment, ``_registry`` on
+    datasets.yaml -- is not described by the seven files in its own directory.
+    The up-to-date check needs the real list, or editing a shared cut leaves
+    every run that includes it reporting "up to date" and plotting stale
+    histograms.
+    """
+    config_dir = Path(config_dir)
+    sources: set = set()
+    for name in files:
+        try:
+            load_config_file(config_dir / name, sources=sources)
+        except SystemExit:
+            # A broken config is the run's problem, not the freshness check's;
+            # whatever was read before it failed still counts.
+            pass
+    return sources

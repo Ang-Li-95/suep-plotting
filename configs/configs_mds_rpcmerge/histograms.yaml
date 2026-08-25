@@ -1,584 +1,93 @@
-# configs_mds_rpcmerge/histograms.yaml -- rpc_mode: merge.
-#
+# ── rpc_mode: merge ───────────────────────────────────────────────
 # The RPC rechits are clustered *together with* the system they overlap --
-# barrel RPC (Region == 0) with DT, endcap RPC with CSC -- so this run has
-# cscCluster and dtCluster only, and each carries the RPC timing of its own
-# hits.  Because the RPC hits are inside the cluster, they also count towards
-# the per-LLP hit totals that define "reconstructable in this system".
+# barrel RPC (Region == 0) with DT, endcap RPC with CSC -- instead of being
+# associated to the finished clusters afterwards, which is the default
+# (rpc_mode: match, ../configs_mds_signal -> ../common).
 #
-# Everything not named below is inherited from ../configs_mds_signal, so the two
-# studies stay comparable plot for plot by construction.  A 'name:' with no
-# value deletes an inherited definition; see src/suep_plot/config.py.
+# Both modes produce the same two cluster collections carrying the same RPC
+# fields, so this set is the default study plot for plot, with one physics
+# difference: because the RPC hits are *inside* the cluster, they also count
+# towards the per-LLP hit totals that define "reconstructable in this system".
+# That is what the overrides below are.
 
 _extends: ../configs_mds_signal
-_variant_sets:
-  csc_iso:
-    iso_muon: &id001
-      selections:
-      - csc_cluster_iso_muon
-      label_prefix: 'muon-isolated '
-    iso_jet: &id002
-      selections:
-      - csc_cluster_iso_jet
-      label_prefix: 'jet-isolated '
-    iso_both: &id003
-      selections:
-      - csc_cluster_iso_muon
-      - csc_cluster_iso_jet
-      label_prefix: 'muon+jet-isolated '
-  dt_iso:
-    iso_muon: &id004
-      selections:
-      - dt_cluster_iso_muon
-      label_prefix: 'muon-isolated '
-    iso_jet: &id005
-      selections:
-      - dt_cluster_iso_jet
-      label_prefix: 'jet-isolated '
-    iso_both: &id006
-      selections:
-      - dt_cluster_iso_muon
-      - dt_cluster_iso_jet
-      label_prefix: 'muon+jet-isolated '
-  csc_variants:
-    iso_muon: *id001
-    iso_jet: *id002
-    iso_both: *id003
-    matched_iso_muon:
-      selections:
-      - csc_cluster_matched
-      - csc_cluster_iso_muon
-      label_prefix: 'matched muon-isolated '
-    matched_iso_jet:
-      selections:
-      - csc_cluster_matched
-      - csc_cluster_iso_jet
-      label_prefix: 'matched jet-isolated '
-    matched_iso_both:
-      selections:
-      - csc_cluster_matched
-      - csc_cluster_iso_muon
-      - csc_cluster_iso_jet
-      label_prefix: 'matched muon+jet-isolated '
-    matched:
-      selections:
-      - csc_cluster_matched
-      label_prefix: 'matched '
-    unmatched:
-      selections:
-      - csc_cluster_unmatched
-      label_prefix: 'unmatched '
-  dt_variants:
-    iso_muon: *id004
-    iso_jet: *id005
-    iso_both: *id006
-    matched_iso_muon:
-      selections:
-      - dt_cluster_matched
-      - dt_cluster_iso_muon
-      label_prefix: 'matched muon-isolated '
-    matched_iso_jet:
-      selections:
-      - dt_cluster_matched
-      - dt_cluster_iso_jet
-      label_prefix: 'matched jet-isolated '
-    matched_iso_both:
-      selections:
-      - dt_cluster_matched
-      - dt_cluster_iso_muon
-      - dt_cluster_iso_jet
-      label_prefix: 'matched muon+jet-isolated '
-    matched:
-      selections:
-      - dt_cluster_matched
-      label_prefix: 'matched '
-    unmatched:
-      selections:
-      - dt_cluster_unmatched
-      label_prefix: 'unmatched '
-llpcsc_nhits_csc:
-  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
-  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
-llpdt_nhits_dt:
-  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
-  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
+
+# The RPC region of each system now counts towards its per-LLP hit total.
 llp_nhits_csc:
+  bins: 100
   expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
+  hi: 200
   label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP
+  lo: 0
+  log_y: true
+  per_object: true
 llp_nhits_dt:
+  bins: 100
   expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
+  hi: 200
   label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP
+  lo: 0
+  log_y: true
+  per_object: true
+llpcsc_nhits_csc:
+  bins: 100
+  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
+  hi: 200
+  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_csc
 llpcsc_nhits_csc_den:
+  bins: 100
   expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
+  hi: 200
   label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
-llpdt_nhits_dt_den:
-  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
-  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_csc
 llpcsc_nhits_csc_num:
+  bins: 100
   expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
+  hi: 200
   label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
-llpdt_nhits_dt_num:
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_csc
+  - llp_reco_csc
+llpdt_nhits_dt:
+  bins: 100
   expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
+  hi: 200
   label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
-csc_cluster_first_chamber:
-  selections:
-  - csc_cluster_first_not_rpc
-csc_cluster_first_station:
-  selections:
-  - csc_cluster_first_not_rpc
-dt_cluster_first_chamber:
-  selections:
-  - dt_cluster_first_not_rpc
-dt_cluster_first_station:
-  selections:
-  - dt_cluster_first_not_rpc
-csc_cluster_n_rpc_hits:
-  expression: events.cscCluster.nRPCHits
-  per_object: true
-  bins: 50
   lo: 0
-  hi: 100
-  label: CSC cluster $N_{\mathrm{RPC\ hits}}$
   log_y: true
-  variants: csc_variants
-csc_cluster_n_rpc_hits_bx0:
-  expression: events.cscCluster.nRPCHitsBx0
   per_object: true
-  bins: 50
+  selections:
+  - llp_in_dt
+llpdt_nhits_dt_den:
+  bins: 100
+  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
+  hi: 200
+  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
   lo: 0
-  hi: 100
-  label: CSC cluster $N_{\mathrm{RPC\ hits}}$ at BX 0
   log_y: true
-  variants: csc_variants
-csc_cluster_rpc_hit_frac:
-  expression: events.cscCluster.rpcHitFrac
   per_object: true
-  bins: 50
+  selections:
+  - llp_in_dt
+llpdt_nhits_dt_num:
+  bins: 100
+  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
+  hi: 200
+  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
   lo: 0
-  hi: 1
-  label: CSC cluster RPC hit fraction
   log_y: true
-  variants: csc_variants
-csc_cluster_first_system:
-  expression: events.cscCluster.firstSystem
-  per_object: true
-  bins: 3
-  lo: 0
-  hi: 3
-  label: CSC cluster innermost hit system (0 CSC, 1 DT, 2 RPC)
-  variants: csc_variants
-csc_cluster_rpc_time:
-  expression: events.cscCluster.rpcTime
   per_object: true
   selections:
-  - csc_cluster_has_rpc
-  bins: 60
-  lo: -30
-  hi: 30
-  label: CSC cluster RPC time [ns]
-  variants: csc_variants
-csc_cluster_rpc_time_median:
-  expression: events.cscCluster.rpcTimeMedian
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 60
-  lo: -30
-  hi: 30
-  label: CSC cluster RPC time (median) [ns]
-  variants: csc_variants
-csc_cluster_rpc_time_weighted:
-  expression: events.cscCluster.rpcTimeWeighted
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 60
-  lo: -30
-  hi: 30
-  label: CSC cluster RPC time ($1/\sigma^2$-weighted) [ns]
-  variants: csc_variants
-csc_cluster_rpc_time_spread:
-  expression: events.cscCluster.rpcTimeSpread
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 50
-  lo: 0
-  hi: 25
-  label: CSC cluster RPC time RMS [ns]
-  variants: csc_variants
-csc_cluster_rpc_time_err:
-  expression: events.cscCluster.rpcTimeErr
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 50
-  lo: 0
-  hi: 5
-  label: CSC cluster RPC time uncertainty [ns]
-  log_y: true
-  variants: csc_variants
-csc_cluster_rpc_bx:
-  expression: events.cscCluster.rpcBx
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 9
-  lo: -4.5
-  hi: 4.5
-  label: CSC cluster mean RPC BX
-  log_y: true
-  variants: csc_variants
-csc_cluster_rpc_time_valid_frac:
-  expression: events.cscCluster.rpcTimeValidFrac
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 50
-  lo: 0
-  hi: 1
-  label: CSC cluster fraction of RPC hits with a valid time
-  log_y: true
-  variants: csc_variants
-csc_cluster_rpc_time_from_bx:
-  expression: events.cscCluster.rpcBx * 25
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 40
-  lo: -100
-  hi: 100
-  label: CSC cluster RPC time from BX [ns]
-  variants: csc_variants
-csc_cluster_rpc_bx_median:
-  expression: events.cscCluster.rpcBxMedian
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 9
-  lo: -4.5
-  hi: 4.5
-  label: CSC cluster median RPC BX
-  log_y: true
-  variants: csc_variants
-csc_cluster_rpc_bx_spread:
-  expression: events.cscCluster.rpcBxSpread
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 40
-  lo: 0
-  hi: 4
-  label: CSC cluster RPC BX RMS
-  log_y: true
-  variants: csc_variants
-csc_cluster_rpc_out_of_time_frac:
-  expression: events.cscCluster.rpcOutOfTimeFrac
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins: 50
-  lo: 0
-  hi: 1
-  label: CSC cluster out-of-time RPC hit fraction
-  log_y: true
-  variants: csc_variants
-csc_cluster_rpc_bx_vs_size:
-  expression_x: events.cscCluster.size
-  expression_y: events.cscCluster.rpcBx
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins_x: 50
-  lo_x: 0
-  hi_x: 500
-  bins_y: 9
-  lo_y: -4.5
-  hi_y: 4.5
-  label_x: CSC cluster $N_{\mathrm{hits}}$
-  label_y: CSC cluster mean RPC BX
-  log_z: true
-csc_cluster_rpc_time_vs_size:
-  expression_x: events.cscCluster.size
-  expression_y: events.cscCluster.rpcTime
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins_x: 50
-  lo_x: 0
-  hi_x: 500
-  bins_y: 60
-  lo_y: -30
-  hi_y: 30
-  label_x: CSC cluster $N_{\mathrm{hits}}$
-  label_y: CSC cluster RPC time [ns]
-  log_z: true
-csc_cluster_rpc_time_vs_nrpc:
-  expression_x: events.cscCluster.nRPCHits
-  expression_y: events.cscCluster.rpcTime
-  per_object: true
-  selections:
-  - csc_cluster_has_rpc
-  bins_x: 50
-  lo_x: 0
-  hi_x: 100
-  bins_y: 60
-  lo_y: -30
-  hi_y: 30
-  label_x: CSC cluster $N_{\mathrm{RPC\ hits}}$
-  label_y: CSC cluster RPC time [ns]
-  log_z: true
-dt_cluster_n_rpc_hits:
-  expression: events.dtCluster.nRPCHits
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 100
-  label: DT cluster $N_{\mathrm{RPC\ hits}}$
-  log_y: true
-  variants: dt_variants
-dt_cluster_n_rpc_hits_bx0:
-  expression: events.dtCluster.nRPCHitsBx0
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 100
-  label: DT cluster $N_{\mathrm{RPC\ hits}}$ at BX 0
-  log_y: true
-  variants: dt_variants
-dt_cluster_rpc_hit_frac:
-  expression: events.dtCluster.rpcHitFrac
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 1
-  label: DT cluster RPC hit fraction
-  log_y: true
-  variants: dt_variants
-dt_cluster_first_system:
-  expression: events.dtCluster.firstSystem
-  per_object: true
-  bins: 3
-  lo: 0
-  hi: 3
-  label: DT cluster innermost hit system (0 CSC, 1 DT, 2 RPC)
-  variants: dt_variants
-dt_cluster_rpc_time:
-  expression: events.dtCluster.rpcTime
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 60
-  lo: -30
-  hi: 30
-  label: DT cluster RPC time [ns]
-  variants: dt_variants
-dt_cluster_rpc_time_median:
-  expression: events.dtCluster.rpcTimeMedian
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 60
-  lo: -30
-  hi: 30
-  label: DT cluster RPC time (median) [ns]
-  variants: dt_variants
-dt_cluster_rpc_time_weighted:
-  expression: events.dtCluster.rpcTimeWeighted
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 60
-  lo: -30
-  hi: 30
-  label: DT cluster RPC time ($1/\sigma^2$-weighted) [ns]
-  variants: dt_variants
-dt_cluster_rpc_time_spread:
-  expression: events.dtCluster.rpcTimeSpread
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 50
-  lo: 0
-  hi: 25
-  label: DT cluster RPC time RMS [ns]
-  variants: dt_variants
-dt_cluster_rpc_time_err:
-  expression: events.dtCluster.rpcTimeErr
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 50
-  lo: 0
-  hi: 5
-  label: DT cluster RPC time uncertainty [ns]
-  log_y: true
-  variants: dt_variants
-dt_cluster_rpc_bx:
-  expression: events.dtCluster.rpcBx
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 9
-  lo: -4.5
-  hi: 4.5
-  label: DT cluster mean RPC BX
-  log_y: true
-  variants: dt_variants
-dt_cluster_rpc_time_valid_frac:
-  expression: events.dtCluster.rpcTimeValidFrac
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 50
-  lo: 0
-  hi: 1
-  label: DT cluster fraction of RPC hits with a valid time
-  log_y: true
-  variants: dt_variants
-dt_cluster_rpc_time_from_bx:
-  expression: events.dtCluster.rpcBx * 25
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 40
-  lo: -100
-  hi: 100
-  label: DT cluster RPC time from BX [ns]
-  variants: dt_variants
-dt_cluster_rpc_bx_median:
-  expression: events.dtCluster.rpcBxMedian
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 9
-  lo: -4.5
-  hi: 4.5
-  label: DT cluster median RPC BX
-  log_y: true
-  variants: dt_variants
-dt_cluster_rpc_bx_spread:
-  expression: events.dtCluster.rpcBxSpread
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 40
-  lo: 0
-  hi: 4
-  label: DT cluster RPC BX RMS
-  log_y: true
-  variants: dt_variants
-dt_cluster_rpc_out_of_time_frac:
-  expression: events.dtCluster.rpcOutOfTimeFrac
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins: 50
-  lo: 0
-  hi: 1
-  label: DT cluster out-of-time RPC hit fraction
-  log_y: true
-  variants: dt_variants
-dt_cluster_rpc_bx_vs_size:
-  expression_x: events.dtCluster.size
-  expression_y: events.dtCluster.rpcBx
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins_x: 50
-  lo_x: 0
-  hi_x: 500
-  bins_y: 9
-  lo_y: -4.5
-  hi_y: 4.5
-  label_x: DT cluster $N_{\mathrm{hits}}$
-  label_y: DT cluster mean RPC BX
-  log_z: true
-dt_cluster_rpc_time_vs_size:
-  expression_x: events.dtCluster.size
-  expression_y: events.dtCluster.rpcTime
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins_x: 50
-  lo_x: 0
-  hi_x: 500
-  bins_y: 60
-  lo_y: -30
-  hi_y: 30
-  label_x: DT cluster $N_{\mathrm{hits}}$
-  label_y: DT cluster RPC time [ns]
-  log_z: true
-dt_cluster_rpc_time_vs_nrpc:
-  expression_x: events.dtCluster.nRPCHits
-  expression_y: events.dtCluster.rpcTime
-  per_object: true
-  selections:
-  - dt_cluster_has_rpc
-  bins_x: 50
-  lo_x: 0
-  hi_x: 100
-  bins_y: 60
-  lo_y: -30
-  hi_y: 30
-  label_x: DT cluster $N_{\mathrm{RPC\ hits}}$
-  label_y: DT cluster RPC time [ns]
-  log_z: true
-csc_cluster_time_spread:
-  expression: events.cscCluster.timeSpread
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 50
-  label: CSC cluster $t_{\mathrm{peak}}$ RMS [ns]
-  log_y: true
-  variants: csc_variants
-csc_cluster_oot_hit_frac:
-  expression: events.cscCluster.ootHitFrac
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 1
-  label: CSC cluster out-of-time hit fraction ($|t_{\mathrm{peak}}| > 12.5$ ns)
-  log_y: true
-  variants: csc_variants
-csc_cluster_time_vs_spread:
-  expression_x: events.cscCluster.time
-  expression_y: events.cscCluster.timeSpread
-  per_object: true
-  bins_x: 60
-  lo_x: -30
-  hi_x: 90
-  bins_y: 50
-  lo_y: 0
-  hi_y: 50
-  label_x: CSC cluster mean $t_{\mathrm{peak}}$ [ns]
-  label_y: CSC cluster $t_{\mathrm{peak}}$ RMS [ns]
-  log_z: true
-rpc_cluster_n: null
-rpc_cluster_size: null
-rpc_cluster_eta: null
-rpc_cluster_phi: null
-rpc_cluster_eta_spread: null
-rpc_cluster_phi_spread: null
-rpc_cluster_nstation: null
-rpc_cluster_time: null
-rpc_cluster_nmatchedhits: null
-llp_pt_num_rpc: null
-llp_eta_num_rpc: null
-llp_decayr_num_rpc: null
-llp_decayr_all_num_rpc: null
-llp_absdecayz_num_rpc: null
-llp_absdecayz_all_num_rpc: null
-rpc_cluster_nlayer: null
-rpc_cluster_station_span: null
-rpc_cluster_first_chamber: null
-rpc_cluster_first_station: null
-rpc_cluster_max_station_frac: null
-rpc_cluster_layer_hits_relrms: null
-rpc_cluster_max_layer_frac: null
-rpc_cluster_nmatchedllp: null
-llp_nrecocluster_rpc: null
-llp_clusterhitfrac_rpc: null
-rpc_cluster_dr_muon: null
-rpc_cluster_dr_jet: null
+  - llp_in_dt
+  - llp_reco_dt

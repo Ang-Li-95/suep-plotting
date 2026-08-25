@@ -25,6 +25,42 @@ These four keys are understood in **every** config file. They are directives,
 not definitions: like any `_`-prefixed key they never become a histogram, a
 selection or a sample.
 
+### The two bases
+
+`configs/common/` and `configs/common_gen/` are config *sets* that no run uses
+directly. `common` holds the reco-level cluster histograms and selections every
+study fills; `common_gen` `_extends` it and adds the gen-level ones — the LLP
+collection, the truth splits, the efficiency chain and its derived plots.
+
+```
+configs/common/            reco histograms + selections + derived plots,
+  │                        rpc_mode: match, the four reco steps
+  ├── configs_mds/                  _extends ../common      (and nothing else)
+  ├── configs_mds_data/             _extends ../common + the isolation splits
+  └── configs/common_gen/  + LLP collection, truth splits, efficiency chain,
+        │                    and the four gen steps
+        ├── configs_mds_signal/     _extends ../common_gen  (and nothing else)
+        └── configs_mds_rpcmerge/   _extends ../configs_mds_signal, rpc_mode: merge
+```
+
+`common` carries only the **reco** steps (`jerc, jet_id, clusters,
+cluster_isolation`); `common_gen` adds the four gen ones. A study with no
+gen-level fills should not pay for them, and `events.llp` being absent is what
+makes a stray gen expression fail at validation instead of filling empty.
+
+`common` also fixes **`rpc_mode: match`** as the default, so there is no
+standalone `events.rpcCluster` and no `rpc_cluster_*` histogram anywhere: the
+RPC rechits are attached to the finished CSC and DT clusters, which carry their
+RPC content and timing. Everything per-system is therefore a CSC/DT pair — the
+`systems` axis in `common/selections.yaml` has two entries, and `common_gen`
+inherits it.
+
+A study attaches its own splits by overriding **one key** of an inherited
+histogram — `csc_cluster_size: {variants: csc_variants}` — because mappings
+merge deeply. That is why `common` deliberately defines no `_variant_sets` and
+puts no `variants:` on anything: what a cluster is split by is the study's
+business, and `configs_mds` wants the inclusive fills on their own.
+
 ### `_extends` — inherit another config set
 
 ```yaml
@@ -80,12 +116,22 @@ a dozen hoisted values is harder to read than the thing it replaced.
 ### `_include` — merge in a shared fragment
 
 ```yaml
-_include: [../_common/cluster_histograms.yaml]
+_include: [../_common/shared_cuts.yaml]
 ```
 
 Definitions from the named files are merged in, then this file's own keys are
 merged over them. Unlike `_extends`, which follows the config *set*, an include
-names one file.
+names one file — reach for it when a handful of definitions are shared by sets
+that are siblings rather than variants of each other.
+
+No config set uses it today: the prompt-object cuts that were its one candidate
+are written out in each `selections.yaml` instead, so a cut can be retuned in
+one study without silently moving the others (see
+[derived-columns.md](derived-columns.md#prompt-objects-live-in-selectionsyaml)).
+
+> The up-to-date check follows `_include`, `_extends` and `_registry` (see
+> `config.config_sources`), so editing an included fragment does reprocess every
+> set that reads it — no `--force` needed.
 
 ### `_registry` — select from a pool
 
@@ -140,7 +186,7 @@ config picks the combination it needs instead of repeating the definitions:
 _include: ../../datasets.yaml    # one path or a list; relative to this samples.yaml
 
 suep_mDark2_temp1:            # registry entry, verbatim
-suep_temp2:                   # registry entry with per-study overrides
+suep_mDark2_temp2:            # registry entry with per-study overrides
   color: "black"
   scale: 100
 dy:                           # same dataset under a different config name

@@ -216,8 +216,8 @@ def _merge_hits(components):
     merged["system"] = components[0]["system"]
     merged["code"] = components[0]["code"]
     # The merged collection has a time if its *primary* (first) component does:
-    # that is the field the historical ``time`` means -- CSC Tpeak.  RPC times
-    # are reported separately by the rpcTime* fields.
+    # that is the field the historical ``time`` means -- CSC Tpeak.  The RPC
+    # hits are dated separately, by the rpcBx* fields.
     merged["has_time"] = components[0]["has_time"]
     merged["has_truth"] = all(c["has_truth"] for c in components)
     return merged
@@ -226,8 +226,6 @@ def _merge_hits(components):
 # The RPC fields a cluster carries, in both rpc_mode: merge and rpc_mode: match
 # -- the same names and the same meanings, so one config set plots either.
 RPC_CLUSTER_FIELDS = ("firstSystem", "nRPCHits", "nRPCHitsBx0", "rpcHitFrac",
-                      "rpcTime", "rpcTimeMedian", "rpcTimeSpread",
-                      "rpcTimeWeighted", "rpcTimeErr", "rpcTimeValidFrac",
                       "rpcBx", "rpcBxMedian", "rpcBxSpread", "rpcOutOfTimeFrac")
 
 
@@ -290,9 +288,7 @@ def _match_rpc(clusters, rpc, eps, system):
             out["nRPCHits"].append(n)
             out["nRPCHitsBx0"].append(int(np.count_nonzero(bx == 0)))
             out["rpcHitFrac"].append(float(n / (csize[c][j] + n)) if n else 0.0)
-            for f, v in _rpc_time(hits["time"][h][m] if n else empty,
-                                  hits["timeError"][h][m] if n else empty,
-                                  bx).items():
+            for f, v in _rpc_time(bx).items():
                 out[f].append(v)
 
     ints = {"firstSystem", "nRPCHits", "nRPCHitsBx0"}
@@ -302,43 +298,27 @@ def _match_rpc(clusters, rpc, eps, system):
     return clusters
 
 
-def _rpc_time(times, errors, bx):
-    """Timing of one cluster's RPC hits, from the rechit time and the BX.
+def _rpc_time(bx):
+    """Timing of one cluster's RPC hits, from the bunch crossing.
 
-    RPC is the only muon subdetector whose MDSNano rechits carry timing at
-    all, so its hits are what date a merged cluster.  Two independent
-    estimates, because the fine one is not always there:
+    RPC is the only muon subdetector whose MDSNano rechits carry any timing at
+    all, so its hits are what date a CSC or DT cluster.  The estimate is the
+    bunch crossing: mean / median / RMS in BX units (multiply by 25 ns for a
+    time), plus ``rpcOutOfTimeFrac``, the fraction of the cluster's RPC hits
+    outside the in-time BX -- the handle on a late, displaced shower.
 
-    * the rechit time (ns), averaged plainly, by ``1/sigma^2`` from the
-      per-hit ``TimeError``, and as a median (robust against the few badly
-      mistimed hits a shower leaves).  A rechit whose ``TimeError`` is not
-      positive has no valid time -- the whole MDSNano production line as of
-      2026-08 stores ``Time = 0``, ``TimeError = -1`` -- and is left out, so
-      these fields are NaN rather than a fake 0 when nothing was measured.
-      ``rpcTimeValidFrac`` says how much of the cluster fed them.
-    * the bunch crossing, which *is* filled: mean / median / RMS in BX units
-      (multiply by 25 ns for a time), plus ``rpcOutOfTimeFrac``, the fraction
-      of the cluster's RPC hits outside the in-time BX -- the coarse handle on
-      a late, displaced shower.
+    The rechit *time* is deliberately not used.  No MDSNano production writes
+    it: ``Time`` is exactly 0 and ``TimeError`` exactly -1 for every RPC rechit
+    in every sample checked (private signal, central DY, ZeroBias data -- 841k
+    rechits, one distinct value each), so a mean, median, spread or
+    inverse-variance weighted time computed from it says nothing.  The BX,
+    by contrast, is filled and spans -3..4.  If a production ever fills the
+    time, add the fields back here and in configs/common/histograms.yaml.
 
     A cluster with no RPC hit at all gives NaN throughout.
     """
-    fields = ("rpcTime", "rpcTimeMedian", "rpcTimeSpread", "rpcTimeWeighted",
-              "rpcTimeErr", "rpcTimeValidFrac", "rpcBx", "rpcBxMedian",
-              "rpcBxSpread", "rpcOutOfTimeFrac")
-    if len(times) == 0:
-        return dict.fromkeys(fields, np.nan)
-
+    fields = ("rpcBx", "rpcBxMedian", "rpcBxSpread", "rpcOutOfTimeFrac")
     out = dict.fromkeys(fields, np.nan)
-    valid = np.isfinite(times) & np.isfinite(errors) & (errors > 0)
-    out["rpcTimeValidFrac"] = float(valid.mean())
-    if valid.any():
-        t, weights = times[valid], 1.0 / errors[valid] ** 2
-        out["rpcTime"] = float(t.mean())
-        out["rpcTimeMedian"] = float(np.median(t))
-        out["rpcTimeSpread"] = float(t.std())
-        out["rpcTimeWeighted"] = float((t * weights).sum() / weights.sum())
-        out["rpcTimeErr"] = float(1.0 / np.sqrt(weights.sum()))
 
     good_bx = bx[np.isfinite(bx)]
     if len(good_bx):
@@ -391,10 +371,7 @@ def _cluster_hits(hits, eps, min_samples, settings, merged=False):
     if tvals is not None:
         fields += ["time", "timeSpread", "ootHitFrac"]
     if merged:
-        fields += ["firstSystem", "nRPCHits", "nRPCHitsBx0", "rpcHitFrac",
-                   "rpcTime", "rpcTimeMedian", "rpcTimeSpread",
-                   "rpcTimeWeighted", "rpcTimeErr", "rpcTimeValidFrac",
-                   "rpcBx", "rpcBxMedian", "rpcBxSpread", "rpcOutOfTimeFrac"]
+        fields += list(RPC_CLUSTER_FIELDS)
     out = {f: [] for f in fields}
     nclu = np.zeros(len(counts), dtype=np.int64)
 
@@ -475,8 +452,8 @@ def _cluster_hits(hits, eps, min_samples, settings, merged=False):
             src = source[s][m] if merged else None
             if tvals is not None:
                 # ``time`` is the primary system's time only (CSC Tpeak): the
-                # RPC hits a merged cluster picked up are reported apart, by
-                # the rpcTime* fields, and are on a different clock.
+                # RPC hits a merged cluster picked up are dated apart, by the
+                # rpcBx* fields, and are on a different clock.
                 t = tvals[s][m] if src is None else tvals[s][m][src == primary_code]
                 t = t[np.isfinite(t)]
                 # The spread separates a real shower (every hit from the same
@@ -494,9 +471,7 @@ def _cluster_hits(hits, eps, min_samples, settings, merged=False):
                 out["nRPCHits"].append(int(isrpc.sum()))
                 out["nRPCHitsBx0"].append(int(np.count_nonzero(rpc_bx == 0)))
                 out["rpcHitFrac"].append(float(isrpc.sum() / m.sum()))
-                for f, v in _rpc_time(hits["time"][s][m][isrpc],
-                                      hits["timeError"][s][m][isrpc],
-                                      rpc_bx).items():
+                for f, v in _rpc_time(rpc_bx).items():
                     out[f].append(v)
         nclu[i] = labels.max() + 1
 

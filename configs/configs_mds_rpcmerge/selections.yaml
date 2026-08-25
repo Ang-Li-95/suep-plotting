@@ -1,36 +1,20 @@
-# configs_mds_rpcmerge/selections.yaml -- rpc_mode: merge.
-#
+# ── rpc_mode: merge ───────────────────────────────────────────────
 # The RPC rechits are clustered *together with* the system they overlap --
-# barrel RPC (Region == 0) with DT, endcap RPC with CSC -- so this run has
-# cscCluster and dtCluster only, and each carries the RPC timing of its own
-# hits.  Because the RPC hits are inside the cluster, they also count towards
-# the per-LLP hit totals that define "reconstructable in this system".
+# barrel RPC (Region == 0) with DT, endcap RPC with CSC -- instead of being
+# associated to the finished clusters afterwards, which is the default
+# (rpc_mode: match, ../configs_mds_signal -> ../common).
 #
-# Everything not named below is inherited from ../configs_mds_signal, so the two
-# studies stay comparable plot for plot by construction.  A 'name:' with no
-# value deletes an inherited definition; see src/suep_plot/config.py.
+# Both modes produce the same two cluster collections carrying the same RPC
+# fields, so this set is the default study plot for plot, with one physics
+# difference: because the RPC hits are *inside* the cluster, they also count
+# towards the per-LLP hit totals that define "reconstructable in this system".
+# That is what the overrides below are.
 
 _extends: ../configs_mds_signal
+
 llp_hits10_csc:
   expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap) >= 10
+  level: object
 llp_hits10_dt:
   expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel) >= 10
-csc_cluster_has_rpc:
   level: object
-  expression: events.cscCluster.nRPCHits > 0
-dt_cluster_has_rpc:
-  level: object
-  expression: events.dtCluster.nRPCHits > 0
-csc_cluster_first_not_rpc:
-  level: object
-  expression: events.cscCluster.firstSystem != 2
-dt_cluster_first_not_rpc:
-  level: object
-  expression: events.dtCluster.firstSystem != 2
-llp_reco_rpc: null
-rpc_cluster_matched: null
-has_rpc_cluster: null
-has_matched_rpc: null
-rpc_cluster_unmatched: null
-rpc_cluster_iso_muon: null
-rpc_cluster_iso_jet: null

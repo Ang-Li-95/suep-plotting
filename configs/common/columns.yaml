@@ -1,0 +1,23 @@
+# ── derive() settings shared by every MDS study ───────────────────
+# The clustering and jet calibration every set is compared against.  Pinned
+# rather than left to the module defaults: the studies are overlaid, so a
+# future change to custom/params.py must not move one of them silently.
+#
+# Reco steps only.  The truth steps (llp, llp_hits, llp_reco, llp_shape) are
+# added by ../common_gen -- a set with no gen-level fills should not pay for
+# them, and events.llp being absent is what makes a stray gen expression fail
+# at validation instead of filling empty.
+parameters:
+  cluster_eps: 0.4
+  cluster_min_samples: 10
+  match_min_hits: 10
+  jerc: true                 # JEC on events.Jet (data too); JER smearing on MC
+  # The RPC rechits are associated to the finished CSC and DT clusters rather
+  # than clustered on their own: they can then date a cluster without being
+  # able to create one, so the cluster variables and the signal region stay
+  # those of the standard MDS analysis.  This is why there is no
+  # events.rpcCluster and no rpc_cluster_* histogram anywhere below.
+  # rpc_min_samples is unused in this mode.
+  rpc_mode: match
+
+steps: [jerc, jet_id, clusters, cluster_isolation]

@@ -1,0 +1,15 @@
+# ── Reco-level derived plots shared by every MDS study ────────────
+# Profiles of the RPC timing a CSC or DT cluster picked up, against its
+# size: how well the RPC content dates a cluster, and how that improves
+# with the number of hits.  Reco-only, so every study gets them.
+
+prof_csc_rpc_bx_vs_size:
+  label_x: CSC cluster $N_{\mathrm{hits}}$
+  label_y: $\langle$RPC BX$\rangle$
+  source: csc_cluster_rpc_bx_vs_size
+  type: profile_x
+prof_dt_rpc_bx_vs_size:
+  label_x: DT cluster $N_{\mathrm{hits}}$
+  label_y: $\langle$RPC BX$\rangle$
+  source: dt_cluster_rpc_bx_vs_size
+  type: profile_x

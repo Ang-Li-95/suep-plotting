@@ -1,5 +1,7 @@
 """The shared config directives: _extends, _include, _registry, _repeat."""
 
+import os
+
 import pytest
 import yaml
 
@@ -212,3 +214,133 @@ def test_include_and_registry_mean_opposite_things_for_an_empty_value(tmp_path):
 
     assert load_config_file(merged) == {}
     assert load_config_file(selected) == {"sig": {"files": ["/d"]}}
+
+
+# ── which files a set is actually made of ─────────────────────────
+# The up-to-date check stats these.  A set that inherits half its definitions
+# is not described by the files in its own directory, and getting this wrong is
+# silent: suep-run reports "up to date" and the stale pickles get plotted.
+
+
+def _set(tmp_path, name, **files):
+    d = tmp_path / name
+    for stem, body in files.items():
+        _write(d / f"{stem}.yaml", body)
+    return d
+
+
+def test_sources_follow_extends_include_and_registry(tmp_path):
+    from suep_plot.config import config_sources
+
+    _write(tmp_path / "pool.yaml", {"sig": {"files": ["/d"]}})
+    _write(tmp_path / "frag.yaml", {"shared_cut": {"expression": "x"}})
+    _set(tmp_path, "base", histograms={"h": {"bins": 1}})
+    d = _set(tmp_path, "study",
+             histograms={"_extends": "../base"},
+             selections={"_include": "../frag.yaml"},
+             samples={"_registry": "../pool.yaml", "sig": None})
+
+    got = {p.name for p in config_sources(d)}
+
+    assert "frag.yaml" in got, "an _included fragment is part of the set"
+    assert "pool.yaml" in got, "the dataset registry is part of the set"
+    assert (tmp_path / "base" / "histograms.yaml").resolve() in config_sources(d)
+
+
+def test_the_freshness_check_sees_an_included_fragment(tmp_path):
+    """Editing a shared cut must reprocess every set that includes it.
+
+    This is the isolation-cut scan: the cuts live in one fragment several sets
+    pull in, so if the check only looked in each set's own directory, every
+    run after an edit would report "up to date" and plot the previous cut.
+    """
+    from suep_plot.processor import _inputs_mtime
+
+    frag = _write(tmp_path / "frag.yaml", {"muon_sel_foriso": {"expression": "a"}})
+    d = _set(tmp_path, "study", histograms={"h": {"bins": 1}},
+             selections={"_include": "../frag.yaml"})
+
+    before = _inputs_mtime([], d)
+    os.utime(frag, (before + 100, before + 100))
+
+    assert _inputs_mtime([], d) > before
+
+
+def test_a_derived_plot_edit_does_not_force_reprocessing(tmp_path):
+    """derived_plots.yaml is read by suep-plot only, so it is not an input."""
+    from suep_plot.processor import _inputs_mtime
+
+    d = _set(tmp_path, "study", histograms={"h": {"bins": 1}},
+             derived_plots={"eff": {"type": "efficiency"}})
+
+    before = _inputs_mtime([], d)
+    plots = d / "derived_plots.yaml"
+    os.utime(plots, (before + 100, before + 100))
+
+    assert _inputs_mtime([], d) == before
+
+
+# ── composing bases ───────────────────────────────────────────────
+
+
+def test_extends_accepts_a_list_of_bases(tmp_path):
+    """A study composes ../common with ../common_gen instead of chaining."""
+    _write(tmp_path / "common" / "h.yaml", {"reco": {"bins": 1}})
+    _write(tmp_path / "common_gen" / "h.yaml", {"truth": {"bins": 2}})
+    path = _write(tmp_path / "study" / "h.yaml",
+                  {"_extends": ["../common", "../common_gen"]})
+
+    assert load_config_file(path) == {"reco": {"bins": 1}, "truth": {"bins": 2}}
+
+
+def test_later_bases_win_over_earlier_ones(tmp_path):
+    _write(tmp_path / "a" / "h.yaml", {"x": {"bins": 1, "lo": 0}})
+    _write(tmp_path / "b" / "h.yaml", {"x": {"bins": 9}})
+    path = _write(tmp_path / "study" / "h.yaml", {"_extends": ["../a", "../b"]})
+
+    assert load_config_file(path) == {"x": {"bins": 9, "lo": 0}}
+
+
+def test_a_study_can_drop_one_key_of_an_inherited_definition(tmp_path):
+    """How a set opts out of a split: `name: {variants: null}`, not a rewrite."""
+    _write(tmp_path / "common" / "h.yaml",
+           {"h": {"bins": 1, "label": "x", "variants": "csc"}})
+    path = _write(tmp_path / "study" / "h.yaml",
+                  {"_extends": "../common", "h": {"variants": None}})
+
+    assert load_config_file(path) == {"h": {"bins": 1, "label": "x"}}
+
+
+def test_axes_are_inherited(tmp_path):
+    """A base defines the systems axis once; everything extending it can loop."""
+    _write(tmp_path / "common" / "s.yaml",
+           {"_axes": {"systems": [{"SYS": "csc"}, {"SYS": "dt"}]}})
+    path = _write(tmp_path / "study" / "s.yaml", {
+        "_extends": "../common",
+        "_repeat": [{"over": "systems", "defs": {"has_<SYS>": {"expression": "<SYS>"}}}],
+    })
+
+    assert set(load_config_file(path)) == {"has_csc", "has_dt"}
+
+
+def test_an_inherited_axis_can_be_overridden(tmp_path):
+    _write(tmp_path / "common" / "s.yaml",
+           {"_axes": {"systems": [{"SYS": "csc"}, {"SYS": "dt"}]}})
+    path = _write(tmp_path / "study" / "s.yaml", {
+        "_extends": "../common",
+        "_axes": {"systems": [{"SYS": "rpc"}]},
+        "_repeat": [{"over": "systems", "defs": {"has_<SYS>": {"expression": "<SYS>"}}}],
+    })
+
+    assert set(load_config_file(path)) == {"has_rpc"}
+
+
+def test_fragments_are_not_definitions(tmp_path):
+    """_axes and friends must not surface as selections or samples."""
+    path = _write(tmp_path / "s.yaml", {
+        "_axes": {"systems": [{"SYS": "csc"}]},
+        "_repeat": [{"over": "systems", "defs": {"has_<SYS>": {"expression": "x"}}}],
+    })
+
+    assert set(load_config_file(path)) == {"has_csc"}
+    assert "_axes" in load_config_file(path, with_fragments=True)

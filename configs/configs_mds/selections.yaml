@@ -1,15 +1,3 @@
-# ── Reco-level selections for the MDS cluster study ───────────────
-# Truth-based masks (LLP decay volume / reconstruction flags, truth-matched
-# clusters) live in configs_mds_llp/selections.yaml.
-
-# The prompt-object cuts the cluster isolation is measured against;
-# shared so the overlaid studies cannot drift apart.
-_include: ../_common/prompt_objects.yaml
-
-# Event-level bookkeeping (cutflow.txt)
-has_csc_cluster:
-  expression: "ak.num(events.cscCluster) >= 1"
-has_dt_cluster:
-  expression: "ak.num(events.dtCluster) >= 1"
-has_rpc_cluster:
-  expression: "ak.num(events.rpcCluster) >= 1"
+# ── The reco-only reference study ─────────────────────────────────
+# The shared reco selections; see ../common/selections.yaml.
+_extends: ../common

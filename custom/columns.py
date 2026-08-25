@@ -174,7 +174,7 @@ def _merged_clusters(ctx):
     No ``rpcCluster`` collection is produced: every RPC rechit has been offered
     to the clustering of the system it overlaps, and clustering it a second
     time on its own would double count it.  The RPC hits a cluster picked up
-    are what date it (the ``rpcTime*`` / ``rpcBx*`` fields) -- DT rechits carry
+    are what date it (the ``rpcBx*`` fields) -- DT rechits carry
     no time branch at all, and the CSC ``Tpeak`` is on its own clock.
     """
     barrel, endcap = _rpc_regions(ctx.events)
@@ -270,9 +270,18 @@ def _step_cluster_isolation(ctx):
             "selection with a 'collection:' naming what it masks; see "
             "docs/derived-columns.md.")
 
-    objects = {field: _selected_objects(ctx.events, name, ctx.selections[name])
-               for field, name in ISO_SELECTIONS.items()}
+    selected = {name: _selected_objects(ctx.events, name, ctx.selections[name])
+                for name in ISO_SELECTIONS.values()}
 
+    # How many prompt objects each event has, as an event-level column named
+    # after the selection ("n_jet_sel_foriso").  A histogram can then count
+    # them without restating the cut -- the count and the isolation are the
+    # same selection by construction, so retuning it moves both.
+    for name, objs in selected.items():
+        if objs is not None:
+            ctx.events = ak.with_field(ctx.events, ak.num(objs), "n_" + name)
+
+    objects = {field: selected[name] for field, name in ISO_SELECTIONS.items()}
     for sys, clusters in ctx.clusters.items():
         ctx.clusters[sys] = _cluster_isolation(clusters, objects)
 

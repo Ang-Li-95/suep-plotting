@@ -43,7 +43,7 @@ its default and its validator.
 | `cluster_eps` | `0.4` | DBSCAN eps — the dR radius in eta-phi, all systems |
 | `cluster_min_samples` | `10` | DBSCAN minimum cluster size, CSC and DT (50 = standard MDS analysis) |
 | `rpc_min_samples` | `10` | the same for RPC, which is a sparser system; unused outside `rpc_mode: separate` |
-| `rpc_mode` | `separate` | what the RPC rechits are for — see below |
+| `rpc_mode` | `match` | what the RPC rechits are for — see below |
 | `match_min_hits` | `10` | cluster ↔ LLP truth match: `matched` := (# rechits sharing one `llpIdx`) ≥ this |
 | `oot_time_cut` | `12.5` | half-width [ns] of the in-time window behind `cluster.ootHitFrac`. 12.5 ns = half a bunch crossing, the standard MDS in-time definition. Only reaches systems with a rechit time, i.e. CSC `Tpeak` |
 | `pair_max_hits` | `2000` | an LLP with more matched rechits than this is strided down before the O(N²) pairwise dR matrix is built (multiplicities are far below the cap in practice) |
@@ -61,33 +61,33 @@ it is what can date a CSC or DT cluster. The barrel wheels (`Region == 0`) sit
 at the DT radii and the endcap disks (`|Region| == 1`) at the CSC z, so each RPC
 rechit pairs with one of the two.
 
+- **`match`** *(the default)* — the clustering is the CSC/DT one and the RPC
+  rechits are associated to the finished clusters afterwards (nearest centroid
+  within `cluster_eps`). RPC contributes nothing to the DBSCAN density
+  estimate, so the cluster variables and the signal region stay those of the
+  standard MDS analysis — which matters because RPC rechit times are flat in
+  BX in data (~19 % at BX 0 in ZeroBias), so merged, RPC noise can push a
+  background cluster over `min_samples`.
 - **`separate`** — the historical layout: three independent DBSCAN runs, and
-  `events.rpcCluster` alongside the other two.
+  `events.rpcCluster` alongside the other two. Only the retired config sets
+  still use it; nothing in `configs/common/` defines an `rpc_cluster_*`
+  histogram, so a set switching back to it needs its own.
 - **`merge`** — the RPC rechits are clustered *together with* the system they
   overlap, so a shower seen by both becomes one cluster. Because they are inside
   the cluster, they also count towards the per-LLP hit totals that define
   "reconstructable in this system".
-- **`match`** — the clustering is exactly the `separate` one for CSC and DT, and
-  the RPC rechits are associated to the finished clusters afterwards (nearest
-  centroid within `cluster_eps`). RPC then contributes nothing to the DBSCAN
-  density estimate, so the cluster variables and the signal region stay those of
-  the standard MDS analysis — which matters because RPC rechit times are flat in
-  BX in data (~19 % at BX 0 in ZeroBias), so merged, RPC noise can push a
-  background cluster over `min_samples`.
-
 `merge` and `match` both produce `cscCluster` and `dtCluster` **only** — every
 RPC rechit has already been offered to one of those two, and clustering it again
 on its own would double count it — and both attach the same fields
 (`clustering.RPC_CLUSTER_FIELDS`): the hit content (`nRPCHits`, `nRPCHitsBx0`,
-`rpcHitFrac`, `firstSystem`), the rechit time (`rpcTime`, `rpcTimeMedian`,
-`rpcTimeSpread`, `rpcTimeWeighted`, `rpcTimeErr`, `rpcTimeValidFrac`) and the
-bunch crossing (`rpcBx`, `rpcBxMedian`, `rpcBxSpread`, `rpcOutOfTimeFrac`). So
+`rpcHitFrac`, `firstSystem`) and the bunch crossing (`rpcBx`, `rpcBxMedian`, `rpcBxSpread`, `rpcOutOfTimeFrac`). So
 one config set plots either, and the two can be compared rather than argued
 about.
 
-> No production so far fills the rechit time itself (`Time` 0, `TimeError` -1),
-> so the `rpcTime*` fields come out NaN and the BX is the estimate with data in
-> it. See `clustering._rpc_time`.
+> Nothing is derived from the RPC rechit *time*: no production fills it
+> (`Time` exactly 0, `TimeError` exactly -1, over 841k rechits across signal,
+> DY and ZeroBias), so the BX is the only real measurement. See
+> `clustering._rpc_time`.
 
 ### Prompt objects live in `selections.yaml`
 
@@ -96,7 +96,7 @@ is not a parameter — it is an object selection, so it is written where every
 other object selection is written:
 
 ```yaml
-# configs/_common/prompt_objects.yaml, pulled in with _include
+# configs/configs_mds/selections.yaml
 muon_sel_foriso:
   level: object
   collection: Muon
@@ -121,6 +121,20 @@ alias and no function available only here.
 Because these are ordinary selections, they are also usable as ordinary
 selections: a histogram may list them under `selections:`, and the cutflow
 reports how many events contain such an object.
+
+The step also attaches the **multiplicity** of each prompt collection as an
+event-level column named after the selection — `events.n_muon_sel_foriso`,
+`events.n_jet_sel_foriso`. That is what the `n_jet_sel_foriso` histogram plots:
+the count and the isolation come from the same selection, so retuning the cut
+moves both and they cannot disagree. (A collection absent from the file gets no
+column, so an expression referencing it fails at validation rather than
+plotting zeros.)
+
+Each config set spells the pair out, so a cut can be retuned in one study
+without moving the others. `configs_mds`, `configs_mds_signal` and
+`configs_mds_data` are overlaid on one canvas, though, so when you retune those
+three, retune all three — `test_the_overlaid_sets_share_one_prompt_object_definition`
+fails if they drift apart.
 
 > JEC/JER rescale pT and mass but leave eta/phi untouched, so corrections reach
 > the cluster dR only through which jets pass the pT threshold above — which is
@@ -150,7 +164,9 @@ under a pT rescale), so it does not matter whether `jerc` ran first.
 
 ## Steps
 
-`steps:` selects a subset; the default is all of them, always run in this order.
+`steps:` selects a subset. `configs/common/` enables the four reco steps and
+`configs/common_gen/` adds the four truth ones, so a study inherits the right
+list rather than spelling it out. They always run in this order.
 Omitting a step means the fields it attaches are **absent**, so a config that
 references them fails loudly at expression validation instead of quietly filling
 empty histograms. Dropping `clusters` saves ~35 % of `derive()` (measured on the
@@ -161,7 +177,7 @@ empty histograms. Dropping `clusters` saves ~35 % of `derive()` (measured on the
 | `jerc` | — | JEC on `events.Jet` in place, plus JER smearing on MC |
 | `jet_id` | — | `events.Jet.tightId` / `.tightLepVetoId` from the official payload |
 | `clusters` | — | `events.<sys>Cluster` (two systems outside `rpc_mode: separate`) |
-| `cluster_isolation` | `clusters` | `drMuon` / `drJet` on the clusters, against the `selections.yaml` prompt objects |
+| `cluster_isolation` | `clusters` | `drMuon` / `drJet` on the clusters, against the `selections.yaml` prompt objects, plus `events.n_<selection>` per prompt collection |
 | `llp` | — | `events.llp`: kinematics, decay vertex, volume flags |
 | `llp_hits` | `llp` | `llp.nHits{CSC,DT,RPC,RPCBarrel,RPCEndcap,Total}` |
 | `llp_reco` | `clusters`, `llp_hits` | `llp.reco*`, `nRecoCluster*`, `clusterHitFrac*` |
