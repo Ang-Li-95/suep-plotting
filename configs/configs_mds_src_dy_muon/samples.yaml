@@ -1,0 +1,11 @@
+# ── Category 3/5: DY clusters on a muon ───────────────────────────
+# The same dataset and the same 1,000-file slice as configs_mds_src_dy_jet/,
+# under the muon cut instead; see that set's samples.yaml.
+_registry: ../../datasets.yaml
+
+clusters_dy_on_muon:
+  _from: dy_2mu_50to120
+  max_files: 1000
+  label: 'DY: cluster on a muon ($\Delta R < 0.4$)'
+  color: '#e42536'
+  group: background

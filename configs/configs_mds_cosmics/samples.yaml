@@ -1,0 +1,4 @@
+# Cosmics 2024C: 118 files, ~80M events.  Non-collision muon-system noise.
+_registry: ../../datasets.yaml
+
+cosmics_2024C:

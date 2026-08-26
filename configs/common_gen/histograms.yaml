@@ -46,7 +46,37 @@ llp_phi:
   hi: 3.2
   label: 'LLP $\phi$'
 
-# ── (2) LLPs decaying in each muon system volume ──────────────────
+llp_energy:
+  expression: "events.llp.energy"
+  per_object: true
+  bins: 50
+  lo: 0
+  hi: 100
+  label: 'LLP energy [GeV]'
+  log_y: true
+
+# ── (2) LLPs decaying in each detector volume ──────────────────
+llp_n_tracker:
+  expression: "ak.sum(events.llp.inTracker, axis=1)"
+  bins: 15
+  lo: 0
+  hi: 15
+  label: '$N_{\mathrm{LLP}}$ decaying in the tracker'
+
+llp_n_calo:
+  expression: "ak.sum(events.llp.inCalo, axis=1)"
+  bins: 15
+  lo: 0
+  hi: 15
+  label: '$N_{\mathrm{LLP}}$ decaying in the calorimeters'
+
+llp_n_csc_dt:
+  expression: "ak.sum(events.llp.inCSC | events.llp.inDT, axis=1)"
+  bins: 15
+  lo: 0
+  hi: 15
+  label: '$N_{\mathrm{LLP}}$ decaying in CSC or DT'
+
 llp_n_csc:
   expression: "ak.sum(events.llp.inCSC, axis=1)"
   bins: 15
@@ -313,6 +343,33 @@ llpdt_nhits_dt_num:
   hi: 200
   label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
   log_y: true
+
+# ── (5) Efficiency histograms: vs LLP energy ───────────────────────
+# The ten legs of every efficiency: the inclusive denominator, then per
+# system the fiducial denominator, the ">= 10 truth rechits" intermediate
+# step and the reconstructed numerator.
+_axes:
+  eff_legs:
+    - {LEG: all_den,  LSEL: []}
+    - {LEG: den_csc,  LSEL: [llp_in_csc]}
+    - {LEG: hits_csc, LSEL: [llp_in_csc, llp_hits10_csc]}
+    - {LEG: num_csc,  LSEL: [llp_in_csc, llp_reco_csc]}
+    - {LEG: den_dt,   LSEL: [llp_in_dt]}
+    - {LEG: hits_dt,  LSEL: [llp_in_dt, llp_hits10_dt]}
+    - {LEG: num_dt,   LSEL: [llp_in_dt, llp_reco_dt]}
+    - {LEG: den_rpc,  LSEL: [llp_in_rpc]}
+    - {LEG: den_any,  LSEL: [llp_in_ms]}
+    - {LEG: num_any,  LSEL: [llp_in_ms, llp_reco_any]}
+
+_repeat:
+  - over: eff_legs
+    defs:
+      llp_energy_<LEG>:
+        expression: "events.llp.energy"
+        per_object: true
+        selections: <LSEL>
+        edges: [0, 2, 4, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 70, 100]
+        label: 'LLP energy [GeV]'
 
 # ── (5) Efficiency histograms: vs |eta| ────────────────────────────
 llp_eta_all_den:

@@ -1,0 +1,13 @@
+# ── Category 6/6: DY clusters near neither a jet nor a muon ───────
+# The third cut on the same DY dataset and the same 1,000-file slice as
+# configs_mds_src_dy_jet/ and _dy_muon/; see that first set's samples.yaml for
+# why max_files is what it is.  A third config name, for the same reason: one
+# dataset can only carry one population per run.
+_registry: ../../datasets.yaml
+
+clusters_dy_iso:
+  _from: dy_2mu_50to120
+  max_files: 1000
+  label: 'DY: isolated cluster ($\Delta R \geq 0.4$)'
+  color: '#964a8b'
+  group: background

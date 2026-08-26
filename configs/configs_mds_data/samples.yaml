@@ -1,11 +1,21 @@
 # Datasets come from the central registry; see ../../datasets.yaml.
 #
-# Same fills as configs_mds/, with ZeroBias data added: the reco-only cluster
+# Same fills as configs_mds/, with data added: the reco-only cluster
 # histograms of this study need no truth branches, so data fills them exactly
 # like the MC (clusters are unmatched, hasTruth False).
+#
+# Cosmics is *not* here -- its ntuple has muon rechits and nothing else, so it
+# has its own reduced set, configs_mds_cosmics/.
 _registry: ../../datasets.yaml
 
 suep_mDark2_temp1:
 suep_mDark2_temp2:
+
+# DY is 5,575 files / ~400M events; the cluster plots are normalized shape
+# comparisons against a 0.5M-event signal, so the first 1,000 files (~70M
+# events) already saturate them.  Raise or drop max_files to widen it -- the
+# list is sorted, so a wider run reuses nothing but costs nothing extra.
 dy_2mu_50to120:
+  max_files: 1000
+
 zerobias_2024C:

@@ -1,0 +1,27 @@
+# ── Category 1/5: clusters gen-matched to an LLP ──────────────────
+# The reference signal point of the Gen3 grid.  Named after the *population*
+# rather than the dataset, because the legend of the five-way comparison is a
+# list of cluster sources -- and because the four background sets name theirs
+# the same way (two of them are the same DY dataset under two cuts, which only
+# works with distinct config names).
+#
+# Two points of the grid, same mDark and both at ctau=5 m, differing only in
+# the SUEP temperature -- so the pair shows how much of the cluster shape is a
+# property of the signal model rather than of the shower.  They follow the
+# registry's convention: colour encodes mDark, linestyle encodes T, so the two
+# read as one signal family against the four background colours.  Add a third
+# point the same way (any suep_mDark<M>_temp<T> of ../../datasets.yaml).
+_registry: ../../datasets.yaml
+
+clusters_llp:
+  _from: suep_mDark2_temp1
+  label: 'LLP clusters (gen-matched), $m_{\mathrm{Dark}}$=2, $T$=1'
+  color: '#5790fc'
+  linestyle: '-'
+  group: signal
+clusters_llp_temp2:
+  _from: suep_mDark2_temp2
+  label: 'LLP clusters (gen-matched), $m_{\mathrm{Dark}}$=2, $T$=2'
+  color: '#5790fc'
+  linestyle: '--'
+  group: signal

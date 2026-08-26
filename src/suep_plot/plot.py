@@ -194,12 +194,19 @@ def palette() -> list[str]:
 
 
 def _series(h: hist.Hist, sample_defs: dict):
-    """(sample, 1D slice, label, color) per dataset, with the colour-cycle fallback."""
+    """(sample, 1D slice, label, color, linestyle) per dataset.
+
+    The colour falls back to the cycle.  The line style matters because
+    samples that differ in only one parameter share a colour on purpose (the
+    signal grid gives both temperatures of one mDark the same colour), so the
+    style is the only thing telling them apart in a point plot.
+    """
     colors = palette()
     for i, s in enumerate(h.axes["dataset"]):
         cfg = sample_defs.get(s, {})
         yield (s, h[{"dataset": s}], cfg.get("label", s),
-               cfg.get("color", colors[i % len(colors)]))
+               cfg.get("color", colors[i % len(colors)]),
+               cfg.get("linestyle", "-"))
 
 
 def _require(histograms: dict, names, plot_name: str) -> bool:
@@ -387,7 +394,7 @@ def plot_histogram_2d(
     ``log_z: true`` in the histogram config switches to a log color scale.
     """
     multi = len(h.axes["dataset"]) > 1
-    for s, h2, label, _color in _series(h, sample_defs):
+    for s, h2, label, _color, _ls in _series(h, sample_defs):
         fig, ax, _rax = _figure()
         w = h2.view().value
         norm = None
@@ -466,10 +473,11 @@ def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *,
     axis = "x" if cfg["type"] == "profile_x" else "y"
 
     fig, ax, _rax = _figure()
-    for _s, h2, label, color in _series(h, sample_defs):
+    for _s, h2, label, color, ls in _series(h, sample_defs):
         centers, mean, err, _edges = _profile(h2, axis)
-        ax.errorbar(centers, mean, yerr=err, fmt="o", label=label,
-                    color=color, markersize=4, capsize=2)
+        ax.errorbar(centers, mean, yerr=err, marker="o", linestyle=ls,
+                    label=label, color=color, markersize=4, capsize=2,
+                    linewidth=1.5)
 
     profiled = "y" if axis == "x" else "x"
     return _finish(fig, ax, output_dir, name, formats, lumi=lumi,
@@ -518,7 +526,8 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
 
     fig, ax, _rax = _figure()
     centers = h_num.axes["x"].centers
-    for s, hn, label, color in _series(h_num, sample_defs):
+    top = 0.0
+    for s, hn, label, color, ls in _series(h_num, sample_defs):
         if s not in h_den.axes["dataset"]:
             continue
         passed = hn.view().value
@@ -530,12 +539,24 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
         lo, hi = _clopper_pearson(passed, total)
 
         ax.errorbar(centers[filled], eff[filled],
-                    yerr=[(eff - lo)[filled], (hi - eff)[filled]], fmt="o",
-                    label=label, color=color, markersize=4, capsize=2)
+                    yerr=[(eff - lo)[filled], (hi - eff)[filled]],
+                    marker="o", linestyle=ls, label=label, color=color,
+                    markersize=4, capsize=2, linewidth=1.5)
+        # The caps alone are sub-pixel at these statistics; the band is what
+        # actually reads on the page.
+        ax.fill_between(centers[filled], lo[filled], hi[filled],
+                        color=color, alpha=0.25, linewidth=0)
+        if filled.any():
+            top = max(top, float(hi[filled].max()))
 
     if cfg.get("spans"):
         _draw_spans(ax, cfg["spans"])
-    ax.set_ylim(-0.05, 1.15)
+    # Efficiencies that live well below 1 get an axis matched to them, so the
+    # uncertainty band is not squeezed into nothing by empty canvas.  The
+    # headroom leaves the legend somewhere to sit.  `ylim` in the config pins
+    # it explicitly.
+    ax.set_ylim(*(cfg.get("ylim") or ((-0.02 * top, min(1.15, top * 1.45))
+                                      if 0 < top < 0.7 else (-0.05, 1.15))))
     return _finish(fig, ax, output_dir, name, formats, lumi=lumi,
                    xlabel=cfg.get("label_x", h_num.axes["x"].label),
                    ylabel=cfg.get("label_y", "Efficiency"))
@@ -550,15 +571,16 @@ def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
 
     fig, ax, _rax = _figure()
     centers = h_num.axes["x"].centers
-    for s, hn, label, color in _series(h_num, sample_defs):
+    for s, hn, label, color, ls in _series(h_num, sample_defs):
         if s not in h_den.axes["dataset"]:
             continue
         nv, dv = hn.view(), h_den[{"dataset": s}].view()
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = np.where(dv.value > 0, nv.value / dv.value, np.nan)
             err = np.where(dv.value > 0, np.sqrt(nv.variance) / dv.value, np.nan)
-        ax.errorbar(centers, ratio, yerr=err, fmt="o", label=label,
-                    color=color, markersize=4, capsize=2)
+        ax.errorbar(centers, ratio, yerr=err, marker="o", linestyle=ls,
+                    label=label, color=color, markersize=4, capsize=2,
+                    linewidth=1.5)
 
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8)
     return _finish(fig, ax, output_dir, name, formats, lumi=lumi,
@@ -632,7 +654,7 @@ def _plot_efficiency_2d(name, cfg, h_num, h_den, sample_defs, output_dir, *,
     multi = len(h_num.axes["dataset"]) > 1
 
     plotted = 0
-    for s, hn, label, _color in _series(h_num, sample_defs):
+    for s, hn, label, _color, _ls in _series(h_num, sample_defs):
         if s not in h_den.axes["dataset"]:
             continue
         with np.errstate(divide="ignore", invalid="ignore"):

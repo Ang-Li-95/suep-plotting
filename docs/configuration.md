@@ -37,6 +37,8 @@ configs/common/            reco histograms + selections + derived plots,
   │                        rpc_mode: match, the four reco steps
   ├── configs_mds/                  _extends ../common      (and nothing else)
   ├── configs_mds_data/             _extends ../common + the isolation splits
+  ├── configs/common_clustersrc/    + every cluster histogram cut to one named
+  │     └── configs_mds_src_*/        population; the five sets define what it is
   └── configs/common_gen/  + LLP collection, truth splits, efficiency chain,
         │                    and the four gen steps
         ├── configs_mds_signal/     _extends ../common_gen  (and nothing else)

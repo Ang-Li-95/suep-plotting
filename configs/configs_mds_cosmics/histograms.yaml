@@ -1,0 +1,17 @@
+# ── Cosmics: the muon system on its own ───────────────────────────
+# Cosmics MDSnano is a rechit-only ntuple -- 136 branches, no Jet, Muon,
+# FatJet or PuppiMET -- so everything that needs a prompt object is dropped.
+# What is left is exactly what a non-collision control is for: the cluster
+# shapes and the RPC bunch-crossing timing, with no isolation splits (there is
+# nothing to be isolated from) and therefore no variant sets either.
+_extends: ../common
+
+csc_cluster_dr_muon: null
+csc_cluster_dr_jet: null
+csc_cluster_dr_muon_vs_jet: null
+dt_cluster_dr_muon: null
+dt_cluster_dr_jet: null
+dt_cluster_dr_muon_vs_jet: null
+puppi_met: null
+n_jet_sel_foriso: null
+n_fatjet: null

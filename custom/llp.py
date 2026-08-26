@@ -13,8 +13,10 @@ import awkward as ak
 import numpy as np
 from numba import njit
 
-from .params import CSC_RMAX, CSC_ZMAX, CSC_ZMIN, DT_RMAX, DT_RMIN, DT_ZMAX
-from .params import LLP_PDGID, RPC_EC_RMAX, RPC_EC_ZMAX, RPC_EC_ZMIN
+from .params import CALO_RMAX, CALO_ZMAX, CSC_RMAX, CSC_ZMAX, CSC_ZMIN
+from .params import DT_RMAX, DT_RMIN, DT_ZMAX, LLP_PDGID
+from .params import RPC_EC_RMAX, RPC_EC_ZMAX, RPC_EC_ZMIN
+from .params import TRACKER_RMAX, TRACKER_ZMAX
 
 
 def _llpidx_is_genpart_index(events):
@@ -87,6 +89,11 @@ def _build_llps(events):
     decay_r = np.hypot(dvx, dvy)
     abs_z = abs(dvz)
 
+    in_tracker = (decay_r < TRACKER_RMAX) & (abs_z < TRACKER_ZMAX)
+    # The calorimeters are the rest of the envelope outside the tracker, so
+    # tracker/calo/muon-system are disjoint by construction.
+    in_calo = ~in_tracker & (decay_r < CALO_RMAX) & (abs_z < CALO_ZMAX)
+
     in_csc = (abs_z > CSC_ZMIN) & (abs_z < CSC_ZMAX) & (decay_r < CSC_RMAX)
     in_dt = (decay_r > DT_RMIN) & (decay_r < DT_RMAX) & (abs_z < DT_ZMAX)
     in_rpc = in_dt | ((abs_z > RPC_EC_ZMIN) & (abs_z < RPC_EC_ZMAX)
@@ -114,6 +121,8 @@ def _build_llps(events):
         "betagamma": betagamma,
         "ctau": l_lab / betagamma,
         "openingAngle": opening_angle,
+        "inTracker": in_tracker,
+        "inCalo": in_calo,
         "inCSC": in_csc,
         "inDT": in_dt,
         "inRPC": in_rpc,
@@ -136,7 +145,7 @@ def _empty_llps(events, settings):
     f64 = ["pt", "eta", "phi", "mass", "energy", "decayR", "decayZ",
            "Llab", "betagamma", "ctau", "openingAngle"]
     i64 = ["gidx", "lidx"]
-    boo = ["inCSC", "inDT", "inRPC"]
+    boo = ["inTracker", "inCalo", "inCSC", "inDT", "inRPC"]
     if "llp_hits" in enabled:
         i64 += ["nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsRPCBarrel",
                 "nHitsRPCEndcap", "nHitsTotal"]

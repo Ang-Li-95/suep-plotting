@@ -1,0 +1,10 @@
+# ── Category 4/5: ZeroBias clusters near neither a jet nor a muon ─
+# ZeroBias 2024C: 2,027 files, no genWeight and no SUEPGenPart.  It has Jet and
+# Muon, so the isolation this category is defined by is available -- unlike
+# Cosmics (configs_mds_src_cosmics/).
+_registry: ../../datasets.yaml
+
+clusters_zerobias_iso:
+  _from: zerobias_2024C
+  label: 'ZeroBias: isolated cluster ($\Delta R \geq 0.4$)'
+  color: black

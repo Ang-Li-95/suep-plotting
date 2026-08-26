@@ -1,28 +1,17 @@
+# ── The gen-level LLP study: all 6 Gen3 signals ───────────────────
+# Extends ../common_gen (the shared truth histograms, selections,
+# clustering-efficiency and matched/unmatched cluster-shape plots) with
+# the LLP shower-shape family: the dR between each LLP's truth-matched
+# rechits and their centroid, and its dependence on the LLP kinematics.
+_extends: ../common_gen
+
 # ── Selections for the gen-level LLP / rechit study ───────────────
 # Truth-only masks on events.llp and the rechit collections; no cluster
 # (reco) selections, so columns.yaml here enables no DBSCAN steps.
 
 # LLP decay volume flags (geometry defined in custom/columns.py)
-llp_in_csc:
-  level: object
-  expression: "events.llp.inCSC"
-llp_in_dt:
-  level: object
-  expression: "events.llp.inDT"
-llp_in_rpc:
-  level: object
-  expression: "events.llp.inRPC"
-llp_in_ms:
-  level: object
-  expression: "events.llp.inCSC | events.llp.inDT | events.llp.inRPC"
 
 # LLP is "reconstructable": >= 10 of its truth rechits in the system
-llp_hits10_csc:
-  level: object
-  expression: "events.llp.nHitsCSC >= 10"
-llp_hits10_dt:
-  level: object
-  expression: "events.llp.nHitsDT >= 10"
 llp_hits10_total:
   level: object
   expression: "events.llp.nHitsTotal >= 10"
@@ -62,10 +51,6 @@ dt_rechit_matched:
 rpc_rechit_matched:
   level: object
   expression: "events.rpcRecHits.matchedLLP"
-
-# Event-level bookkeeping (cutflow.txt)
-has_llp_in_ms:
-  expression: "ak.any(events.llp.inCSC | events.llp.inDT | events.llp.inRPC, axis=1)"
 has_llp_hits_csc:
   expression: "ak.any(events.llp.nHitsCSC >= 10, axis=1)"
 has_llp_hits_dt:

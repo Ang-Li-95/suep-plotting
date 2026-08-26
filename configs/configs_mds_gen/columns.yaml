@@ -1,9 +1,6 @@
-# custom/columns.py settings for this config set (see that module's docstring).
-#
-# Gen-level only: no DBSCAN, so no `clusters`/`cluster_isolation`/`llp_reco`
-# (~35% of derive()).  events.<sys>Cluster and llp.reco* are deliberately
-# absent, so a config that references them fails at expression validation.
-steps: [llp, llp_hits, llp_shape]
-
-parameters:
-  llpidx_convention: genpart
+# ── The gen-level LLP study: all 6 Gen3 signals ───────────────────
+# Extends ../common_gen (the shared truth histograms, selections,
+# clustering-efficiency and matched/unmatched cluster-shape plots) with
+# the LLP shower-shape family: the dR between each LLP's truth-matched
+# rechits and their centroid, and its dependence on the LLP kinematics.
+_extends: ../common_gen

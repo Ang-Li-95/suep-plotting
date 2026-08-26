@@ -120,6 +120,20 @@ def _resolve_files(file_specs: list[str]) -> list[str]:
     return out
 
 
+def resolve_sample_files(cfg: dict) -> list[str]:
+    """The files of one sample, honouring an optional ``max_files:`` cap.
+
+    A background sample can be far larger than the comparison needs -- DY is
+    5,575 files against a signal's 25 -- and a normalized shape overlay gains
+    nothing from the tail of it.  ``max_files`` takes the first N of the
+    resolved list, deterministically (the list is sorted), so a capped run is
+    reproducible and can be widened later without redoing what exists.
+    """
+    files = _resolve_files(cfg.get("files") or [])
+    cap = cfg.get("max_files")
+    return files[:int(cap)] if cap else files
+
+
 def load_columns_config(path: str) -> dict:
     """Read a config's optional ``columns.yaml`` -> settings for ``derive()``.
 
@@ -470,7 +484,7 @@ def run_all(
             if not file_specs:
                 print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
                 continue
-            files = _resolve_files(file_specs)
+            files = resolve_sample_files(cfg)
         tree = cfg.get("tree", "Events")
         if not files:
             print(f"  WARNING: no files resolved for '{name}', skipping")

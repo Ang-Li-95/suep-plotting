@@ -1,0 +1,22 @@
+# ── Category 6/6: DY clusters near neither a jet nor a muon ───────
+# The MC counterpart of configs_mds_src_zerobias/: the same cut on a simulated
+# collision sample instead of on minimum-bias data.  The pair is what shows
+# how much of the leftover cluster population the simulation actually
+# reproduces -- and, read against it, how much of the ZeroBias one is the
+# unmodelled cavern/noise background that MC has no way to contain.
+#
+# Same expression, same threshold, as that set: >= 0.4 from both, which is the
+# exact complement of the two < 0.4 DY categories.  So configs_mds_src_dy_jet,
+# _dy_muon and this one do NOT partition DY (jet and muon overlap), but "in a
+# jet or on a muon" and "neither" do -- every DY cluster is in this set or in
+# at least one of the other two.
+_extends: ../common_clustersrc
+
+csc_cluster_src:
+  level: object
+  label: $\Delta R$(cluster, jet and muon) $\geq$ 0.4
+  expression: "(events.cscCluster.drJet >= 0.4) & (events.cscCluster.drMuon >= 0.4)"
+dt_cluster_src:
+  level: object
+  label: $\Delta R$(cluster, jet and muon) $\geq$ 0.4
+  expression: "(events.dtCluster.drJet >= 0.4) & (events.dtCluster.drMuon >= 0.4)"

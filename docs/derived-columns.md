@@ -194,7 +194,8 @@ One entry per generated LLP (`SUEPGenPart.pdgId == 999999`).
 - **Kinematics and vertex** — the decay vertex comes from the production vertex
   of the LLP's daughters; `openingAngle` is the 3D angle between the two decay
   daughters (boost-driven: a more boosted LLP gives a tighter pair).
-- **Volume flags** — `inCSC` / `inDT` / `inRPC`.
+- **Volume flags** — `inTracker` / `inCalo` (disjoint: the calorimeter
+  envelope is everything outside the tracker) and `inCSC` / `inDT` / `inRPC`.
 - **Truth rechit counts** (`llp_hits`) — `nHitsCSC` / `nHitsDT` / `nHitsRPC` /
   `nHitsRPCBarrel` / `nHitsRPCEndcap` / `nHitsTotal`. Count `llpIdx >= 0` on the
   rechits; never sum these to get an event total, which double counts.

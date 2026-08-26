@@ -1,0 +1,6 @@
+# ── The gen-level LLP study: all 6 Gen3 signals ───────────────────
+# Extends ../common_gen (the shared truth histograms, selections,
+# clustering-efficiency and matched/unmatched cluster-shape plots) with
+# the LLP shower-shape family: the dR between each LLP's truth-matched
+# rechits and their centroid, and its dependence on the LLP kinematics.
+_extends: ../common_gen

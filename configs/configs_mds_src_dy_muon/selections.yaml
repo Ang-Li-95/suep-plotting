@@ -1,0 +1,21 @@
+# ── Category 3/5: DY clusters on a muon ───────────────────────────
+# A real muon crossing the chambers, and whatever it radiates on the way: the
+# cluster sits on a muon.  DY->2mu is the sample that has them by construction.
+# drMuon is the dR from the cluster centroid to the closest muon passing
+# muon_sel_foriso (../common), attached by the cluster_isolation step; the
+# no-muon sentinel 999 fails < 0.4, as it should.
+#
+# The threshold is the complement of ../common's <sys>_cluster_iso_muon
+# (>= 0.4).  This category and the in-jet one do overlap -- a muon inside a jet
+# puts the same cluster in both -- which is the point: they are two sources,
+# not a partition.
+_extends: ../common_clustersrc
+
+csc_cluster_src:
+  level: object
+  label: $\Delta R$(cluster, muon) < 0.4
+  expression: "events.cscCluster.drMuon < 0.4"
+dt_cluster_src:
+  level: object
+  label: $\Delta R$(cluster, muon) < 0.4
+  expression: "events.dtCluster.drMuon < 0.4"

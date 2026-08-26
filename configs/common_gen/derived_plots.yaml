@@ -360,6 +360,38 @@ eff_any_vs_eta:
   denominator: llp_eta_den_any
   label_x: LLP $\eta$
   label_y: MDS efficiency (decay in muon system)
+eff_csc_vs_energy:
+  type: efficiency
+  numerator: llp_energy_num_csc
+  denominator: llp_energy_den_csc
+  label_x: LLP energy [GeV]
+  label_y: CSC cluster efficiency (decay in CSC)
+eff_dt_vs_energy:
+  type: efficiency
+  numerator: llp_energy_num_dt
+  denominator: llp_energy_den_dt
+  label_x: LLP energy [GeV]
+  label_y: DT cluster efficiency (decay in DT)
+eff_any_vs_energy:
+  type: efficiency
+  numerator: llp_energy_num_any
+  denominator: llp_energy_den_any
+  label_x: LLP energy [GeV]
+  label_y: MDS efficiency (decay in muon system)
+# The intermediate step: does the LLP deposit enough rechits to be clustered
+# at all?  Splitting it off separates "too few hits" from "hits, no cluster".
+eff_csc_hits_vs_energy:
+  type: efficiency
+  numerator: llp_energy_hits_csc
+  denominator: llp_energy_den_csc
+  label_x: LLP energy [GeV]
+  label_y: '$\geq$ 10 CSC rechits (decay in CSC)'
+eff_dt_hits_vs_energy:
+  type: efficiency
+  numerator: llp_energy_hits_dt
+  denominator: llp_energy_den_dt
+  label_x: LLP energy [GeV]
+  label_y: '$\geq$ 10 DT rechits (decay in DT)'
 eff_dt_vs_decayr:
   type: efficiency
   numerator: llp_decayr_num_dt

@@ -34,7 +34,8 @@ re-run.
 
 **Reference docs:**
 [`docs/configuration.md`](docs/configuration.md) — every YAML file and directive ·
-[`docs/derived-columns.md`](docs/derived-columns.md) — `custom/`: the LLP and cluster collections and their settings
+[`docs/derived-columns.md`](docs/derived-columns.md) — `custom/`: the LLP and cluster collections and their settings ·
+[`docs/known-issues.md`](docs/known-issues.md) — clustering memory scales as N² per event
 
 ---
 
@@ -368,11 +369,13 @@ say so with `_extends:` and carry only the difference — see
 | [`configs/common_gen/`](configs/common_gen/) | **Base, not a study.** `common` plus the LLP collection, the truth splits, the efficiency chain and the four gen steps. | yes |
 | [`configs/configs_mds/`](configs/configs_mds/) | Reco-only DBSCAN CSC/DT/RPC cluster properties and shower shapes, ΔR to nearest muon/jet, inclusive (no splits). Just `_extends: ../common`. | no |
 | [`configs/configs_mds_signal/`](configs/configs_mds_signal/) | Superset of the above plus everything truth-dependent: LLP collection, matched/unmatched cluster splits, efficiency chain, sig-vs-bkg overlays. Runs the full (mDark, T) signal grid. | yes |
-| [`configs/configs_mds_gen/`](configs/configs_mds_gen/) | Gen-level only: LLP kinematics, per-LLP matched-rechit counts, ΔR₉₀ maps. Its `columns.yaml` skips DBSCAN. | yes |
+| [`configs/configs_mds_gen/`](configs/configs_mds_gen/) | The gen-level study on all 6 signals: `common_gen` (LLP kinematics, per-LLP matched-rechit counts, clustering efficiency, matched-vs-unmatched cluster shapes) plus the LLP shower-shape family — ΔR of each LLP's matched rechits to their centroid and its ΔR₉₀ maps against pT / energy / βγ / opening angle. | yes |
 | [`configs/configs_mds_data/`](configs/configs_mds_data/) | The same cluster plots on collision data / ZeroBias. | no |
+| [`configs/configs_mds_cosmics/`](configs/configs_mds_cosmics/) | The same cluster plots on Cosmics, minus everything that needs a prompt object — that ntuple is rechits only. `steps: [clusters]`. | no |
+| [`configs/common_clustersrc/`](configs/common_clustersrc/) | **Base, not a study.** `common` with every per-object cluster histogram cut to one named population (`<sys>_cluster_src`), which the six sets below define. | no |
+| [`configs/configs_mds_src_signal/`](configs/configs_mds_src_signal/), [`_dy_jet/`](configs/configs_mds_src_dy_jet/), [`_dy_muon/`](configs/configs_mds_src_dy_muon/), [`_dy_iso/`](configs/configs_mds_src_dy_iso/), [`_zerobias/`](configs/configs_mds_src_zerobias/), [`_cosmics/`](configs/configs_mds_src_cosmics/) | **One study in six sets:** where a muon-system cluster comes from — gen-matched LLP shower, DY cluster in a jet, on a muon, or isolated from both, isolated ZeroBias cluster, Cosmics. One population per set, same fills, overlaid as six samples. See [the section below](#where-a-cluster-comes-from-six-populations-one-set-of-plots). | signal leg only |
 | [`configs/configs_mds_sigonly/`](configs/configs_mds_sigonly/) | Signal samples only — quick turnaround. | yes |
 | [`configs/configs_mds_trigger/`](configs/configs_mds_trigger/) | HLT/L1 MDS trigger studies. | yes |
-| [`configs/configs_mds_shape/`](configs/configs_mds_shape/) | Cluster shower-shape variables, signal-vs-background overlay in one histogram. | yes |
 | [`configs/configs_g4compare/`](configs/configs_g4compare/) | Geant4 / generator comparison of the shower simulation. | yes |
 | [`configs/configs_mds_rpcmerge/`](configs/configs_mds_rpcmerge/), [`_rpcmerge_data/`](configs/configs_mds_rpcmerge_data/) | The default studies with `rpc_mode: merge` instead of `match` — RPC rechits clustered *with* the system they overlap, so they also count towards the per-LLP hit totals. A handful of `_extends` overrides. | as the base |
 | [`configs/configs_smoke/`](configs/configs_smoke/) | Not a study: one signal file, one histogram, `steps: [clusters]`. What [`scripts/smoke_test.sh`](scripts/smoke_test.sh) runs to prove the chain works after a framework change, in ~1 min. | no |
@@ -765,6 +768,123 @@ suep-plot output_mds_rpcmerge -o output_mds_rpcmerge/plots -c configs/configs_md
   [`docs/derived-columns.md`](docs/derived-columns.md).
 
 ---
+
+### Where a cluster comes from: six populations, one set of plots
+
+A DBSCAN cluster in the muon system is not one thing. The search wants to know
+what the signal shower looks like *against each of the things that also make
+clusters*, separately — a punch-through jet and a cavern-background blob are
+different backgrounds and do not have to be separated by the same variable. So
+six populations are filled into the same histograms and overlaid:
+
+| set | sample | the clusters it fills |
+| --- | --- | --- |
+| [`configs_mds_src_signal/`](configs/configs_mds_src_signal/) | Gen3 signal, mDark=2, T=1 **and** T=2 | gen-matched: ≥ `match_min_hits` of the cluster's rechits carry one LLP's `llpIdx` |
+| [`configs_mds_src_dy_jet/`](configs/configs_mds_src_dy_jet/) | DY→2μ | ΔR(cluster, jet) < 0.4 — punch-through and hadronic-shower tails |
+| [`configs_mds_src_dy_muon/`](configs/configs_mds_src_dy_muon/) | DY→2μ | ΔR(cluster, muon) < 0.4 — a real muon crossing the chambers, and what it radiates |
+| [`configs_mds_src_dy_iso/`](configs/configs_mds_src_dy_iso/) | DY→2μ | ΔR ≥ 0.4 from **both** — the leftover population as the simulation has it |
+| [`configs_mds_src_zerobias/`](configs/configs_mds_src_zerobias/) | ZeroBias 2024C | ΔR ≥ 0.4 from **both** — the same cut in minimum-bias data |
+| [`configs_mds_src_cosmics/`](configs/configs_mds_src_cosmics/) | Cosmics 2024C | every cluster, no ΔR requirement — the non-collision control |
+
+The jet and the muon are the ones `jet_sel_foriso` / `muon_sel_foriso` pick
+(same cuts as everywhere else, from [`configs/common/`](configs/common/)), and
+the ΔR is the `cluster_isolation` step's `drJet` / `drMuon`. `0.4` is the same
+threshold as the inherited `<sys>_cluster_iso_*` selections, taken as `< 0.4`
+here and `≥ 0.4` there, so "in a jet" and "isolated from jets" partition the
+clusters with no gap. The in-jet and on-muon DY categories do *overlap* — a muon
+inside a jet puts one cluster in both — which is the point: they are two
+sources, not a partition. Together with the DY-isolated one, though, they do
+cover DY exactly once each way round: every DY cluster is either within 0.4 of
+a jet or a muon, or in neither. The DY-isolated and ZeroBias categories are the
+same cut on simulation and on data, so read as a pair they say how much of the
+leftover population the simulation reproduces — and how much of the ZeroBias
+one is the unmodelled cavern and noise background that MC cannot contain. Cosmics genuinely cannot have a ΔR requirement: that ntuple has no
+`Jet` and no `Muon` collection at all, so its set also drops the two
+ΔR histograms and runs `steps: [clusters]`.
+
+**How it is put together.** The population is a single named object-level
+selection, `csc_cluster_src` / `dt_cluster_src`, which
+[`configs/common_clustersrc/`](configs/common_clustersrc/) puts on all 72
+per-object cluster histograms of `common` and each of the six sets *defines*
+in its own `selections.yaml`. So a set is one expression plus one sample: the
+binning, the expressions and the clustering parameters are inherited and
+therefore identical across all six by construction, which is what makes the
+curves comparable bin for bin. The cut is attached as a `variants:` entry with
+`keep_base: false`, because variant selections are *appended* — the RPC
+histograms keep their inherited `<sys>_cluster_has_rpc` cut — so every
+histogram is named `<variable>_src` and means the same thing everywhere; the
+category is carried by the **sample name**, which is why the samples are
+aliases named after their population (`clusters_llp`, `clusters_dy_in_jet`,
+`clusters_dy_on_muon`, `clusters_dy_iso`, `clusters_zerobias_iso`,
+`clusters_cosmics`) rather than after their dataset. The three DY sets are the
+same dataset under three cuts, and only distinct config names keep them apart
+in the merge.
+
+Colours are read at plot time, so they can be retuned without reprocessing:
+the five backgrounds take five distinct hues (DY-in-jet orange, DY-on-muon
+purple, DY-isolated brown, ZeroBias black, Cosmics green) rather than shades
+of one another, since the whole point is telling them apart on one canvas. The
+signal points share `tab:blue` and differ by linestyle, following the
+registry's convention that colour encodes mDark and linestyle encodes T — so a
+signal grid reads as one family against the background colours.
+
+The base defines *no* `<sys>_cluster_src`, on purpose: a set that forgets to
+stops at startup with `unknown selection 'csc_cluster_src'` instead of quietly
+filling every cluster.
+
+Each set gets its own run directory — they cannot share one `-o`, since
+`suep-submit` writes `<output>/slurm/job.sh` and `task_list.txt` there and a
+second submission into the same directory would overwrite the first one's
+bookkeeping. The five background runs are then gathered into one directory of
+symlinks, because [`scripts/compare_sig_bkg.py`](scripts/compare_sig_bkg.py)
+takes a single background directory (it globs `*.pkl`, so links are enough and
+nothing is copied):
+
+```bash
+conda activate mds
+export X509_USER_PROXY=$HOME/private/.proxy
+OUT=/groups/hephy/cms/ang.li/suep_output/clustersrc_gen3_minpts10_dr04
+
+# the shard sizes are per-sample: a Cosmics file is ~680k dense rechit events
+# and one alone outruns the 8 h c_short cap, a ZeroBias file only ~20k.
+suep-submit -c configs/configs_mds_src_signal   -o $OUT/sig      --conda-env mds \
+    --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
+suep-submit -c configs/configs_mds_src_dy_jet   -o $OUT/dy_jet   --conda-env mds \
+    --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
+suep-submit -c configs/configs_mds_src_dy_muon  -o $OUT/dy_muon  --conda-env mds \
+    --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
+suep-submit -c configs/configs_mds_src_dy_iso   -o $OUT/dy_iso   --conda-env mds \
+    --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
+suep-submit -c configs/configs_mds_src_zerobias -o $OUT/zerobias --conda-env mds \
+    --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 25
+suep-submit -c configs/configs_mds_src_cosmics  -o $OUT/cosmics  --conda-env mds \
+    --partition c --qos c_medium --time 24:00:00 --mem 16000 \
+    --chunk-size 10000 --files-per-job 1
+
+for d in sig dy_jet dy_muon dy_iso zerobias cosmics; do suep-status -o $OUT/$d; done
+
+mkdir -p $OUT/bkg && ln -sf $OUT/{dy_jet,dy_muon,dy_iso,zerobias,cosmics}/*.pkl $OUT/bkg/
+python scripts/compare_sig_bkg.py $OUT/sig $OUT/bkg $OUT/plots \
+    --suffix '' --tag '' --bkg-tag '' \
+    -c configs/configs_mds_src_signal configs/configs_mds_src_dy_jet \
+       configs/configs_mds_src_dy_muon configs/configs_mds_src_dy_iso \
+       configs/configs_mds_src_zerobias configs/configs_mds_src_cosmics
+```
+
+`--suffix ''` is what pairs each signal histogram with the identically named
+background one: the population cut is already baked into every fill, so no
+suffix has to be matched up — and `--tag '' --bkg-tag ''` drop the population
+tag the legend would otherwise append, since here each *sample* is the
+population. Every figure is unit-area normalized, the gallery is ordered by
+separation, and `separation.txt` scores the signal against **each** of the five
+backgrounds separately — which is the number the study is for.
+`suep-plot $OUT/sig $OUT/bkg -o $OUT/plots_raw --normalize` gives the same
+curves through the ordinary plotter if the ranking is not wanted.
+
+The six runs are independent, so they go to Slurm in parallel; DY is processed
+three times, once per category, which is the price of the three populations
+being three samples. **Never pass `--lumi`** — `xs: 1.0` is a placeholder here as everywhere
+else in the MDS sets.
 
 ### Event display (r–z rechit picture of the clusters)
 

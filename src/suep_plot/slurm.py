@@ -42,7 +42,7 @@ def submit_jobs(
     config_dir = Path(config_dir).resolve()
     output_dir = Path(output_dir).resolve()
 
-    from .processor import _resolve_files, load_samples
+    from .processor import load_samples, resolve_sample_files
 
     samples = load_samples(config_dir / "samples.yaml")
 
@@ -71,7 +71,7 @@ def submit_jobs(
     tasks: list[tuple[str, int | None, list[str]]] = []
     print("Resolving sample files...")
     for name, cfg in samples.items():
-        files = _resolve_files(cfg.get("files") or [])
+        files = resolve_sample_files(cfg)
         if not files:
             print(f"  WARNING: sample '{name}' has no files, skipping")
             continue

@@ -1,0 +1,20 @@
+# ── Category 4/5: ZeroBias clusters near neither a jet nor a muon ─
+# What is left over once the two identified sources are taken out: in-time
+# cavern background, chamber noise, pile-up showers with no reconstructed
+# object behind them.  Minimum bias is the right place to measure it, and it
+# is data, so it needs no truth branches -- the clusters are simply unmatched.
+#
+# >= 0.4 (not > 0.4) so this is the exact complement of the two < 0.4
+# categories, and the same threshold as ../common's <sys>_cluster_iso_muon /
+# _iso_jet.  A cluster in an event with no jet or no muon carries the sentinel
+# drJet/drMuon = 999 and so counts as isolated, which is what it is.
+_extends: ../common_clustersrc
+
+csc_cluster_src:
+  level: object
+  label: $\Delta R$(cluster, jet and muon) $\geq$ 0.4
+  expression: "(events.cscCluster.drJet >= 0.4) & (events.cscCluster.drMuon >= 0.4)"
+dt_cluster_src:
+  level: object
+  label: $\Delta R$(cluster, jet and muon) $\geq$ 0.4
+  expression: "(events.dtCluster.drJet >= 0.4) & (events.dtCluster.drMuon >= 0.4)"

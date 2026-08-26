@@ -1,0 +1,17 @@
+# ── Category 2/5: DY clusters inside a jet ────────────────────────
+# The same DY dataset as configs_mds_src_dy_muon/, under the other cut and
+# therefore under another config name -- the two populations have to stay
+# separate samples to be overlaid.
+#
+# max_files matches configs_mds_data/: DY is 5,575 files / ~400M events and
+# these are unit-area shape comparisons, so the first 1,000 files saturate
+# them.  This category is a small slice of the clusters, so widen it here
+# first if the shapes look statistics-limited.
+_registry: ../../datasets.yaml
+
+clusters_dy_in_jet:
+  _from: dy_2mu_50to120
+  max_files: 1000
+  label: 'DY: cluster in a jet ($\Delta R < 0.4$)'
+  color: '#f89c20'
+  group: background

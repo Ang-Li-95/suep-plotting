@@ -22,6 +22,9 @@ from typing import NamedTuple
 LLP_PDGID = 999999
 
 # Decay-volume definitions [cm] (standard MDS analysis geometry)
+TRACKER_RMAX, TRACKER_ZMAX = 129.0, 295.0
+# Calorimeter envelope: everything outside the tracker and inside the HCAL.
+CALO_RMAX, CALO_ZMAX = 295.0, 568.0
 CSC_ZMIN, CSC_ZMAX, CSC_RMAX = 400.0, 1100.0, 695.5
 DT_RMIN, DT_RMAX, DT_ZMAX = 380.0, 738.0, 650.0
 RPC_EC_ZMIN, RPC_EC_ZMAX, RPC_EC_RMAX = 600.0, 1020.0, 660.0  # endcap; barrel = DT volume

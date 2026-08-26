@@ -1,0 +1,6 @@
+# ── Base: the shared clustering settings ──────────────────────────
+# Identical derive() settings in all five sets, so the cluster variables of the
+# five populations are comparable bin for bin.  The truth set overrides this
+# with ../common_gen (it needs the gen steps for cluster.matched); the Cosmics
+# set cuts the step list down to what that ntuple supports.
+_extends: ../common
