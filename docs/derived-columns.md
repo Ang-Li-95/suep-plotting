@@ -194,8 +194,13 @@ One entry per generated LLP (`SUEPGenPart.pdgId == 999999`).
 - **Kinematics and vertex** — the decay vertex comes from the production vertex
   of the LLP's daughters; `openingAngle` is the 3D angle between the two decay
   daughters (boost-driven: a more boosted LLP gives a tighter pair).
-- **Volume flags** — `inTracker` / `inCalo` (disjoint: the calorimeter
-  envelope is everything outside the tracker) and `inCSC` / `inDT` / `inRPC`.
+- **Volume flags** — `inTracker` / `inCalo` / `inCSC` / `inDT`, plus the
+  decay point's own `decayEta`.  Each is the *active* volume, not the outer
+  envelope: `inTracker` and `inCSC` carry the eta acceptance of the
+  subdetector, without which a decay near the beamline counts as fiducial
+  where no silicon or chamber reaches it.  There is no `inRPC` — the RPC
+  decay volume was the DT volume unioned with an endcap region already
+  inside the CSC one, so it added no reach of its own.
 - **Truth rechit counts** (`llp_hits`) — `nHitsCSC` / `nHitsDT` / `nHitsRPC` /
   `nHitsRPCBarrel` / `nHitsRPCEndcap` / `nHitsTotal`. Count `llpIdx >= 0` on the
   rechits; never sum these to get an event total, which double counts.

@@ -13,10 +13,10 @@ import awkward as ak
 import numpy as np
 from numba import njit
 
-from .params import CALO_RMAX, CALO_ZMAX, CSC_RMAX, CSC_ZMAX, CSC_ZMIN
+from .params import CALO_RMAX, CALO_ZMAX, CSC_ETAMAX, CSC_ETAMIN
+from .params import CSC_RMAX, CSC_ZMAX, CSC_ZMIN
 from .params import DT_RMAX, DT_RMIN, DT_ZMAX, LLP_PDGID
-from .params import RPC_EC_RMAX, RPC_EC_ZMAX, RPC_EC_ZMIN
-from .params import TRACKER_RMAX, TRACKER_ZMAX
+from .params import TRACKER_ETAMAX, TRACKER_RMAX, TRACKER_ZMAX
 
 
 def _llpidx_is_genpart_index(events):
@@ -89,15 +89,21 @@ def _build_llps(events):
     decay_r = np.hypot(dvx, dvy)
     abs_z = abs(dvz)
 
-    in_tracker = (decay_r < TRACKER_RMAX) & (abs_z < TRACKER_ZMAX)
-    # The calorimeters are the rest of the envelope outside the tracker, so
-    # tracker/calo/muon-system are disjoint by construction.
-    in_calo = ~in_tracker & (decay_r < CALO_RMAX) & (abs_z < CALO_ZMAX)
+    # Pseudorapidity of the decay point seen from the origin -- what decides
+    # whether any chamber or layer actually covers it.
+    decay_eta = np.arcsinh(dvz / np.maximum(decay_r, 1e-6))
+    abs_deta = abs(decay_eta)
 
-    in_csc = (abs_z > CSC_ZMIN) & (abs_z < CSC_ZMAX) & (decay_r < CSC_RMAX)
+    # The calorimeters are the envelope outside the tracker *cylinder*: the
+    # eta bound below removes forward decays from in_tracker without handing
+    # them to in_calo, which would be just as wrong.
+    tracker_volume = (decay_r < TRACKER_RMAX) & (abs_z < TRACKER_ZMAX)
+    in_tracker = tracker_volume & (abs_deta < TRACKER_ETAMAX)
+    in_calo = ~tracker_volume & (decay_r < CALO_RMAX) & (abs_z < CALO_ZMAX)
+
+    in_csc = ((abs_z > CSC_ZMIN) & (abs_z < CSC_ZMAX) & (decay_r < CSC_RMAX)
+              & (abs_deta > CSC_ETAMIN) & (abs_deta < CSC_ETAMAX))
     in_dt = (decay_r > DT_RMIN) & (decay_r < DT_RMAX) & (abs_z < DT_ZMAX)
-    in_rpc = in_dt | ((abs_z > RPC_EC_ZMIN) & (abs_z < RPC_EC_ZMAX)
-                      & (decay_r < RPC_EC_RMAX))
 
     # Proper decay length: L_proper = L_lab / (beta*gamma) = L_lab * m / p,
     # where L_lab is the 3D distance from the LLP production vertex to its
@@ -117,6 +123,7 @@ def _build_llps(events):
         "lidx": lidx,
         "decayR": decay_r,
         "decayZ": dvz,
+        "decayEta": decay_eta,
         "Llab": l_lab,
         "betagamma": betagamma,
         "ctau": l_lab / betagamma,
@@ -125,7 +132,6 @@ def _build_llps(events):
         "inCalo": in_calo,
         "inCSC": in_csc,
         "inDT": in_dt,
-        "inRPC": in_rpc,
     })
 
 
@@ -142,10 +148,10 @@ def _empty_llps(events, settings):
     def empty(dtype):
         return ak.unflatten(np.zeros(0, dtype=dtype), counts)
 
-    f64 = ["pt", "eta", "phi", "mass", "energy", "decayR", "decayZ",
+    f64 = ["pt", "eta", "phi", "mass", "energy", "decayR", "decayZ", "decayEta",
            "Llab", "betagamma", "ctau", "openingAngle"]
     i64 = ["gidx", "lidx"]
-    boo = ["inTracker", "inCalo", "inCSC", "inDT", "inRPC"]
+    boo = ["inTracker", "inCalo", "inCSC", "inDT"]
     if "llp_hits" in enabled:
         i64 += ["nHitsCSC", "nHitsDT", "nHitsRPC", "nHitsRPCBarrel",
                 "nHitsRPCEndcap", "nHitsTotal"]

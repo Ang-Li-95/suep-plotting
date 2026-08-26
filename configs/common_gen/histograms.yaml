@@ -91,12 +91,6 @@ llp_n_dt:
   hi: 15
   label: '$N_{\mathrm{LLP}}$ decaying in DT'
 
-llp_n_rpc:
-  expression: "ak.sum(events.llp.inRPC, axis=1)"
-  bins: 15
-  lo: 0
-  hi: 15
-  label: '$N_{\mathrm{LLP}}$ decaying in RPC'
 
 llp_decay_r:
   expression: "events.llp.decayR"
@@ -115,6 +109,14 @@ llp_decay_absz:
   hi: 2000
   label: 'LLP decay $|z|$ [cm]'
   log_y: true
+
+llp_decay_eta:
+  expression: "events.llp.decayEta"
+  per_object: true
+  bins: 40
+  lo: -5
+  hi: 5
+  label: 'LLP decay vertex $\eta$'
 
 llp_decay_rz:
   expression_x: "abs(events.llp.decayZ)"
@@ -284,12 +286,6 @@ llp_pt_num_dt:
   edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
   label: 'LLP $p_T$ [GeV]'
 
-llp_pt_den_rpc:
-  expression: "events.llp.pt"
-  per_object: true
-  selections: [llp_in_rpc]
-  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
-  label: 'LLP $p_T$ [GeV]'
 llp_pt_den_any:
   expression: "events.llp.pt"
   per_object: true
@@ -357,7 +353,6 @@ _axes:
     - {LEG: den_dt,   LSEL: [llp_in_dt]}
     - {LEG: hits_dt,  LSEL: [llp_in_dt, llp_hits10_dt]}
     - {LEG: num_dt,   LSEL: [llp_in_dt, llp_reco_dt]}
-    - {LEG: den_rpc,  LSEL: [llp_in_rpc]}
     - {LEG: den_any,  LSEL: [llp_in_ms]}
     - {LEG: num_any,  LSEL: [llp_in_ms, llp_reco_any]}
 
@@ -430,14 +425,6 @@ llp_eta_num_dt:
   hi: 3
   label: 'LLP $\eta$'
 
-llp_eta_den_rpc:
-  expression: "events.llp.eta"
-  per_object: true
-  selections: [llp_in_rpc]
-  bins: 60
-  lo: -3
-  hi: 3
-  label: 'LLP $\eta$'
 llp_eta_den_any:
   expression: "events.llp.eta"
   per_object: true
@@ -506,14 +493,6 @@ llp_decayr_num_dt:
   hi: 1200
   label: 'LLP decay $r$ [cm]'
 
-llp_decayr_den_rpc:
-  expression: "events.llp.decayR"
-  per_object: true
-  selections: [llp_in_rpc]
-  bins: 60
-  lo: 0
-  hi: 1200
-  label: 'LLP decay $r$ [cm]'
 llp_decayr_all_num_csc:
   expression: "events.llp.decayR"
   per_object: true
@@ -590,14 +569,6 @@ llp_absdecayz_num_dt:
   hi: 1500
   label: 'LLP decay $|z|$ [cm]'
 
-llp_absdecayz_den_rpc:
-  expression: "abs(events.llp.decayZ)"
-  per_object: true
-  selections: [llp_in_rpc]
-  bins: 75
-  lo: 0
-  hi: 1500
-  label: 'LLP decay $|z|$ [cm]'
 llp_absdecayz_all_num_csc:
   expression: "abs(events.llp.decayZ)"
   per_object: true

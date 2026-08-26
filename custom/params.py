@@ -22,12 +22,19 @@ from typing import NamedTuple
 LLP_PDGID = 999999
 
 # Decay-volume definitions [cm] (standard MDS analysis geometry)
-TRACKER_RMAX, TRACKER_ZMAX = 129.0, 295.0
-# Calorimeter envelope: everything outside the tracker and inside the HCAL.
+# Active silicon, not the support-tube envelope (r < 129): the outermost TOB
+# layer sits at r ~ 116 and the last TEC disk at |z| ~ 282.  The eta bound is
+# the tracker acceptance -- without it the bare cylinder counts decays in the
+# un-instrumented forward core as "in the tracker".
+TRACKER_RMAX, TRACKER_ZMAX, TRACKER_ETAMAX = 116.0, 282.0, 2.5
+# Calorimeter envelope: everything outside the tracker cylinder, inside HCAL.
 CALO_RMAX, CALO_ZMAX = 295.0, 568.0
+# The CSC eta bounds are its chamber coverage.  They matter: this geometry is
+# an outer envelope, so without them a decay near the beamline at large |z|
+# counts as fiducial even though no chamber reaches it.
 CSC_ZMIN, CSC_ZMAX, CSC_RMAX = 400.0, 1100.0, 695.5
+CSC_ETAMIN, CSC_ETAMAX = 0.9, 2.4
 DT_RMIN, DT_RMAX, DT_ZMAX = 380.0, 738.0, 650.0
-RPC_EC_ZMIN, RPC_EC_ZMAX, RPC_EC_RMAX = 600.0, 1020.0, 660.0  # endcap; barrel = DT volume
 
 RPC_MODES = ("separate", "merge", "match")
 
