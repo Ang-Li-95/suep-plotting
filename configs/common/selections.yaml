@@ -1,0 +1,54 @@
+# ── Reco-level selections shared by every MDS study ───────────────
+# Event bookkeeping, the prompt-object cuts the cluster isolation is measured
+# against, the isolation cuts themselves, and the RPC-content masks.  Nothing
+# here needs gen information; the truth masks live in ../common_gen.
+#
+# Only CSC and DT: with the default rpc_mode: match there is no standalone RPC
+# cluster collection -- the RPC rechits are attached to the CSC and DT clusters
+# instead (see ../common/columns.yaml and docs/derived-columns.md).
+
+_axes:
+  systems:
+    - {SYS: csc, SYSU: CSC}
+    - {SYS: dt,  SYSU: DT}
+
+# ── Prompt objects the cluster isolation is measured against ──────
+# The 'cluster_isolation' step measures dR from every cluster centroid to the
+# closest object passing these and attaches it as cluster.drMuon / drJet (the
+# keys of helpers.ISO_SELECTIONS).  'collection:' names what the per-object
+# mask is over; tightLepVetoId comes from the 'jet_id' step, since 2024
+# NanoAOD no longer stores Jet_jetId.
+muon_sel_foriso:
+  level: object
+  collection: Muon
+  expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
+
+jet_sel_foriso:
+  level: object
+  collection: Jet
+  expression: "(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId"
+
+_repeat:
+  - over: systems
+    defs:
+      # Event-level bookkeeping (cutflow.txt)
+      has_<SYS>_cluster:
+        expression: "ak.num(events.<SYS>Cluster) >= 1"
+      # Cluster isolation from prompt activity.  In events with no muon / jet
+      # at all the field carries the sentinel NO_OBJECT_DR = 999, so those
+      # maximally isolated clusters pass the same comparison with no special
+      # case.
+      <SYS>_cluster_iso_muon:
+        level: object
+        expression: "events.<SYS>Cluster.drMuon >= 0.4"
+      <SYS>_cluster_iso_jet:
+        level: object
+        expression: "events.<SYS>Cluster.drJet >= 0.4"
+      # RPC content of the cluster: whether it picked up any RPC rechit at all,
+      # and whether its innermost hit came from something other than RPC.
+      <SYS>_cluster_has_rpc:
+        level: object
+        expression: "events.<SYS>Cluster.nRPCHits > 0"
+      <SYS>_cluster_first_not_rpc:
+        level: object
+        expression: "events.<SYS>Cluster.firstSystem != 2"

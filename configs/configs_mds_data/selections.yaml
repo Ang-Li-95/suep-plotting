@@ -1,0 +1,3 @@
+# ── Reco-only, incl. collision data ───────────────────────────────
+# The shared reco selections; see ../common/selections.yaml.
+_extends: ../common

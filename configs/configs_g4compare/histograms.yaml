@@ -1,0 +1,4 @@
+# SUEPs_Gen (pre-Geant4-fix) vs SUEPs_Gen2 (post-fix), on the reference reco
+# study's plots: same histograms, selections and derived plots as
+# ../configs_mds, over the two productions listed in samples.yaml.
+_extends: ../configs_mds

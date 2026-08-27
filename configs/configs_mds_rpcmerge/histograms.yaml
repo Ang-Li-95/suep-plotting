@@ -1,0 +1,93 @@
+# ── rpc_mode: merge ───────────────────────────────────────────────
+# The RPC rechits are clustered *together with* the system they overlap --
+# barrel RPC (Region == 0) with DT, endcap RPC with CSC -- instead of being
+# associated to the finished clusters afterwards, which is the default
+# (rpc_mode: match, ../configs_mds_signal -> ../common).
+#
+# Both modes produce the same two cluster collections carrying the same RPC
+# fields, so this set is the default study plot for plot, with one physics
+# difference: because the RPC hits are *inside* the cluster, they also count
+# towards the per-LLP hit totals that define "reconstructable in this system".
+# That is what the overrides below are.
+
+_extends: ../configs_mds_signal
+
+# The RPC region of each system now counts towards its per-LLP hit total.
+llp_nhits_csc:
+  bins: 100
+  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
+  hi: 200
+  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP
+  lo: 0
+  log_y: true
+  per_object: true
+llp_nhits_dt:
+  bins: 100
+  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
+  hi: 200
+  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP
+  lo: 0
+  log_y: true
+  per_object: true
+llpcsc_nhits_csc:
+  bins: 100
+  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
+  hi: 200
+  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_csc
+llpcsc_nhits_csc_den:
+  bins: 100
+  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
+  hi: 200
+  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_csc
+llpcsc_nhits_csc_num:
+  bins: 100
+  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
+  hi: 200
+  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_csc
+  - llp_reco_csc
+llpdt_nhits_dt:
+  bins: 100
+  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
+  hi: 200
+  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_dt
+llpdt_nhits_dt_den:
+  bins: 100
+  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
+  hi: 200
+  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_dt
+llpdt_nhits_dt_num:
+  bins: 100
+  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
+  hi: 200
+  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
+  lo: 0
+  log_y: true
+  per_object: true
+  selections:
+  - llp_in_dt
+  - llp_reco_dt

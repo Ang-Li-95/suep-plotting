@@ -1,0 +1,3 @@
+# ── The truth study ───────────────────────────────────────────────
+# The shared settings plus the gen-level steps; see ../common_gen.
+_extends: ../common_gen

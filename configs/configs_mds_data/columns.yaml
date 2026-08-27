@@ -1,0 +1,4 @@
+# ── Reco-only, incl. collision data ───────────────────────────────
+# Nothing but the shared settings: ../common is already reco-only, so no
+# histogram or selection here touches events.llp.
+_extends: ../common

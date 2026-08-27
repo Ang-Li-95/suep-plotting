@@ -1,0 +1,6 @@
+# ── derive() settings for the truth studies ───────────────────────
+# ../common plus the four gen-level steps, which attach events.llp and the
+# cluster <-> LLP truth match.
+_extends: ../common
+
+steps: [jerc, jet_id, clusters, cluster_isolation, llp, llp_hits, llp_reco, llp_shape]

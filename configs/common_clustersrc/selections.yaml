@@ -1,0 +1,8 @@
+# ── Base: the reco selections, minus the one that varies ──────────
+# Everything comes from ../common.  The two names this study turns on --
+# csc_cluster_src and dt_cluster_src, the object-level masks that say which
+# clusters a set is allowed to fill -- are deliberately *not* defined here:
+# each configs_mds_src_* set defines its own, and a set that forgets stops at
+# startup with "histograms.yaml references selections not defined in
+# selections.yaml" instead of silently filling every cluster.
+_extends: ../common

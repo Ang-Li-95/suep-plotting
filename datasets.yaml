@@ -1,0 +1,157 @@
+# Central dataset registry.
+#
+# One definition per dataset; configs pull them in via
+#
+#   _include: ../datasets.yaml
+#   suep_mDark2_temp1:          # verbatim
+#   suep_mDark2_temp2:          # with overrides
+#     color: "black"
+#   dy:                         # same dataset under another config name
+#     _from: dy_central_50to120
+#
+# 'files' may be a file, a glob, or a directory (walked recursively for *.root),
+# local or xrootd.  Keep plot-only keys (label, color) here as defaults and
+# override them per config where a study needs something different.
+# Signal points to Gen3 (2026-08-05); Gen2 kept below for the G4 comparison.
+#
+# The Gen3 grid is ggH, mMed=125, ctau=5 m, scanned in (mDark, temperature):
+# mDark = 2 / 5 / 12 GeV x T = 1 / 2, all named suep_mDark<M>_temp<T>.
+# The mDark=2 points were called suep_temp1 / suep_temp2 until 2026-08-13, and
+# are the same datasets under the new names; every config set was repointed on
+# 2026-08-25, so the old names appear only in studies/ (which reads its own
+# frozen pickles).
+suep_mDark2_temp1:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $m_{\mathrm{Dark}}$=2, $T$=1, $c\tau$=5 m
+  color: tab:blue
+  linestyle: '-'
+  group: signal
+suep_mDark2_temp2:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $m_{\mathrm{Dark}}$=2, $T$=2, $c\tau$=5 m
+  color: tab:blue
+  linestyle: '--'
+  group: signal
+# Remaining Gen3 grid points (mDark = 5, 12).  Same production, same 25-file
+# size; only mDark and the temperature change.
+suep_mDark5_temp1:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-5_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $m_{\mathrm{Dark}}$=5, $T$=1, $c\tau$=5 m
+  color: tab:green
+  linestyle: '-'
+  group: signal
+suep_mDark5_temp2:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-5_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $m_{\mathrm{Dark}}$=5, $T$=2, $c\tau$=5 m
+  color: tab:green
+  linestyle: '--'
+  group: signal
+suep_mDark12_temp1:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-12_portal-higgs_temp-1_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $m_{\mathrm{Dark}}$=12, $T$=1, $c\tau$=5 m
+  color: tab:purple
+  linestyle: '-'
+  group: signal
+suep_mDark12_temp2:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen3/2024/run3_ggH-channel_mMed-125_mDark-12_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $m_{\mathrm{Dark}}$=12, $T$=2, $c\tau$=5 m
+  color: tab:purple
+  linestyle: '--'
+  group: signal
+# Gen2 T=2: the post-G4-fix leg of configs_g4compare, pinned so that comparison
+# keeps its original production when suep_mDark2_temp2 moves to a newer one.
+suep_temp2_gen2:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen2/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $T$=2, $c\tau$=5 m (Gen2)
+  color: tab:red
+  group: signal
+suep_temp2_preG4fix:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/SUEPs_Gen/2024/run3_ggH-channel_mMed-125_mDark-2_portal-higgs_temp-2_decay-generic_ctau-5000p0_13TeV-pythia8/MDSNANO
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: T=2 (pre-G4 fix)
+  color: gray
+  group: signal
+# Whole crab production (subdirs 0000-0005): was an explicit 338-file subset.
+dy_2mu_50to120:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/MDSnano_RunIII2024Summer24DRPremix-140X_v26-v2/260714_082146
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: DY$\to2\mu$ (50-120)
+  color: tab:orange
+  group: background
+# ZeroBias data (2027 files, whole crab production).  No genWeight and no
+# SUEPGenPart: is_data skips the gen weighting, and the truth-less path in
+# custom/columns.py leaves the clusters unmatched (hasTruth False).
+zerobias_2024C:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024C-2024CDEReprocessing-v1/260810_140025
+  tree: Events
+  is_data: true
+  label: ZeroBias 2024C
+  color: black
+  group: data
+# Cosmics data (118 files, whole crab production).  Same truth-less path as
+# ZeroBias; useful as a muon-system-noise / non-collision control sample.
+cosmics_2024C:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/Cosmics/MDSnano_Run2024C-v1/260824_145424
+  tree: Events
+  is_data: true
+  label: Cosmics 2024C
+  color: dimgray
+  group: data
+dy_central_50to120:
+  files:
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_1.root
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_10.root
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_100.root
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_101.root
+  - root://cmsxrootd.fnal.gov//store/group/lpclonglived/displacedJetMuonNtuple/MDSNano/Run3Summer24/v2//DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/crab_DYto2Mu_Bin-MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/250407_214823/0000/PAT_NANO_102.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: DY$\to\mu\mu$ (bkg clusters)
+  color: black
+  group: signal
+suep_mMed125_mDark2:
+  files:
+  - /users/ang.li/public/SUEP/Generation/MDSNano/CMSSW_15_0_2/src/MDSNANO/EXO-RunIII2024Summer24NanoAODv15-00307.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: SUEP $m_{\mathrm{Med}}$=125, $m_{\mathrm{Dark}}$=2
+  color: tab:blue
+  group: signal

@@ -1,0 +1,20 @@
+# ── Category 2/5: DY clusters inside a jet ────────────────────────
+# Punch-through and the tail of a hadronic shower: the cluster sits on a jet.
+# drJet is the dR from the cluster centroid to the closest jet passing
+# jet_sel_foriso (../common), attached by the cluster_isolation step; in an
+# event with no such jet it carries the sentinel 999, which fails < 0.4 -- so a
+# cluster with no jet to belong to is correctly not in this category.
+#
+# The threshold is the complement of ../common's <sys>_cluster_iso_jet
+# (>= 0.4), so "inside a jet" and "isolated from jets" partition the clusters
+# with no gap and no overlap.
+_extends: ../common_clustersrc
+
+csc_cluster_src:
+  level: object
+  label: $\Delta R$(cluster, jet) < 0.4
+  expression: "events.cscCluster.drJet < 0.4"
+dt_cluster_src:
+  level: object
+  label: $\Delta R$(cluster, jet) < 0.4
+  expression: "events.dtCluster.drJet < 0.4"

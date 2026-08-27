@@ -1,0 +1,24 @@
+# ── Selections for the trigger-efficiency study ───────────────────
+# Event-level HLT decisions (also counted in cutflow.txt).
+
+hlt_csccluster_loose:
+  expression: "events.HLT.CscCluster_Loose"
+hlt_pfmetnomu120:
+  expression: "events.HLT.PFMETNoMu120_PFMHTNoMu120_IDTight"
+hlt_doublecsc75:
+  expression: "events.HLT.DoubleCscCluster75"
+hlt_doublecsc100:
+  expression: "events.HLT.DoubleCscCluster100"
+hlt_l1met_dt50:
+  expression: "events.HLT.L1MET_DTCluster50"
+hlt_l1met_dtnomb1s50:
+  expression: "events.HLT.L1MET_DTClusterNoMB1S50"
+hlt_l1cscshower_dt50:
+  expression: "events.HLT.L1CSCShower_DTCluster50"
+hlt_l1cscshower_dt75:
+  expression: "events.HLT.L1CSCShower_DTCluster75"
+
+# At least one HLT DT cluster (the collection is already thresholded at
+# 50 hits, so this is exactly the trigger's cluster leg).
+has_hlt_dtcluster:
+  expression: "ak.num(events.dtMDSHLTCluster) >= 1"

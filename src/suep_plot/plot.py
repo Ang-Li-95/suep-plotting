@@ -10,7 +10,6 @@ import hist
 import matplotlib.pyplot as plt
 import mplhep as hep
 import numpy as np
-import yaml
 
 from .histograms import is_2d as _hist_is_2d  # noqa: F401  (re-exported)
 
@@ -81,10 +80,8 @@ def merge_results(paths: list[str]) -> dict:
 
 
 def load_derived_plot_defs(path: str) -> dict:
-    if not Path(path).exists():
-        return {}
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    from .config import load_config_file
+    return load_config_file(path)
 
 
 def _is_2d_hist(h: hist.Hist) -> bool:
@@ -147,11 +144,18 @@ def _fold_flow(sh: hist.Hist) -> hist.Hist:
 
 
 def _prep_1d(sh: hist.Hist, hist_cfg: dict) -> hist.Hist:
-    """Apply plot-time transforms (rebin, overflow folding) to a 1D slice."""
+    """Apply plot-time transforms (rebin, overflow folding) to a 1D slice.
+
+    Under/overflow is folded into the first/last visible bin by default, so
+    every entry is on the canvas and normalized curves are normalized over the
+    same population even when samples spill out of the axis range by different
+    amounts.  ``flow: none`` in the histogram config opts out and drops the
+    out-of-range entries instead.
+    """
     rebin = int(hist_cfg.get("rebin") or 0)
     if rebin > 1:
         sh = sh[:: hist.rebin(rebin)]
-    if hist_cfg.get("flow") == "sum":
+    if str(hist_cfg.get("flow", "sum")).lower() not in ("none", "omit", "drop"):
         sh = _fold_flow(sh)
     return sh
 
@@ -167,6 +171,69 @@ def _split_samples(samples, sample_defs):
         else:
             background.append(s)
     return signal, background, data
+
+
+# ── Shared figure plumbing ────────────────────────────────────────
+
+
+def _figure(ratio: bool = False):
+    """A CMS-sized figure: one panel, or a main panel with a ratio panel."""
+    if ratio:
+        fig, (ax, rax) = plt.subplots(
+            2, 1, figsize=(10, 10), sharex=True,
+            gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06},
+        )
+        return fig, ax, rax
+    fig, ax = plt.subplots(figsize=(10, 8))
+    return fig, ax, None
+
+
+def palette() -> list[str]:
+    """The active colour cycle -- the fallback when a sample defines no colour."""
+    return plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+
+def _series(h: hist.Hist, sample_defs: dict):
+    """(sample, 1D slice, label, color, linestyle) per dataset.
+
+    The colour falls back to the cycle.  The line style matters because
+    samples that differ in only one parameter share a colour on purpose (the
+    signal grid gives both temperatures of one mDark the same colour), so the
+    style is the only thing telling them apart in a point plot.
+    """
+    colors = palette()
+    for i, s in enumerate(h.axes["dataset"]):
+        cfg = sample_defs.get(s, {})
+        yield (s, h[{"dataset": s}], cfg.get("label", s),
+               cfg.get("color", colors[i % len(colors)]),
+               cfg.get("linestyle", "-"))
+
+
+def _require(histograms: dict, names, plot_name: str) -> bool:
+    """Warn and return False if any source histogram is missing."""
+    missing = [n for n in names if n not in histograms]
+    if missing:
+        print(f"  WARNING: source histogram(s) {missing} not found for "
+              f"derived plot '{plot_name}'")
+    return not missing
+
+
+def _finish(fig, ax, output_dir: str, name: str, formats, *,
+            lumi=None, has_data=False, xlabel=None, ylabel=None, legend=True):
+    """Label, CMS-tag, save and close one figure -- the tail of every renderer."""
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+    if legend:
+        ax.legend(fontsize=18, loc="best")
+    _cms_label(ax, lumi=lumi, has_data=has_data)
+    os.makedirs(output_dir, exist_ok=True)
+    for ext in formats:
+        fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150,
+                    bbox_inches="tight")
+    plt.close(fig)
+    return 1
 
 
 # ── 1D histogram plotting ────────────────────────────────────────
@@ -205,14 +272,7 @@ def plot_histogram(
     data_hists = [_prep_1d(h[{"dataset": s}], hist_cfg) for s in data_samples]
 
     want_ratio = bool(ratio and data_hists and bkg_hists)
-    if want_ratio:
-        fig, (ax, rax) = plt.subplots(
-            2, 1, figsize=(10, 10), sharex=True,
-            gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06},
-        )
-    else:
-        fig, ax = plt.subplots(figsize=(10, 8))
-        rax = None
+    fig, ax, rax = _figure(ratio=want_ratio)
 
     if bkg_hists:
         bkg_labels = [sample_defs.get(s, {}).get("label", s) for s in bkg_samples]
@@ -221,11 +281,12 @@ def plot_histogram(
             # Stacking unit-area histograms is meaningless, so in shape mode
             # each background is normalized on its own and overlaid as a step,
             # directly comparable with the signal curves below.
-            for bh, label, color in zip(bkg_hists, bkg_labels, bkg_colors):
+            bkg_ls = [sample_defs.get(s, {}).get("linestyle", "-") for s in bkg_samples]
+            for bh, label, color, ls in zip(bkg_hists, bkg_labels, bkg_colors, bkg_ls):
                 if bh.sum().value > 0:
                     bh = bh * (1.0 / bh.sum().value)
                 hep.histplot(bh, ax=ax, histtype="step", label=label,
-                             color=color, linewidth=2,
+                             color=color, linewidth=2, linestyle=ls,
                              yerr=np.sqrt(bh.variances()))
         else:
             hep.histplot(
@@ -262,6 +323,7 @@ def plot_histogram(
             # draw large upper limits on every empty bin of a weighted hist.
             hep.histplot(sh, ax=ax, histtype="step", label=label,
                          color=cfg.get("color", "red"), linewidth=2,
+                         linestyle=cfg.get("linestyle", "-"),
                          yerr=np.sqrt(sh.variances()))
 
     for s, dh in zip(data_samples, data_hists):
@@ -276,28 +338,20 @@ def plot_histogram(
             markersize=5,
         )
 
-    xlabel_ax = rax if rax is not None else ax
-    xlabel_ax.set_xlabel(hist_cfg.get("label", name))
-    if rax is not None:
-        ax.set_xlabel("")
-    ax.set_ylabel("Events" if not normalize else "Normalized")
+    # With a ratio panel the x label belongs under it, not under the main axes.
+    (rax if rax is not None else ax).set_xlabel(hist_cfg.get("label", name))
     if log_y or hist_cfg.get("log_y"):
         ax.set_yscale("log")
         if not normalize:
             ax.set_ylim(bottom=0.1)
     if hist_cfg.get("log_x"):
         ax.set_xscale("log")
-    ax.legend(fontsize=18, loc="best")
-
-    _cms_label(ax, lumi=lumi, has_data=bool(data_samples))
-
     if want_ratio:
         _draw_ratio_panel(rax, data_hists, bkg_hists)
 
-    os.makedirs(output_dir, exist_ok=True)
-    for ext in formats:
-        fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    _finish(fig, ax, output_dir, name, formats, lumi=lumi,
+            has_data=bool(data_samples), xlabel="" if rax is not None else None,
+            ylabel="Normalized" if normalize else "Events")
 
 
 def _draw_ratio_panel(rax, data_hists: list[hist.Hist], bkg_hists: list[hist.Hist]):
@@ -339,38 +393,24 @@ def plot_histogram_2d(
 
     ``log_z: true`` in the histogram config switches to a log color scale.
     """
-    samples = list(h.axes["dataset"])
-    if not samples:
-        return
-
-    os.makedirs(output_dir, exist_ok=True)
-
-    for s in samples:
-        h2 = h[{"dataset": s}]
-        fig, ax = plt.subplots(figsize=(10, 8))
+    multi = len(h.axes["dataset"]) > 1
+    for s, h2, label, _color, _ls in _series(h, sample_defs):
+        fig, ax, _rax = _figure()
         w = h2.view().value
-        x_edges = h2.axes["x"].edges
-        y_edges = h2.axes["y"].edges
         norm = None
         if hist_cfg.get("log_z") and (w > 0).any():
             from matplotlib.colors import LogNorm
             norm = LogNorm(vmin=w[w > 0].min(), vmax=w.max())
-        mesh = ax.pcolormesh(x_edges, y_edges, w.T, cmap="viridis", norm=norm)
+        mesh = ax.pcolormesh(h2.axes["x"].edges, h2.axes["y"].edges, w.T,
+                             cmap="viridis", norm=norm)
         fig.colorbar(mesh, ax=ax, label="Events")
-
-        label = sample_defs.get(s, {}).get("label", s)
-        ax.set_xlabel(hist_cfg.get("label_x", name))
-        ax.set_ylabel(hist_cfg.get("label_y", ""))
         # Sample tag inside the axes; a centered title collides with the CMS label.
         ax.text(0.97, 0.97, label, transform=ax.transAxes, ha="right", va="top",
                 fontsize=16)
-
-        _cms_label(ax, lumi=lumi)
-
-        tag = f"{name}_{s}" if len(samples) > 1 else name
-        for ext in formats:
-            fig.savefig(os.path.join(output_dir, f"{tag}.{ext}"), dpi=150, bbox_inches="tight")
-        plt.close(fig)
+        _finish(fig, ax, output_dir, f"{name}_{s}" if multi else name, formats,
+                lumi=lumi, legend=False,
+                xlabel=hist_cfg.get("label_x", name),
+                ylabel=hist_cfg.get("label_y", ""))
 
 
 # ── Derived-plot helpers ──────────────────────────────────────────
@@ -425,102 +465,36 @@ def _clopper_pearson(passed, total, level=0.6827):
     return lo, hi
 
 
-def _plot_derived_one(name, cfg, histograms, sample_defs, output_dir, *,
-                      log_y=False, lumi=None, formats=DEFAULT_FORMATS) -> int:
-    """Dispatch a single derived-plot definition to its renderer."""
-    dtype = cfg["type"]
-    if dtype in ("profile_x", "profile_y"):
-        return _plot_profile(name, cfg, histograms, sample_defs, output_dir,
-                             lumi=lumi, formats=formats)
-    if dtype in ("projection_x", "projection_y"):
-        return _plot_projection(name, cfg, histograms, sample_defs, output_dir,
-                                log_y=log_y, lumi=lumi, formats=formats)
-    if dtype == "efficiency":
-        return _plot_efficiency(name, cfg, histograms, sample_defs, output_dir,
-                                lumi=lumi, formats=formats)
-    if dtype == "ratio":
-        return _plot_ratio(name, cfg, histograms, sample_defs, output_dir,
-                           lumi=lumi, formats=formats)
-    if dtype == "sig_vs_bkg":
-        return _plot_sig_vs_bkg(name, cfg, histograms, sample_defs, output_dir,
-                                log_y=log_y, lumi=lumi, formats=formats)
-    print(f"  WARNING: unknown derived type '{dtype}' for '{name}'")
-    return 0
-
-
-def plot_derived(
-    derived_defs: dict,
-    histograms: dict[str, hist.Hist],
-    sample_defs: dict,
-    output_dir: str,
-    *,
-    log_y: bool = False,
-    lumi: float | None = None,
-    formats: tuple[str, ...] = DEFAULT_FORMATS,
-):
-    """Produce profile, projection, efficiency, and ratio plots."""
-    if not derived_defs:
-        return
-
-    os.makedirs(output_dir, exist_ok=True)
-    count = 0
-    for name, cfg in derived_defs.items():
-        count += _plot_derived_one(name, cfg, histograms, sample_defs, output_dir,
-                                   log_y=log_y, lumi=lumi, formats=formats)
-    if count:
-        print(f"Plotted {count} derived plot(s) to {output_dir}/")
-
-
 def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *,
-                  lumi=None, formats=DEFAULT_FORMATS):
-    source = cfg["source"]
-    if source not in histograms:
-        print(f"  WARNING: source '{source}' not found for derived plot '{name}'")
+                  lumi=None, formats=DEFAULT_FORMATS, **_):
+    if not _require(histograms, [cfg["source"]], name):
         return 0
-
-    h = histograms[source]
+    h = histograms[cfg["source"]]
     axis = "x" if cfg["type"] == "profile_x" else "y"
-    samples = list(h.axes["dataset"])
 
-    fig, ax = plt.subplots(figsize=(10, 8))
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    fig, ax, _rax = _figure()
+    for _s, h2, label, color, ls in _series(h, sample_defs):
+        centers, mean, err, _edges = _profile(h2, axis)
+        ax.errorbar(centers, mean, yerr=err, marker="o", linestyle=ls,
+                    label=label, color=color, markersize=4, capsize=2,
+                    linewidth=1.5)
 
-    for i, s in enumerate(samples):
-        h2 = h[{"dataset": s}]
-        centers, mean, err, edges = _profile(h2, axis)
-        label = sample_defs.get(s, {}).get("label", s)
-        color = sample_defs.get(s, {}).get("color", colors[i % len(colors)])
-        ax.errorbar(centers, mean, yerr=err, fmt="o", label=label,
-                    color=color, markersize=4, capsize=2)
-
-    profiled_axis = "y" if axis == "x" else "x"
-    ax.set_xlabel(cfg.get("label_x", h.axes[axis].label))
-    ax.set_ylabel(cfg.get("label_y", f"Mean {h.axes[profiled_axis].label}"))
-    ax.legend(fontsize=18, loc="best")
-
-    _cms_label(ax, lumi=lumi)
-
-    for ext in formats:
-        fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return 1
+    profiled = "y" if axis == "x" else "x"
+    return _finish(fig, ax, output_dir, name, formats, lumi=lumi,
+                   xlabel=cfg.get("label_x", h.axes[axis].label),
+                   ylabel=cfg.get("label_y", f"Mean {h.axes[profiled].label}"))
 
 
 def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *,
-                     log_y=False, lumi=None, formats=DEFAULT_FORMATS):
-    source = cfg["source"]
-    if source not in histograms:
-        print(f"  WARNING: source '{source}' not found for derived plot '{name}'")
+                     log_y=False, lumi=None, formats=DEFAULT_FORMATS, **_):
+    if not _require(histograms, [cfg["source"]], name):
         return 0
-
-    h = histograms[source]
+    h = histograms[cfg["source"]]
     proj_axis = "x" if cfg["type"] == "projection_x" else "y"
-    projected = h.project("dataset", proj_axis)
 
-    hist_cfg = {
-        "label": cfg.get("label_x", h.axes[proj_axis].label),
-    }
-    plot_histogram(projected, hist_cfg, sample_defs, output_dir, name,
+    plot_histogram(h.project("dataset", proj_axis),
+                   {"label": cfg.get("label_x", h.axes[proj_axis].label)},
+                   sample_defs, output_dir, name,
                    log_y=log_y, lumi=lumi, formats=formats)
     return 1
 
@@ -541,150 +515,81 @@ def _draw_spans(ax, spans):
 
 
 def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
-                     lumi=None, formats=DEFAULT_FORMATS):
-    num_name = cfg["numerator"]
-    den_name = cfg["denominator"]
-    for src in (num_name, den_name):
-        if src not in histograms:
-            print(f"  WARNING: histogram '{src}' not found for derived plot '{name}'")
-            return 0
-
-    h_num = histograms[num_name]
-    h_den = histograms[den_name]
+                     lumi=None, formats=DEFAULT_FORMATS, **_):
+    num_name, den_name = cfg["numerator"], cfg["denominator"]
+    if not _require(histograms, (num_name, den_name), name):
+        return 0
+    h_num, h_den = histograms[num_name], histograms[den_name]
     if _is_2d_hist(h_num):
         return _plot_efficiency_2d(name, cfg, h_num, h_den, sample_defs,
                                    output_dir, lumi=lumi, formats=formats)
-    samples = list(h_num.axes["dataset"])
 
-    fig, ax = plt.subplots(figsize=(10, 8))
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-
-    for i, s in enumerate(samples):
+    fig, ax, _rax = _figure()
+    centers = h_num.axes["x"].centers
+    top = 0.0
+    for s, hn, label, color, ls in _series(h_num, sample_defs):
         if s not in h_den.axes["dataset"]:
             continue
-        passed = h_num[{"dataset": s}].view().value
+        passed = hn.view().value
         total = h_den[{"dataset": s}].view().value
 
         filled = total > 0
         with np.errstate(divide="ignore", invalid="ignore"):
             eff = np.where(filled, passed / total, 0.0)
-
         lo, hi = _clopper_pearson(passed, total)
-        err_lo = eff - lo
-        err_hi = hi - eff
 
-        centers = h_num.axes["x"].centers
-        label = sample_defs.get(s, {}).get("label", s)
-        color = sample_defs.get(s, {}).get("color", colors[i % len(colors)])
         ax.errorbar(centers[filled], eff[filled],
-                    yerr=[err_lo[filled], err_hi[filled]], fmt="o", label=label,
-                    color=color, markersize=4, capsize=2)
+                    yerr=[(eff - lo)[filled], (hi - eff)[filled]],
+                    marker="o", linestyle=ls, label=label, color=color,
+                    markersize=4, capsize=2, linewidth=1.5)
+        # The caps alone are sub-pixel at these statistics; the band is what
+        # actually reads on the page.
+        ax.fill_between(centers[filled], lo[filled], hi[filled],
+                        color=color, alpha=0.25, linewidth=0)
+        if filled.any():
+            top = max(top, float(hi[filled].max()))
 
     if cfg.get("spans"):
         _draw_spans(ax, cfg["spans"])
-
-    ax.set_xlabel(cfg.get("label_x", h_num.axes["x"].label))
-    ax.set_ylabel(cfg.get("label_y", "Efficiency"))
-    ax.set_ylim(-0.05, 1.15)
-    ax.legend(fontsize=18, loc="best")
-
-    _cms_label(ax, lumi=lumi)
-
-    for ext in formats:
-        fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return 1
-
-
-def _plot_efficiency_2d(name, cfg, h_num, h_den, sample_defs, output_dir, *,
-                        lumi=None, formats=DEFAULT_FORMATS):
-    """Efficiency map from a 2D numerator/denominator pair (one figure per
-    sample).  Bins with an empty denominator are left blank; the color scale
-    is fixed to [0, 1].  ``label_z`` sets the colorbar label."""
-    samples = list(h_num.axes["dataset"])
-    x_edges = h_num.axes["x"].edges
-    y_edges = h_num.axes["y"].edges
-
-    os.makedirs(output_dir, exist_ok=True)
-    plotted = 0
-    for s in samples:
-        if s not in h_den.axes["dataset"]:
-            continue
-        passed = h_num[{"dataset": s}].view().value
-        total = h_den[{"dataset": s}].view().value
-        with np.errstate(divide="ignore", invalid="ignore"):
-            eff = np.where(total > 0, passed / total, np.nan)
-
-        fig, ax = plt.subplots(figsize=(10, 8))
-        mesh = ax.pcolormesh(x_edges, y_edges, eff.T, cmap="viridis",
-                             vmin=0.0, vmax=1.0)
-        fig.colorbar(mesh, ax=ax, label=cfg.get("label_z", "Efficiency"))
-
-        ax.set_xlabel(cfg.get("label_x", h_num.axes["x"].label))
-        ax.set_ylabel(cfg.get("label_y", h_num.axes["y"].label))
-        label = sample_defs.get(s, {}).get("label", s)
-        ax.text(0.97, 0.97, label, transform=ax.transAxes, ha="right", va="top",
-                fontsize=16)
-
-        _cms_label(ax, lumi=lumi)
-
-        tag = f"{name}_{s}" if len(samples) > 1 else name
-        for ext in formats:
-            fig.savefig(os.path.join(output_dir, f"{tag}.{ext}"), dpi=150, bbox_inches="tight")
-        plt.close(fig)
-        plotted += 1
-    return 1 if plotted else 0
+    # Efficiencies that live well below 1 get an axis matched to them, so the
+    # uncertainty band is not squeezed into nothing by empty canvas.  The
+    # headroom leaves the legend somewhere to sit.  `ylim` in the config pins
+    # it explicitly.
+    ax.set_ylim(*(cfg.get("ylim") or ((-0.02 * top, min(1.15, top * 1.45))
+                                      if 0 < top < 0.7 else (-0.05, 1.15))))
+    return _finish(fig, ax, output_dir, name, formats, lumi=lumi,
+                   xlabel=cfg.get("label_x", h_num.axes["x"].label),
+                   ylabel=cfg.get("label_y", "Efficiency"))
 
 
 def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
-                lumi=None, formats=DEFAULT_FORMATS):
-    num_name = cfg["numerator"]
-    den_name = cfg["denominator"]
-    for src in (num_name, den_name):
-        if src not in histograms:
-            print(f"  WARNING: histogram '{src}' not found for derived plot '{name}'")
-            return 0
+                lumi=None, formats=DEFAULT_FORMATS, **_):
+    num_name, den_name = cfg["numerator"], cfg["denominator"]
+    if not _require(histograms, (num_name, den_name), name):
+        return 0
+    h_num, h_den = histograms[num_name], histograms[den_name]
 
-    h_num = histograms[num_name]
-    h_den = histograms[den_name]
-    samples = list(h_num.axes["dataset"])
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-
-    for i, s in enumerate(samples):
+    fig, ax, _rax = _figure()
+    centers = h_num.axes["x"].centers
+    for s, hn, label, color, ls in _series(h_num, sample_defs):
         if s not in h_den.axes["dataset"]:
             continue
-        nv = h_num[{"dataset": s}].view()
-        dv = h_den[{"dataset": s}].view()
-
+        nv, dv = hn.view(), h_den[{"dataset": s}].view()
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = np.where(dv.value > 0, nv.value / dv.value, np.nan)
-            err = np.where(dv.value > 0,
-                           np.sqrt(nv.variance) / dv.value,
-                           np.nan)
+            err = np.where(dv.value > 0, np.sqrt(nv.variance) / dv.value, np.nan)
+        ax.errorbar(centers, ratio, yerr=err, marker="o", linestyle=ls,
+                    label=label, color=color, markersize=4, capsize=2,
+                    linewidth=1.5)
 
-        centers = h_num.axes["x"].centers
-        label = sample_defs.get(s, {}).get("label", s)
-        color = sample_defs.get(s, {}).get("color", colors[i % len(colors)])
-        ax.errorbar(centers, ratio, yerr=err, fmt="o", label=label,
-                    color=color, markersize=4, capsize=2)
-
-    ax.set_xlabel(cfg.get("label_x", h_num.axes["x"].label))
-    ax.set_ylabel(cfg.get("label_y", "Ratio"))
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8)
-    ax.legend(fontsize=18, loc="best")
-
-    _cms_label(ax, lumi=lumi)
-
-    for ext in formats:
-        fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return 1
+    return _finish(fig, ax, output_dir, name, formats, lumi=lumi,
+                   xlabel=cfg.get("label_x", h_num.axes["x"].label),
+                   ylabel=cfg.get("label_y", "Ratio"))
 
 
 def _plot_sig_vs_bkg(name, cfg, histograms, sample_defs, output_dir, *,
-                     log_y=False, lumi=None, formats=DEFAULT_FORMATS):
+                     log_y=False, lumi=None, formats=DEFAULT_FORMATS, **_):
     """Overlay a different histogram for signal and for background samples.
 
     Signal samples are drawn from the ``signal`` histogram and background
@@ -694,13 +599,9 @@ def _plot_sig_vs_bkg(name, cfg, histograms, sample_defs, output_dir, *,
     unit area by default (``normalize: false`` keeps raw yields), since the
     two source histograms generally hold different populations.
     """
-    sig_name = cfg["signal"]
-    bkg_name = cfg["background"]
-    for src in (sig_name, bkg_name):
-        if src not in histograms:
-            print(f"  WARNING: histogram '{src}' not found for derived plot '{name}'")
-            return 0
-
+    sig_name, bkg_name = cfg["signal"], cfg["background"]
+    if not _require(histograms, (sig_name, bkg_name), name):
+        return 0
     h_sig, h_bkg = histograms[sig_name], histograms[bkg_name]
     normalize = cfg.get("normalize", True)
 
@@ -714,8 +615,8 @@ def _plot_sig_vs_bkg(name, cfg, histograms, sample_defs, output_dir, *,
         print(f"  WARNING: no samples to draw for derived plot '{name}'")
         return 0
 
-    fig, ax = plt.subplots(figsize=(10, 8))
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    fig, ax, _rax = _figure()
+    colors = palette()
 
     drawn = 0
     for i, (s, h) in enumerate(entries):
@@ -736,18 +637,79 @@ def _plot_sig_vs_bkg(name, cfg, histograms, sample_defs, output_dir, *,
         print(f"  WARNING: all source histograms empty for derived plot '{name}'")
         return 0
 
-    ax.set_xlabel(cfg.get("label_x", h_sig.axes["x"].label))
-    ax.set_ylabel(cfg.get("label_y", "Normalized" if normalize else "Events"))
     if log_y or cfg.get("log_y"):
         ax.set_yscale("log")
-    ax.legend(fontsize=18, loc="best")
+    return _finish(fig, ax, output_dir, name, formats, lumi=lumi,
+                   xlabel=cfg.get("label_x", h_sig.axes["x"].label),
+                   ylabel=cfg.get("label_y",
+                                  "Normalized" if normalize else "Events"))
 
-    _cms_label(ax, lumi=lumi)
 
-    for ext in formats:
-        fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return 1
+def _plot_efficiency_2d(name, cfg, h_num, h_den, sample_defs, output_dir, *,
+                        lumi=None, formats=DEFAULT_FORMATS):
+    """Efficiency map from a 2D numerator/denominator pair (one figure per
+    sample).  Bins with an empty denominator are left blank; the color scale
+    is fixed to [0, 1].  ``label_z`` sets the colorbar label."""
+    x_edges, y_edges = h_num.axes["x"].edges, h_num.axes["y"].edges
+    multi = len(h_num.axes["dataset"]) > 1
+
+    plotted = 0
+    for s, hn, label, _color, _ls in _series(h_num, sample_defs):
+        if s not in h_den.axes["dataset"]:
+            continue
+        with np.errstate(divide="ignore", invalid="ignore"):
+            total = h_den[{"dataset": s}].view().value
+            eff = np.where(total > 0, hn.view().value / total, np.nan)
+
+        fig, ax, _rax = _figure()
+        mesh = ax.pcolormesh(x_edges, y_edges, eff.T, cmap="viridis",
+                             vmin=0.0, vmax=1.0)
+        fig.colorbar(mesh, ax=ax, label=cfg.get("label_z", "Efficiency"))
+        # Sample tag inside the axes; a centered title collides with the CMS label.
+        ax.text(0.97, 0.97, label, transform=ax.transAxes, ha="right", va="top",
+                fontsize=16)
+        _finish(fig, ax, output_dir, f"{name}_{s}" if multi else name, formats,
+                lumi=lumi, legend=False,
+                xlabel=cfg.get("label_x", h_num.axes["x"].label),
+                ylabel=cfg.get("label_y", h_num.axes["y"].label))
+        plotted += 1
+    return 1 if plotted else 0
+
+
+# The derived-plot types, each with the config keys naming its source
+# histograms.  One table, read both by plot_all (to decide which histograms a
+# task needs) and by _plot_derived_one (to dispatch it) -- the two used to
+# carry separate copies, which is how a new type could be added to one and not
+# the other.
+DERIVED_TYPES = {
+    "profile_x":    (_plot_profile, ("source",)),
+    "profile_y":    (_plot_profile, ("source",)),
+    "projection_x": (_plot_projection, ("source",)),
+    "projection_y": (_plot_projection, ("source",)),
+    "efficiency":   (_plot_efficiency, ("numerator", "denominator")),
+    "ratio":        (_plot_ratio, ("numerator", "denominator")),
+    "sig_vs_bkg":   (_plot_sig_vs_bkg, ("signal", "background")),
+}
+
+
+def derived_sources(name: str, cfg: dict) -> list[str] | None:
+    """The histograms a derived plot reads, or None if its type is unknown."""
+    entry = DERIVED_TYPES.get(cfg.get("type", ""))
+    if entry is None:
+        print(f"  WARNING: unknown derived type '{cfg.get('type', '')}' for '{name}'")
+        return None
+    return [cfg.get(key) for key in entry[1]]
+
+
+def _plot_derived_one(name, cfg, histograms, sample_defs, output_dir, *,
+                      log_y=False, lumi=None, formats=DEFAULT_FORMATS) -> int:
+    """Dispatch a single derived-plot definition to its renderer."""
+    entry = DERIVED_TYPES.get(cfg.get("type", ""))
+    if entry is None:
+        print(f"  WARNING: unknown derived type '{cfg.get('type', '')}' for '{name}'")
+        return 0
+    return entry[0](name, cfg, histograms, sample_defs, output_dir,
+                    log_y=log_y, lumi=lumi, formats=formats)
 
 
 # ── Cutflow table ────────────────────────────────────────────────
@@ -947,9 +909,9 @@ def plot_all(
     if config_dir:
         fresh_path = Path(config_dir) / "histograms.yaml"
         if fresh_path.exists():
-            with open(fresh_path) as f:
-                for name, cfg in (yaml.safe_load(f) or {}).items():
-                    hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
+            from .histograms import load_histogram_defs
+            for name, cfg in load_histogram_defs(fresh_path).items():
+                hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
 
     if lumi is not None:
         apply_xs_scaling(histograms, sample_defs, data.get("sumw", {}), lumi)
@@ -980,19 +942,8 @@ def plot_all(
     if config_dir:
         derived_defs = load_derived_plot_defs(os.path.join(config_dir, "derived_plots.yaml"))
     for name, cfg in derived_defs.items():
-        dtype = cfg.get("type", "")
-        if dtype in ("profile_x", "profile_y", "projection_x", "projection_y"):
-            needed = [cfg.get("source")]
-        elif dtype in ("efficiency", "ratio"):
-            needed = [cfg.get("numerator"), cfg.get("denominator")]
-        elif dtype == "sig_vs_bkg":
-            needed = [cfg.get("signal"), cfg.get("background")]
-        else:
-            print(f"  WARNING: unknown derived type '{dtype}' for '{name}'")
-            continue
-        missing = [s for s in needed if s not in histograms]
-        if missing:
-            print(f"  WARNING: source histogram(s) {missing} not found for derived plot '{name}'")
+        needed = derived_sources(name, cfg)
+        if needed is None or not _require(histograms, needed, name):
             continue
         tasks.append(("derived", name, cfg, {s: histograms[s] for s in needed}))
 

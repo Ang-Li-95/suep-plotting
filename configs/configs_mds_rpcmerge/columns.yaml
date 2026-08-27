@@ -1,0 +1,15 @@
+# ── rpc_mode: merge ───────────────────────────────────────────────
+# The RPC rechits are clustered *together with* the system they overlap --
+# barrel RPC (Region == 0) with DT, endcap RPC with CSC -- instead of being
+# associated to the finished clusters afterwards, which is the default
+# (rpc_mode: match, ../configs_mds_signal -> ../common).
+#
+# Both modes produce the same two cluster collections carrying the same RPC
+# fields, so this set is the default study plot for plot, with one physics
+# difference: because the RPC hits are *inside* the cluster, they also count
+# towards the per-LLP hit totals that define "reconstructable in this system".
+# That is what the overrides below are.
+
+_extends: ../configs_mds_signal
+parameters:
+  rpc_mode: merge

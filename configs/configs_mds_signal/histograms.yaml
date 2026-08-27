@@ -1,0 +1,4 @@
+# ── The truth study: the full (mDark, T) signal grid ──────────────
+# Everything comes from ../common_gen (which is ../common plus the gen-level
+# histograms, selections and derived plots).
+_extends: ../common_gen

@@ -1,0 +1,3 @@
+# ── The reco-only reference study ─────────────────────────────────
+# The shared clustering settings; see ../common/columns.yaml.
+_extends: ../common

@@ -1,0 +1,5 @@
+# ── Category 1/5: clusters gen-matched to an LLP ──────────────────
+# The fills and the _src population cut come from ../common_clustersrc; what
+# makes this set the signal leg is only what csc_cluster_src / dt_cluster_src
+# mean in its selections.yaml.
+_extends: ../common_clustersrc

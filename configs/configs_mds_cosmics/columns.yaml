@@ -1,0 +1,8 @@
+# ── Cosmics: the muon system on its own ───────────────────────────
+# Clustering only.  'jerc' and 'jet_id' would be no-ops (they return early
+# without a Jet collection) and 'cluster_isolation' would raise, since its
+# selections.yaml entries are deleted above -- so the step list says what this
+# ntuple actually supports rather than relying on the steps to skip themselves.
+_extends: ../common
+
+steps: [clusters]

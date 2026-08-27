@@ -1,0 +1,5 @@
+# The cheap end of derive(), but covering the object-selection path: jet ID,
+# one cluster collection and the isolation that reads selections.yaml.  No
+# truth steps -- the smoke test is about the chain working, not the physics.
+_extends: ../configs_mds
+steps: [jerc, jet_id, clusters, cluster_isolation]

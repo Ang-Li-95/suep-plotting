@@ -1,0 +1,1081 @@
+# ── Gen-level (truth) histograms, shared by the truth studies ─────
+# Extends ../common with everything that needs gen information: the LLP
+# collection, the truth-matched / unmatched splits of the DBSCAN clusters,
+# and the numerator/denominator pairs of the efficiency chain.  A study with
+# no truth branches uses ../common on its own.
+
+_extends: ../common
+
+# The 2D isolation-correlation plots are a data/background diagnostic; the
+# truth study splits its clusters by gen matching instead.
+csc_cluster_dr_muon_vs_jet: null
+dt_cluster_dr_muon_vs_jet: null
+
+llp_n:
+  expression: "ak.num(events.llp)"
+  bins: 60
+  lo: 0
+  hi: 60
+  label: '$N_{\mathrm{LLP}}$'
+
+# ── (1b) LLP kinematics ───────────────────────────────────────────
+# Signed eta, so the two endcaps stay separable; the efficiency histograms
+# below use the same convention.
+llp_eta:
+  expression: "events.llp.eta"
+  per_object: true
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+
+llp_pt:
+  expression: "events.llp.pt"
+  per_object: true
+  bins: 50
+  lo: 0
+  hi: 50
+  label: 'LLP $p_T$ [GeV]'
+  log_y: true
+
+llp_phi:
+  expression: "events.llp.phi"
+  per_object: true
+  bins: 32
+  lo: -3.2
+  hi: 3.2
+  label: 'LLP $\phi$'
+
+llp_energy:
+  expression: "events.llp.energy"
+  per_object: true
+  bins: 50
+  lo: 0
+  hi: 100
+  label: 'LLP energy [GeV]'
+  log_y: true
+
+# ── (2) LLPs decaying in each detector volume ──────────────────
+llp_n_tracker:
+  expression: "ak.sum(events.llp.inTracker, axis=1)"
+  bins: 15
+  lo: 0
+  hi: 15
+  label: '$N_{\mathrm{LLP}}$ decaying in the tracker'
+
+llp_n_calo:
+  expression: "ak.sum(events.llp.inCalo, axis=1)"
+  bins: 15
+  lo: 0
+  hi: 15
+  label: '$N_{\mathrm{LLP}}$ decaying in the calorimeters'
+
+llp_n_csc_dt:
+  expression: "ak.sum(events.llp.inCSC | events.llp.inDT, axis=1)"
+  bins: 15
+  lo: 0
+  hi: 15
+  label: '$N_{\mathrm{LLP}}$ decaying in CSC or DT'
+
+llp_n_csc:
+  expression: "ak.sum(events.llp.inCSC, axis=1)"
+  bins: 15
+  lo: 0
+  hi: 15
+  label: '$N_{\mathrm{LLP}}$ decaying in CSC'
+
+llp_n_dt:
+  expression: "ak.sum(events.llp.inDT, axis=1)"
+  bins: 15
+  lo: 0
+  hi: 15
+  label: '$N_{\mathrm{LLP}}$ decaying in DT'
+
+
+llp_decay_r:
+  expression: "events.llp.decayR"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+  log_y: true
+
+llp_decay_absz:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 2000
+  label: 'LLP decay $|z|$ [cm]'
+  log_y: true
+
+llp_decay_eta:
+  expression: "events.llp.decayEta"
+  per_object: true
+  bins: 40
+  lo: -5
+  hi: 5
+  label: 'LLP decay vertex $\eta$'
+
+llp_decay_rz:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  bins_x: 60
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 900
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+
+# ── (2b) LLP lifetime / boost ─────────────────────────────────────
+# Proper decay length ctau = L_lab / (beta*gamma): exponential with mean
+# = nominal sample lifetime (5 m = 500 cm here).
+llp_ctau:
+  expression: "events.llp.ctau"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 3000
+  label: 'LLP $c\tau$ (proper) [cm]'
+  log_y: true
+
+llp_llab:
+  expression: "events.llp.Llab"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 6000
+  label: 'LLP lab decay length [cm]'
+  log_y: true
+
+llp_betagamma:
+  expression: "events.llp.betagamma"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 30
+  label: 'LLP $\beta\gamma$'
+  log_y: true
+
+# ── (3) DBSCAN cluster properties: CSC ─────────────────────────────
+csc_cluster_nmatchedhits:
+  expression: "events.cscCluster.nMatchedHits"
+  per_object: true
+  bins: 50
+  lo: 0
+  hi: 200
+  label: 'CSC cluster $N_{\mathrm{hits}}^{\mathrm{LLP-matched}}$'
+  log_y: true
+  variants: csc_iso
+
+# ── (3) DBSCAN cluster properties: DT ──────────────────────────────
+dt_cluster_nmatchedhits:
+  expression: "events.dtCluster.nMatchedHits"
+  per_object: true
+  bins: 50
+  lo: 0
+  hi: 200
+  label: 'DT cluster $N_{\mathrm{hits}}^{\mathrm{LLP-matched}}$'
+  log_y: true
+  variants: dt_iso
+
+# ── (3) DBSCAN cluster properties: RPC ─────────────────────────────
+llpcsc_nhits_csc:
+  expression: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_in_csc]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
+  log_y: true
+
+llpdt_nhits_dt:
+  expression: "events.llp.nHitsDT"
+  per_object: true
+  selections: [llp_in_dt]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
+  log_y: true
+
+llp_nhits_csc:
+  expression: "events.llp.nHitsCSC"
+  per_object: true
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_y: true
+
+llp_nhits_dt:
+  expression: "events.llp.nHitsDT"
+  per_object: true
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{DT\ rechits}}$ from LLP'
+  log_y: true
+
+llp_nhits_rpc:
+  expression: "events.llp.nHitsRPC"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 60
+  label: '$N_{\mathrm{RPC\ rechits}}$ from LLP'
+  log_y: true
+
+llp_nhits_total:
+  expression: "events.llp.nHitsTotal"
+  per_object: true
+  bins: 100
+  lo: 0
+  hi: 300
+  label: '$N_{\mathrm{muon\ rechits}}$ from LLP (CSC+DT+RPC)'
+  log_y: true
+
+# ── (5) Efficiency histograms: vs pT ───────────────────────────────
+llp_pt_all_den:
+  expression: "events.llp.pt"
+  per_object: true
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+
+llp_pt_den_csc:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_in_csc]
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+llp_pt_hits_csc:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_in_csc, llp_hits10_csc]
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+llp_pt_num_csc:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_in_csc, llp_reco_csc]
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+
+llp_pt_den_dt:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_in_dt]
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+llp_pt_hits_dt:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_in_dt, llp_hits10_dt]
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+llp_pt_num_dt:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_in_dt, llp_reco_dt]
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+
+llp_pt_den_any:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_in_ms]
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+llp_pt_num_any:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_in_ms, llp_reco_any]
+  edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50]
+  label: 'LLP $p_T$ [GeV]'
+
+# ── (5) Efficiency histograms: vs nhits ────────────────────────────
+llpcsc_nhits_csc_den:
+  expression: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_in_csc]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
+  log_y: true
+
+llpdt_nhits_dt_den:
+  expression: "events.llp.nHitsDT"
+  per_object: true
+  selections: [llp_in_dt]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
+  log_y: true
+
+llpcsc_nhits_csc_num:
+  expression: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_in_csc, llp_reco_csc]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC'
+  log_y: true
+
+llpdt_nhits_dt_num:
+  expression: "events.llp.nHitsDT"
+  per_object: true
+  selections: [llp_in_dt, llp_reco_dt]
+  bins: 100
+  lo: 0
+  hi: 200
+  label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT'
+  log_y: true
+
+# ── (5) Efficiency histograms: vs LLP energy ───────────────────────
+# The ten legs of every efficiency: the inclusive denominator, then per
+# system the fiducial denominator, the ">= 10 truth rechits" intermediate
+# step and the reconstructed numerator.
+_axes:
+  eff_legs:
+    - {LEG: all_den,  LSEL: []}
+    - {LEG: den_csc,  LSEL: [llp_in_csc]}
+    - {LEG: hits_csc, LSEL: [llp_in_csc, llp_hits10_csc]}
+    - {LEG: num_csc,  LSEL: [llp_in_csc, llp_reco_csc]}
+    - {LEG: den_dt,   LSEL: [llp_in_dt]}
+    - {LEG: hits_dt,  LSEL: [llp_in_dt, llp_hits10_dt]}
+    - {LEG: num_dt,   LSEL: [llp_in_dt, llp_reco_dt]}
+    - {LEG: den_any,  LSEL: [llp_in_ms]}
+    - {LEG: num_any,  LSEL: [llp_in_ms, llp_reco_any]}
+
+_repeat:
+  - over: eff_legs
+    defs:
+      llp_energy_<LEG>:
+        expression: "events.llp.energy"
+        per_object: true
+        selections: <LSEL>
+        edges: [0, 2, 4, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 70, 100]
+        label: 'LLP energy [GeV]'
+
+# ── (5) Efficiency histograms: vs |eta| ────────────────────────────
+llp_eta_all_den:
+  expression: "events.llp.eta"
+  per_object: true
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+
+llp_eta_den_csc:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_in_csc]
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+llp_eta_hits_csc:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_in_csc, llp_hits10_csc]
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+llp_eta_num_csc:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_in_csc, llp_reco_csc]
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+
+llp_eta_den_dt:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_in_dt]
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+llp_eta_hits_dt:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_in_dt, llp_hits10_dt]
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+llp_eta_num_dt:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_in_dt, llp_reco_dt]
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+
+llp_eta_den_any:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_in_ms]
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+llp_eta_num_any:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_in_ms, llp_reco_any]
+  bins: 60
+  lo: -3
+  hi: 3
+  label: 'LLP $\eta$'
+
+# ── (5) Efficiency histograms: vs decay r (20 cm bins) ─────────────
+llp_decayr_all_den:
+  expression: "events.llp.decayR"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+
+llp_decayr_den_csc:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_csc]
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+llp_decayr_num_csc:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_csc, llp_reco_csc]
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+
+llp_decayr_den_dt:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt]
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+llp_decayr_hits_dt:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt, llp_hits10_dt]
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+llp_decayr_num_dt:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt, llp_reco_dt]
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+
+llp_decayr_all_num_csc:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_reco_csc]
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+llp_decayr_all_num_dt:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_reco_dt]
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+llp_decayr_all_num_any:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_reco_any]
+  bins: 60
+  lo: 0
+  hi: 1200
+  label: 'LLP decay $r$ [cm]'
+
+# ── (5) Efficiency histograms: vs |decay z| (20 cm bins) ───────────
+llp_absdecayz_all_den:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+
+llp_absdecayz_den_csc:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  selections: [llp_in_csc]
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+llp_absdecayz_hits_csc:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  selections: [llp_in_csc, llp_hits10_csc]
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+llp_absdecayz_num_csc:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  selections: [llp_in_csc, llp_reco_csc]
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+
+llp_absdecayz_den_dt:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  selections: [llp_in_dt]
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+llp_absdecayz_num_dt:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  selections: [llp_in_dt, llp_reco_dt]
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+
+llp_absdecayz_all_num_csc:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  selections: [llp_reco_csc]
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+llp_absdecayz_all_num_dt:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  selections: [llp_reco_dt]
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+llp_absdecayz_all_num_any:
+  expression: "abs(events.llp.decayZ)"
+  per_object: true
+  selections: [llp_reco_any]
+  bins: 75
+  lo: 0
+  hi: 1500
+  label: 'LLP decay $|z|$ [cm]'
+
+# ── (5) Efficiency histograms: 2D decay r vs |z| maps ──────────────
+# Same 20 cm binning as the 1D efficiency histograms (|z|: 75 bins 0..1500,
+# r: 60 bins 0..1200).  Empty-denominator bins are left blank at plot time.
+llp_rz_all_den:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+
+llp_rz_den_csc:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_csc]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_hits_csc:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_csc, llp_hits10_csc]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_num_csc:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_csc, llp_reco_csc]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+
+llp_rz_den_dt:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_hits_dt:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt, llp_hits10_dt]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_num_dt:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_in_dt, llp_reco_dt]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+
+llp_rz_all_num_csc:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_reco_csc]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+llp_rz_all_num_dt:
+  expression_x: "abs(events.llp.decayZ)"
+  expression_y: "events.llp.decayR"
+  per_object: true
+  selections: [llp_reco_dt]
+  bins_x: 75
+  lo_x: 0
+  hi_x: 1500
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1200
+  label_x: 'LLP decay $|z|$ [cm]'
+  label_y: 'LLP decay $r$ [cm]'
+  log_z: true
+
+# ── (6) Matched-LLP properties ─────────────────────────────────────
+llp_matched_pt:
+  expression: "events.llp.pt"
+  per_object: true
+  selections: [llp_reco_any]
+  bins: 50
+  lo: 0
+  hi: 50
+  label: 'matched LLP $p_T$ [GeV]'
+
+llp_matched_eta:
+  expression: "events.llp.eta"
+  per_object: true
+  selections: [llp_reco_any]
+  bins: 50
+  lo: -5
+  hi: 5
+  label: 'matched LLP $\eta$'
+
+llp_matched_phi:
+  expression: "events.llp.phi"
+  per_object: true
+  selections: [llp_reco_any]
+  bins: 32
+  lo: -3.2
+  hi: 3.2
+  label: 'matched LLP $\phi$'
+
+llp_matched_energy:
+  expression: "events.llp.energy"
+  per_object: true
+  selections: [llp_reco_any]
+  bins: 50
+  lo: 0
+  hi: 100
+  label: 'matched LLP $E$ [GeV]'
+
+llp_matched_decayr:
+  expression: "events.llp.decayR"
+  per_object: true
+  selections: [llp_reco_any]
+  bins: 40
+  lo: 0
+  hi: 800
+  label: 'matched LLP decay $r$ [cm]'
+
+llp_matched_decayz:
+  expression: "events.llp.decayZ"
+  per_object: true
+  selections: [llp_reco_any]
+  bins: 48
+  lo: -1200
+  hi: 1200
+  label: 'matched LLP decay $z$ [cm]'
+
+# ── (3b) Layer occupancy ──────────────────────────────────────────
+# The matched / unmatched split comes from 'variants:' (see _variant_sets at
+# the top), so each variable's pair shares its binning by construction and can
+# be turned into a matched-fraction 'efficiency' in derived_plots.yaml.
+
+csc_cluster_nmatchedllp:
+  expression: "events.cscCluster.nMatchedLLP"
+  per_object: true
+  bins: 6
+  lo: 0
+  hi: 6
+  label: 'CSC cluster $N_{\mathrm{LLP\ matched}}$'
+  log_y: true
+  variants: csc_iso
+
+dt_cluster_nmatchedllp:
+  expression: "events.dtCluster.nMatchedLLP"
+  per_object: true
+  bins: 6
+  lo: 0
+  hi: 6
+  label: 'DT cluster $N_{\mathrm{LLP\ matched}}$'
+  log_y: true
+  variants: dt_iso
+
+llp_nrecocluster_csc:
+  expression: "events.llp.nRecoClusterCSC"
+  per_object: true
+  selections: [llp_in_csc]
+  bins: 6
+  lo: 0
+  hi: 6
+  label: '$N_{\mathrm{CSC\ clusters}}$ matched to LLP'
+  log_y: true
+
+llp_nrecocluster_dt:
+  expression: "events.llp.nRecoClusterDT"
+  per_object: true
+  selections: [llp_in_dt]
+  bins: 6
+  lo: 0
+  hi: 6
+  label: '$N_{\mathrm{DT\ clusters}}$ matched to LLP'
+  log_y: true
+
+llp_clusterhitfrac_csc:
+  expression: "events.llp.clusterHitFracCSC"
+  per_object: true
+  selections: [llp_reco_csc]
+  bins: 22
+  lo: 0
+  hi: 1.1
+  label: 'LLP matched-rechit fraction in best CSC cluster'
+  log_y: true
+
+llp_clusterhitfrac_dt:
+  expression: "events.llp.clusterHitFracDT"
+  per_object: true
+  selections: [llp_reco_dt]
+  bins: 22
+  lo: 0
+  hi: 1.1
+  label: 'LLP matched-rechit fraction in best DT cluster'
+  log_y: true
+
+_variant_sets:
+  csc_iso:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - csc_cluster_iso_muon
+      - csc_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - csc_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - csc_cluster_iso_muon
+  csc_variants:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - csc_cluster_iso_muon
+      - csc_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - csc_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - csc_cluster_iso_muon
+    matched:
+      label_prefix: 'matched '
+      selections:
+      - csc_cluster_matched
+    matched_iso_both:
+      label_prefix: 'matched muon+jet-isolated '
+      selections:
+      - csc_cluster_matched
+      - csc_cluster_iso_muon
+      - csc_cluster_iso_jet
+    matched_iso_jet:
+      label_prefix: 'matched jet-isolated '
+      selections:
+      - csc_cluster_matched
+      - csc_cluster_iso_jet
+    matched_iso_muon:
+      label_prefix: 'matched muon-isolated '
+      selections:
+      - csc_cluster_matched
+      - csc_cluster_iso_muon
+    unmatched:
+      label_prefix: 'unmatched '
+      selections:
+      - csc_cluster_unmatched
+  dt_iso:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - dt_cluster_iso_muon
+      - dt_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - dt_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - dt_cluster_iso_muon
+  dt_variants:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - dt_cluster_iso_muon
+      - dt_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - dt_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - dt_cluster_iso_muon
+    matched:
+      label_prefix: 'matched '
+      selections:
+      - dt_cluster_matched
+    matched_iso_both:
+      label_prefix: 'matched muon+jet-isolated '
+      selections:
+      - dt_cluster_matched
+      - dt_cluster_iso_muon
+      - dt_cluster_iso_jet
+    matched_iso_jet:
+      label_prefix: 'matched jet-isolated '
+      selections:
+      - dt_cluster_matched
+      - dt_cluster_iso_jet
+    matched_iso_muon:
+      label_prefix: 'matched muon-isolated '
+      selections:
+      - dt_cluster_matched
+      - dt_cluster_iso_muon
+    unmatched:
+      label_prefix: 'unmatched '
+      selections:
+      - dt_cluster_unmatched
+  rpc_iso:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - rpc_cluster_iso_muon
+      - rpc_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - rpc_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - rpc_cluster_iso_muon
+  rpc_variants:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - rpc_cluster_iso_muon
+      - rpc_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - rpc_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - rpc_cluster_iso_muon
+    matched:
+      label_prefix: 'matched '
+      selections:
+      - rpc_cluster_matched
+    matched_iso_both:
+      label_prefix: 'matched muon+jet-isolated '
+      selections:
+      - rpc_cluster_matched
+      - rpc_cluster_iso_muon
+      - rpc_cluster_iso_jet
+    matched_iso_jet:
+      label_prefix: 'matched jet-isolated '
+      selections:
+      - rpc_cluster_matched
+      - rpc_cluster_iso_jet
+    matched_iso_muon:
+      label_prefix: 'matched muon-isolated '
+      selections:
+      - rpc_cluster_matched
+      - rpc_cluster_iso_muon
+    unmatched:
+      label_prefix: 'unmatched '
+      selections:
+      - rpc_cluster_unmatched
+
+# ── The inherited reco variables, split by the sets above ─────────
+# Each line overrides one key of a histogram defined in ../common; the
+# binning, expression and label come from there.  Add a cluster variable to
+# ../common and give it a line here for it to be split too.
+
+csc_cluster_size: {variants: csc_variants}
+csc_cluster_eta: {variants: csc_variants}
+csc_cluster_phi: {variants: csc_variants}
+csc_cluster_eta_spread: {variants: csc_variants}
+csc_cluster_phi_spread: {variants: csc_variants}
+csc_cluster_nstation: {variants: csc_variants}
+csc_cluster_time: {variants: csc_variants}
+csc_cluster_nlayer: {variants: csc_variants}
+csc_cluster_station_span: {variants: csc_variants}
+csc_cluster_first_chamber: {selections: [csc_cluster_first_not_rpc], variants: csc_variants}
+csc_cluster_first_station: {selections: [csc_cluster_first_not_rpc], variants: csc_variants}
+csc_cluster_avg_station: {variants: csc_variants}
+csc_cluster_max_station_frac: {variants: csc_variants}
+csc_cluster_layer_hits_mean: {variants: csc_variants}
+csc_cluster_layer_hits_rms: {variants: csc_variants}
+csc_cluster_layer_hits_relrms: {variants: csc_variants}
+csc_cluster_max_layer_frac: {variants: csc_variants}
+csc_cluster_nzlayer: {variants: csc_variants}
+csc_cluster_zlayer_hits_mean: {variants: csc_variants}
+csc_cluster_zlayer_hits_rms: {variants: csc_variants}
+csc_cluster_zlayer_hits_relrms: {variants: csc_variants}
+csc_cluster_max_zlayer_frac: {variants: csc_variants}
+csc_cluster_r_spread: {variants: csc_variants}
+csc_cluster_z_spread: {variants: csc_variants}
+csc_cluster_dr_muon: {variants: csc_variants}
+csc_cluster_dr_jet: {variants: csc_variants}
+csc_cluster_first_system: {variants: csc_variants}
+csc_cluster_n_rpc_hits: {variants: csc_variants}
+csc_cluster_n_rpc_hits_bx0: {variants: csc_variants}
+csc_cluster_oot_hit_frac: {variants: csc_variants}
+csc_cluster_rpc_bx: {variants: csc_variants}
+csc_cluster_rpc_bx_median: {variants: csc_variants}
+csc_cluster_rpc_bx_spread: {variants: csc_variants}
+csc_cluster_rpc_hit_frac: {variants: csc_variants}
+csc_cluster_rpc_out_of_time_frac: {variants: csc_variants}
+csc_cluster_rpc_time_from_bx: {variants: csc_variants}
+csc_cluster_time_spread: {variants: csc_variants}
+
+dt_cluster_size: {variants: dt_variants}
+dt_cluster_eta: {variants: dt_variants}
+dt_cluster_phi: {variants: dt_variants}
+dt_cluster_eta_spread: {variants: dt_variants}
+dt_cluster_phi_spread: {variants: dt_variants}
+dt_cluster_nstation: {variants: dt_variants}
+dt_cluster_nlayer: {variants: dt_variants}
+dt_cluster_station_span: {variants: dt_variants}
+dt_cluster_first_chamber: {selections: [dt_cluster_first_not_rpc], variants: dt_variants}
+dt_cluster_first_station: {selections: [dt_cluster_first_not_rpc], variants: dt_variants}
+dt_cluster_avg_station: {variants: dt_variants}
+dt_cluster_max_station_frac: {variants: dt_variants}
+dt_cluster_layer_hits_mean: {variants: dt_variants}
+dt_cluster_layer_hits_rms: {variants: dt_variants}
+dt_cluster_layer_hits_relrms: {variants: dt_variants}
+dt_cluster_max_layer_frac: {variants: dt_variants}
+dt_cluster_r_spread: {variants: dt_variants}
+dt_cluster_z_spread: {variants: dt_variants}
+dt_cluster_dr_muon: {variants: dt_variants}
+dt_cluster_dr_jet: {variants: dt_variants}
+dt_cluster_first_system: {variants: dt_variants}
+dt_cluster_n_rpc_hits: {variants: dt_variants}
+dt_cluster_n_rpc_hits_bx0: {variants: dt_variants}
+dt_cluster_rpc_bx: {variants: dt_variants}
+dt_cluster_rpc_bx_median: {variants: dt_variants}
+dt_cluster_rpc_bx_spread: {variants: dt_variants}
+dt_cluster_rpc_hit_frac: {variants: dt_variants}
+dt_cluster_rpc_out_of_time_frac: {variants: dt_variants}
+dt_cluster_rpc_time_from_bx: {variants: dt_variants}
+
+# The CSC Tpeak against the RPC BX of the same cluster.
+csc_cluster_time_vs_rpc_bx_time: {variants: csc_variants}

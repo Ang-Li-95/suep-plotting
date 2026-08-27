@@ -1,0 +1,602 @@
+# ── The gen-level LLP study: all 6 Gen3 signals ───────────────────
+# Extends ../common_gen (the shared truth histograms, selections,
+# clustering-efficiency and matched/unmatched cluster-shape plots) with
+# the LLP shower-shape family: the dR between each LLP's truth-matched
+# rechits and their centroid, and its dependence on the LLP kinematics.
+_extends: ../common_gen
+
+llp_abseta:
+  expression: "abs(events.llp.eta)"
+  per_object: true
+  bins: 30
+  lo: 0
+  hi: 3
+  label: 'LLP $|\eta|$'
+
+# ── (4c) Per-LLP spread of the matched rechits ────────────────────
+# Gen-level answer to "how wide is the rechit shower of one LLP":
+#   drpair_min/max  extreme dR between any two of the LLP's rechits
+#   dr50/80/90/max  radius around the rechit centroid holding that
+#                   percentage of them (cone size to collect them)
+# Filled per LLP with >= 2 matched rechits in the system (below that no
+# dR is defined); the _hits10 variants use the >= 10 rechits that a DBSCAN
+# cluster needs to be truth-matched.  Overflow is folded into the last bin.
+
+llp_drpair_min_csc:
+  expression: "events.llp.drPairMinCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  edges: [0.0001, 0.00013335, 0.00017783, 0.00023714, 0.00031623, 0.0004217, 0.00056234, 0.00074989, 0.001, 0.0013335, 0.0017783, 0.0023714, 0.0031623, 0.004217, 0.0056234, 0.0074989, 0.01, 0.013335, 0.017783, 0.023714, 0.031623, 0.04217, 0.056234, 0.074989, 0.1, 0.13335, 0.17783, 0.23714, 0.31623, 0.4217, 0.56234, 0.74989, 1]
+  label: 'LLP CSC rechits: min pairwise $\Delta R$'
+  log_x: true
+  log_y: true
+  flow: sum
+
+llp_drpair_max_csc:
+  expression: "events.llp.drPairMaxCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins: 60
+  lo: 0
+  hi: 1.5
+  label: 'LLP CSC rechits: max pairwise $\Delta R$'
+  log_y: true
+  flow: sum
+
+llp_dr50_csc:
+  expression: "events.llp.dr50CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP CSC rechits: $\Delta R$ containing 50% of rechits'
+  flow: sum
+
+llp_dr80_csc:
+  expression: "events.llp.dr80CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP CSC rechits: $\Delta R$ containing 80% of rechits'
+  flow: sum
+
+llp_dr90_csc:
+  expression: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP CSC rechits: $\Delta R$ containing 90% of rechits'
+  flow: sum
+
+llp_drmax_csc:
+  expression: "events.llp.drMaxCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP CSC rechits: $\Delta R$ containing 100% of rechits (max)'
+  flow: sum
+
+llp_dr50_csc_hits10:
+  expression: "events.llp.dr50CSC"
+  per_object: true
+  selections: [llp_hits10_csc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP CSC rechits ($\geq$10): $\Delta R$ containing 50%'
+  flow: sum
+
+llp_dr80_csc_hits10:
+  expression: "events.llp.dr80CSC"
+  per_object: true
+  selections: [llp_hits10_csc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP CSC rechits ($\geq$10): $\Delta R$ containing 80%'
+  flow: sum
+
+llp_dr90_csc_hits10:
+  expression: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits10_csc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP CSC rechits ($\geq$10): $\Delta R$ containing 90%'
+  flow: sum
+
+llp_drpair_min_dt:
+  expression: "events.llp.drPairMinDT"
+  per_object: true
+  selections: [llp_hits2_dt]
+  edges: [0.0001, 0.00013335, 0.00017783, 0.00023714, 0.00031623, 0.0004217, 0.00056234, 0.00074989, 0.001, 0.0013335, 0.0017783, 0.0023714, 0.0031623, 0.004217, 0.0056234, 0.0074989, 0.01, 0.013335, 0.017783, 0.023714, 0.031623, 0.04217, 0.056234, 0.074989, 0.1, 0.13335, 0.17783, 0.23714, 0.31623, 0.4217, 0.56234, 0.74989, 1]
+  label: 'LLP DT rechits: min pairwise $\Delta R$'
+  log_x: true
+  log_y: true
+  flow: sum
+
+llp_drpair_max_dt:
+  expression: "events.llp.drPairMaxDT"
+  per_object: true
+  selections: [llp_hits2_dt]
+  bins: 60
+  lo: 0
+  hi: 1.5
+  label: 'LLP DT rechits: max pairwise $\Delta R$'
+  log_y: true
+  flow: sum
+
+llp_dr50_dt:
+  expression: "events.llp.dr50DT"
+  per_object: true
+  selections: [llp_hits2_dt]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP DT rechits: $\Delta R$ containing 50% of rechits'
+  flow: sum
+
+llp_dr80_dt:
+  expression: "events.llp.dr80DT"
+  per_object: true
+  selections: [llp_hits2_dt]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP DT rechits: $\Delta R$ containing 80% of rechits'
+  flow: sum
+
+llp_dr90_dt:
+  expression: "events.llp.dr90DT"
+  per_object: true
+  selections: [llp_hits2_dt]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP DT rechits: $\Delta R$ containing 90% of rechits'
+  flow: sum
+
+llp_drmax_dt:
+  expression: "events.llp.drMaxDT"
+  per_object: true
+  selections: [llp_hits2_dt]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP DT rechits: $\Delta R$ containing 100% of rechits (max)'
+  flow: sum
+
+llp_dr50_dt_hits10:
+  expression: "events.llp.dr50DT"
+  per_object: true
+  selections: [llp_hits10_dt]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP DT rechits ($\geq$10): $\Delta R$ containing 50%'
+  flow: sum
+
+llp_dr80_dt_hits10:
+  expression: "events.llp.dr80DT"
+  per_object: true
+  selections: [llp_hits10_dt]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP DT rechits ($\geq$10): $\Delta R$ containing 80%'
+  flow: sum
+
+llp_dr90_dt_hits10:
+  expression: "events.llp.dr90DT"
+  per_object: true
+  selections: [llp_hits10_dt]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP DT rechits ($\geq$10): $\Delta R$ containing 90%'
+  flow: sum
+
+llp_drpair_min_rpc:
+  expression: "events.llp.drPairMinRPC"
+  per_object: true
+  selections: [llp_hits2_rpc]
+  edges: [0.0001, 0.00013335, 0.00017783, 0.00023714, 0.00031623, 0.0004217, 0.00056234, 0.00074989, 0.001, 0.0013335, 0.0017783, 0.0023714, 0.0031623, 0.004217, 0.0056234, 0.0074989, 0.01, 0.013335, 0.017783, 0.023714, 0.031623, 0.04217, 0.056234, 0.074989, 0.1, 0.13335, 0.17783, 0.23714, 0.31623, 0.4217, 0.56234, 0.74989, 1]
+  label: 'LLP RPC rechits: min pairwise $\Delta R$'
+  log_x: true
+  log_y: true
+  flow: sum
+
+llp_drpair_max_rpc:
+  expression: "events.llp.drPairMaxRPC"
+  per_object: true
+  selections: [llp_hits2_rpc]
+  bins: 60
+  lo: 0
+  hi: 1.5
+  label: 'LLP RPC rechits: max pairwise $\Delta R$'
+  log_y: true
+  flow: sum
+
+llp_dr50_rpc:
+  expression: "events.llp.dr50RPC"
+  per_object: true
+  selections: [llp_hits2_rpc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP RPC rechits: $\Delta R$ containing 50% of rechits'
+  flow: sum
+
+llp_dr80_rpc:
+  expression: "events.llp.dr80RPC"
+  per_object: true
+  selections: [llp_hits2_rpc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP RPC rechits: $\Delta R$ containing 80% of rechits'
+  flow: sum
+
+llp_dr90_rpc:
+  expression: "events.llp.dr90RPC"
+  per_object: true
+  selections: [llp_hits2_rpc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP RPC rechits: $\Delta R$ containing 90% of rechits'
+  flow: sum
+
+llp_drmax_rpc:
+  expression: "events.llp.drMaxRPC"
+  per_object: true
+  selections: [llp_hits2_rpc]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP RPC rechits: $\Delta R$ containing 100% of rechits (max)'
+  flow: sum
+
+llp_drpair_min_total:
+  expression: "events.llp.drPairMinTotal"
+  per_object: true
+  selections: [llp_hits2_total]
+  edges: [0.0001, 0.00013335, 0.00017783, 0.00023714, 0.00031623, 0.0004217, 0.00056234, 0.00074989, 0.001, 0.0013335, 0.0017783, 0.0023714, 0.0031623, 0.004217, 0.0056234, 0.0074989, 0.01, 0.013335, 0.017783, 0.023714, 0.031623, 0.04217, 0.056234, 0.074989, 0.1, 0.13335, 0.17783, 0.23714, 0.31623, 0.4217, 0.56234, 0.74989, 1]
+  label: 'LLP muon rechits: min pairwise $\Delta R$'
+  log_x: true
+  log_y: true
+  flow: sum
+
+llp_drpair_max_total:
+  expression: "events.llp.drPairMaxTotal"
+  per_object: true
+  selections: [llp_hits2_total]
+  bins: 60
+  lo: 0
+  hi: 1.5
+  label: 'LLP muon rechits: max pairwise $\Delta R$'
+  log_y: true
+  flow: sum
+
+llp_dr50_total:
+  expression: "events.llp.dr50Total"
+  per_object: true
+  selections: [llp_hits2_total]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP muon rechits: $\Delta R$ containing 50% of rechits'
+  flow: sum
+
+llp_dr80_total:
+  expression: "events.llp.dr80Total"
+  per_object: true
+  selections: [llp_hits2_total]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP muon rechits: $\Delta R$ containing 80% of rechits'
+  flow: sum
+
+llp_dr90_total:
+  expression: "events.llp.dr90Total"
+  per_object: true
+  selections: [llp_hits2_total]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP muon rechits: $\Delta R$ containing 90% of rechits'
+  flow: sum
+
+llp_drmax_total:
+  expression: "events.llp.drMaxTotal"
+  per_object: true
+  selections: [llp_hits2_total]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP muon rechits: $\Delta R$ containing 100% of rechits (max)'
+  flow: sum
+
+llp_dr50_total_hits10:
+  expression: "events.llp.dr50Total"
+  per_object: true
+  selections: [llp_hits10_total]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP muon rechits ($\geq$10): $\Delta R$ containing 50%'
+  flow: sum
+
+llp_dr80_total_hits10:
+  expression: "events.llp.dr80Total"
+  per_object: true
+  selections: [llp_hits10_total]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP muon rechits ($\geq$10): $\Delta R$ containing 80%'
+  flow: sum
+
+llp_dr90_total_hits10:
+  expression: "events.llp.dr90Total"
+  per_object: true
+  selections: [llp_hits10_total]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'LLP muon rechits ($\geq$10): $\Delta R$ containing 90%'
+  flow: sum
+
+# Hit-weighted view: every gen-matched rechit's dR to the centroid of the
+# rechits of the same LLP in the same system (LLPs weighted by their hit
+# multiplicity, unlike the per-LLP quantiles above).
+
+csc_rechit_dr_llp:
+  expression: "events.cscRechits.drLLP"
+  per_object: true
+  selections: [csc_rechit_matched]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'matched CSC rechit $\Delta R$ to LLP centroid'
+  log_y: true
+  flow: sum
+
+dt_rechit_dr_llp:
+  expression: "events.dtRecHits.drLLP"
+  per_object: true
+  selections: [dt_rechit_matched]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'matched DT rechit $\Delta R$ to LLP centroid'
+  log_y: true
+  flow: sum
+
+rpc_rechit_dr_llp:
+  expression: "events.rpcRecHits.drLLP"
+  per_object: true
+  selections: [rpc_rechit_matched]
+  bins: 60
+  lo: 0
+  hi: 0.6
+  label: 'matched RPC rechit $\Delta R$ to LLP centroid'
+  log_y: true
+  flow: sum
+
+# Does the cone size grow with the number of rechits? (profile in
+# derived_plots.yaml: llp_dr90_vs_nhits_csc_prof)
+llp_dr90_vs_nhits_csc:
+  expression_x: "events.llp.nHitsCSC"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 30
+  lo_x: 0
+  hi_x: 150
+  bins_y: 60
+  lo_y: 0
+  hi_y: 0.6
+  label_x: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# ── (4d) eta dependence: CSC is an endcap, so both the hit count and the
+# eta-phi dR metric depend on |eta| (dR at fixed physical size grows toward
+# the beamline).  Same >= 2-hit population as llp_dr90_vs_nhits_csc, so the
+# three 2D maps are directly comparable.
+llp_nhits_csc_vs_abseta:
+  expression_x: "abs(events.llp.eta)"
+  expression_y: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 30
+  lo_x: 0
+  hi_x: 3
+  bins_y: 40
+  lo_y: 0
+  hi_y: 120
+  label_x: 'LLP $|\eta|$'
+  label_y: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_z: true
+
+llp_dr90_vs_abseta:
+  expression_x: "abs(events.llp.eta)"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 30
+  lo_x: 0
+  hi_x: 3
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP $|\eta|$'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# ── (4e) pT / energy dependence: a more energetic LLP showers more (higher
+# nHits) and, being more boosted, more collimated.  Same >= 2-hit population
+# as the |eta| maps above.
+llp_nhits_csc_vs_pt:
+  expression_x: "events.llp.pt"
+  expression_y: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 50
+  bins_y: 40
+  lo_y: 0
+  hi_y: 120
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_z: true
+
+llp_dr90_vs_pt:
+  expression_x: "events.llp.pt"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 50
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP $p_T$ [GeV]'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+llp_nhits_csc_vs_energy:
+  expression_x: "events.llp.energy"
+  expression_y: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 100
+  bins_y: 40
+  lo_y: 0
+  hi_y: 120
+  label_x: 'LLP energy [GeV]'
+  label_y: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_z: true
+
+llp_dr90_vs_energy:
+  expression_x: "events.llp.energy"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 100
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP energy [GeV]'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# ── (4f) Boost / decay-opening-angle: a more boosted (higher betagamma) LLP
+# decays into a tighter daughter pair (openingAngle), which -- at low hit
+# multiplicity, before showers merge -- shrinks the eta-phi rechit spread.
+# openingAngle is the 3D angle between the two decay daughters (custom/columns.py).
+llp_opening_angle:
+  expression: "events.llp.openingAngle"
+  per_object: true
+  bins: 64
+  lo: 0
+  hi: 3.2
+  label: 'LLP decay opening angle [rad]'
+  log_y: true
+  flow: sum
+
+# link (A): boost sets the opening angle (expect a tight anti-correlation)
+llp_opening_angle_vs_betagamma:
+  expression_x: "events.llp.betagamma"
+  expression_y: "events.llp.openingAngle"
+  per_object: true
+  bins_x: 40
+  lo_x: 0
+  hi_x: 40
+  bins_y: 64
+  lo_y: 0
+  hi_y: 3.2
+  label_x: 'LLP $\beta\gamma$'
+  label_y: 'LLP decay opening angle [rad]'
+  log_z: true
+
+llp_nhits_csc_vs_betagamma:
+  expression_x: "events.llp.betagamma"
+  expression_y: "events.llp.nHitsCSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 40
+  lo_x: 0
+  hi_x: 40
+  bins_y: 40
+  lo_y: 0
+  hi_y: 120
+  label_x: 'LLP $\beta\gamma$'
+  label_y: '$N_{\mathrm{CSC\ rechits}}$ from LLP'
+  log_z: true
+
+# dR90 vs boost, full population (confounded by |eta| and nHits -- the profile
+# will look flat/rising, like the energy one)
+llp_dr90_vs_betagamma:
+  expression_x: "events.llp.betagamma"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 40
+  lo_x: 0
+  hi_x: 40
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP $\beta\gamma$'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# dR90 vs boost, CONTROLLED: fixed endcap |eta| band + low multiplicity, so the
+# collimation effect is not swamped -- the profile should DECREASE with betagamma
+llp_dr90_vs_betagamma_ctrl:
+  expression_x: "events.llp.betagamma"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc, llp_hits_lt25_csc, llp_abseta_plateau]
+  bins_x: 40
+  lo_x: 0
+  hi_x: 40
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP $\beta\gamma$ ($1.6<|\eta|<2.2$, $N_{\mathrm{hits}}<25$)'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true
+
+# link (B): dR90 vs the opening angle directly
+llp_dr90_vs_openangle:
+  expression_x: "events.llp.openingAngle"
+  expression_y: "events.llp.dr90CSC"
+  per_object: true
+  selections: [llp_hits2_csc]
+  bins_x: 50
+  lo_x: 0
+  hi_x: 2.5
+  bins_y: 60
+  lo_y: 0
+  hi_y: 1.0
+  label_x: 'LLP decay opening angle [rad]'
+  label_y: 'LLP CSC rechits: $\Delta R$ containing 90%'
+  log_z: true

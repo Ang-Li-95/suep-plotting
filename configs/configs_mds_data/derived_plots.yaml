@@ -1,0 +1,4 @@
+# ── Derived plots ─────────────────────────────────────────────────
+# The reco-level ones (the RPC-timing profiles) come from ../common;
+# everything else needs gen information and lives in ../common_gen.
+_extends: ../common

@@ -1,0 +1,16 @@
+# ── Category 1/5: clusters gen-matched to an LLP ──────────────────
+# A cluster is truth-matched when >= match_min_hits (10) of its rechits carry
+# the same llpIdx -- cluster.matched, attached by the llp_reco step.  This is
+# the same mask as common_gen's <sys>_cluster_matched; it is written out here
+# rather than extending ../common_gen, because the only thing this set needs
+# from the truth configs is the expression itself.
+_extends: ../common_clustersrc
+
+csc_cluster_src:
+  level: object
+  label: gen-matched to an LLP
+  expression: "events.cscCluster.matched"
+dt_cluster_src:
+  level: object
+  label: gen-matched to an LLP
+  expression: "events.dtCluster.matched"

@@ -1,5 +1,0 @@
-# ── Derived plots for the MDS cluster study ───────────────────────
-# Empty on purpose: every derived plot of this study (the factorized
-# efficiency chain, the LLP-matched fractions, the signal-vs-background
-# cluster-shape overlays) needs gen-level information and now lives in
-# configs_mds_llp/derived_plots.yaml.

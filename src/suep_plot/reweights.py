@@ -40,15 +40,12 @@ import awkward as ak
 import numpy as np
 import yaml
 
+from .config import load_config_file
 from .histograms import _compile_expr
 
 
 def load_reweight_defs(path: str | Path) -> dict:
-    path = Path(path)
-    if not path.exists():
-        return {}
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    return load_config_file(path)
 
 
 def _binned_lookup(vals: np.ndarray, edges: np.ndarray, weights: np.ndarray,

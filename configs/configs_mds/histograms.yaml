@@ -1,0 +1,5 @@
+# ── The reco-only reference study ─────────────────────────────────
+# Every fill comes from ../common, inclusive (no isolation or truth splits):
+# this set is the plain cluster-shape reference the other studies are compared
+# against.  Add a cluster variable in ../common and it appears here.
+_extends: ../common

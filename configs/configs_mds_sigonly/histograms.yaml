@@ -1,0 +1,5 @@
+# Signal-only view of the reference reco study: the same histograms,
+# selections and derived plots as ../configs_mds, run over the signal samples
+# alone (see samples.yaml).  Everything is inherited -- add a plot in
+# ../configs_mds and it appears here too.
+_extends: ../configs_mds

@@ -1,0 +1,14 @@
+# ── Category 5/5: every Cosmics cluster ───────────────────────────
+# Cosmics MDSnano is a rechit-only ntuple -- 136 branches, no Jet, Muon,
+# FatJet or PuppiMET -- so the two dR-to-prompt-object plots have nothing to
+# fill and are dropped, here by their ../common names, which removes their
+# _src variants with them.  Everything else is the same fill as the other four
+# sets, which is what makes the five overlayable.
+_extends: ../common_clustersrc
+
+csc_cluster_dr_muon: null
+csc_cluster_dr_jet: null
+csc_cluster_dr_muon_vs_jet: null
+dt_cluster_dr_muon: null
+dt_cluster_dr_jet: null
+dt_cluster_dr_muon_vs_jet: null

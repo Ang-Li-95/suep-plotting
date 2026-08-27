@@ -1,0 +1,127 @@
+# ── Reco-only cluster histograms, with the isolation splits ───────
+# The fills come from ../common; this set adds the isolation splits (no
+# truth here -- it also runs on ZeroBias data).
+
+_extends: ../common
+
+_variant_sets:
+  csc_variants:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - csc_cluster_iso_muon
+      - csc_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - csc_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - csc_cluster_iso_muon
+  dt_variants:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - dt_cluster_iso_muon
+      - dt_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - dt_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - dt_cluster_iso_muon
+  rpc_variants:
+    iso_both:
+      label_prefix: 'muon+jet-isolated '
+      selections:
+      - rpc_cluster_iso_muon
+      - rpc_cluster_iso_jet
+    iso_jet:
+      label_prefix: 'jet-isolated '
+      selections:
+      - rpc_cluster_iso_jet
+    iso_muon:
+      label_prefix: 'muon-isolated '
+      selections:
+      - rpc_cluster_iso_muon
+
+# ── The inherited reco variables, split by the sets above ─────────
+# Each line overrides one key of a histogram defined in ../common; the
+# binning, expression and label come from there.  Add a cluster variable to
+# ../common and give it a line here for it to be split too.
+
+csc_cluster_size: {variants: csc_variants}
+csc_cluster_eta: {variants: csc_variants}
+csc_cluster_phi: {variants: csc_variants}
+csc_cluster_eta_spread: {variants: csc_variants}
+csc_cluster_phi_spread: {variants: csc_variants}
+csc_cluster_nstation: {variants: csc_variants}
+csc_cluster_time: {variants: csc_variants}
+csc_cluster_nlayer: {variants: csc_variants}
+csc_cluster_station_span: {variants: csc_variants}
+csc_cluster_first_chamber: {selections: [csc_cluster_first_not_rpc], variants: csc_variants}
+csc_cluster_first_station: {selections: [csc_cluster_first_not_rpc], variants: csc_variants}
+csc_cluster_avg_station: {variants: csc_variants}
+csc_cluster_max_station_frac: {variants: csc_variants}
+csc_cluster_layer_hits_mean: {variants: csc_variants}
+csc_cluster_layer_hits_rms: {variants: csc_variants}
+csc_cluster_layer_hits_relrms: {variants: csc_variants}
+csc_cluster_max_layer_frac: {variants: csc_variants}
+csc_cluster_nzlayer: {variants: csc_variants}
+csc_cluster_zlayer_hits_mean: {variants: csc_variants}
+csc_cluster_zlayer_hits_rms: {variants: csc_variants}
+csc_cluster_zlayer_hits_relrms: {variants: csc_variants}
+csc_cluster_max_zlayer_frac: {variants: csc_variants}
+csc_cluster_r_spread: {variants: csc_variants}
+csc_cluster_z_spread: {variants: csc_variants}
+csc_cluster_dr_muon: {variants: csc_variants}
+csc_cluster_dr_jet: {variants: csc_variants}
+csc_cluster_dr_muon_vs_jet: {variants: csc_variants}
+csc_cluster_first_system: {variants: csc_variants}
+csc_cluster_n_rpc_hits: {variants: csc_variants}
+csc_cluster_n_rpc_hits_bx0: {variants: csc_variants}
+csc_cluster_oot_hit_frac: {variants: csc_variants}
+csc_cluster_rpc_bx: {variants: csc_variants}
+csc_cluster_rpc_bx_median: {variants: csc_variants}
+csc_cluster_rpc_bx_spread: {variants: csc_variants}
+csc_cluster_rpc_hit_frac: {variants: csc_variants}
+csc_cluster_rpc_out_of_time_frac: {variants: csc_variants}
+csc_cluster_rpc_time_from_bx: {variants: csc_variants}
+csc_cluster_time_spread: {variants: csc_variants}
+
+dt_cluster_size: {variants: dt_variants}
+dt_cluster_eta: {variants: dt_variants}
+dt_cluster_phi: {variants: dt_variants}
+dt_cluster_eta_spread: {variants: dt_variants}
+dt_cluster_phi_spread: {variants: dt_variants}
+dt_cluster_nstation: {variants: dt_variants}
+dt_cluster_nlayer: {variants: dt_variants}
+dt_cluster_station_span: {variants: dt_variants}
+dt_cluster_first_chamber: {selections: [dt_cluster_first_not_rpc], variants: dt_variants}
+dt_cluster_first_station: {selections: [dt_cluster_first_not_rpc], variants: dt_variants}
+dt_cluster_avg_station: {variants: dt_variants}
+dt_cluster_max_station_frac: {variants: dt_variants}
+dt_cluster_layer_hits_mean: {variants: dt_variants}
+dt_cluster_layer_hits_rms: {variants: dt_variants}
+dt_cluster_layer_hits_relrms: {variants: dt_variants}
+dt_cluster_max_layer_frac: {variants: dt_variants}
+dt_cluster_r_spread: {variants: dt_variants}
+dt_cluster_z_spread: {variants: dt_variants}
+dt_cluster_dr_muon: {variants: dt_variants}
+dt_cluster_dr_jet: {variants: dt_variants}
+dt_cluster_dr_muon_vs_jet: {variants: dt_variants}
+dt_cluster_first_system: {variants: dt_variants}
+dt_cluster_n_rpc_hits: {variants: dt_variants}
+dt_cluster_n_rpc_hits_bx0: {variants: dt_variants}
+dt_cluster_rpc_bx: {variants: dt_variants}
+dt_cluster_rpc_bx_median: {variants: dt_variants}
+dt_cluster_rpc_bx_spread: {variants: dt_variants}
+dt_cluster_rpc_hit_frac: {variants: dt_variants}
+dt_cluster_rpc_out_of_time_frac: {variants: dt_variants}
+dt_cluster_rpc_time_from_bx: {variants: dt_variants}
+
+# The CSC Tpeak against the RPC BX of the same cluster.
+csc_cluster_time_vs_rpc_bx_time: {variants: csc_variants}

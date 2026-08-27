@@ -1,0 +1,133 @@
+# ── Base: one cluster population per config set ───────────────────
+# The five "where did this cluster come from" studies (configs_mds_src_*) fill
+# exactly the same histograms; what differs between them is *which* clusters
+# they are allowed to see.  That difference is a single named selection --
+# csc_cluster_src / dt_cluster_src -- which this file puts on every per-object
+# cluster histogram of ../common and each child set defines in its own
+# selections.yaml (this one deliberately does not, so a set that forgets to
+# fails at startup with "unknown selection" instead of quietly filling every
+# cluster).
+#
+# The cut is attached as a *variant* rather than by overriding `selections:`,
+# because a variant's selections are appended: the RPC histograms keep their
+# inherited `<sys>_cluster_has_rpc` cut instead of losing it.  `keep_base:
+# false` drops the unselected fill, so each set's pickle holds one population
+# and one only -- which is what lets the five be overlaid as five samples.
+#
+# Every histogram is therefore named `<variable>_src` and means the same thing
+# in all five sets; the *category* is carried by the sample name (see each
+# set's samples.yaml).
+#
+# Adding a cluster variable to ../common needs a line in the axis below for it
+# to be part of the comparison -- the same contract as configs_mds_data/.
+
+_extends: ../common
+
+_variant_sets:
+  csc_src:
+    src:
+      selections: [csc_cluster_src]
+  dt_src:
+    src:
+      selections: [dt_cluster_src]
+
+# ── The event-level fills are not cluster populations ─────────────
+# A per-cluster category cannot be imposed on a per-event quantity (an
+# object-level cut on an event-level histogram degrades to ">= 1 passing
+# cluster"), and PuppiMET / the jet multiplicities do not exist in the Cosmics
+# ntuple at all.  Dropped rather than left inclusive and misread as belonging
+# to the category.
+csc_cluster_n: null
+dt_cluster_n: null
+puppi_met: null
+n_jet_sel_foriso: null
+n_fatjet: null
+
+# ── The per-object cluster variables of ../common ─────────────────
+_axes:
+  csc_cluster_vars:
+    - {H: csc_cluster_size}
+    - {H: csc_cluster_eta}
+    - {H: csc_cluster_phi}
+    - {H: csc_cluster_eta_spread}
+    - {H: csc_cluster_phi_spread}
+    - {H: csc_cluster_nstation}
+    - {H: csc_cluster_time}
+    - {H: csc_cluster_nlayer}
+    - {H: csc_cluster_station_span}
+    - {H: csc_cluster_first_chamber}
+    - {H: csc_cluster_first_station}
+    - {H: csc_cluster_avg_station}
+    - {H: csc_cluster_max_station_frac}
+    - {H: csc_cluster_layer_hits_mean}
+    - {H: csc_cluster_layer_hits_rms}
+    - {H: csc_cluster_layer_hits_relrms}
+    - {H: csc_cluster_max_layer_frac}
+    - {H: csc_cluster_nzlayer}
+    - {H: csc_cluster_zlayer_hits_mean}
+    - {H: csc_cluster_zlayer_hits_rms}
+    - {H: csc_cluster_zlayer_hits_relrms}
+    - {H: csc_cluster_max_zlayer_frac}
+    - {H: csc_cluster_r_spread}
+    - {H: csc_cluster_z_spread}
+    - {H: csc_cluster_dr_muon}
+    - {H: csc_cluster_dr_jet}
+    - {H: csc_cluster_dr_muon_vs_jet}
+    - {H: csc_cluster_first_system}
+    - {H: csc_cluster_n_rpc_hits}
+    - {H: csc_cluster_n_rpc_hits_bx0}
+    - {H: csc_cluster_oot_hit_frac}
+    - {H: csc_cluster_rpc_bx}
+    - {H: csc_cluster_rpc_bx_median}
+    - {H: csc_cluster_rpc_bx_spread}
+    - {H: csc_cluster_rpc_bx_vs_size}
+    - {H: csc_cluster_rpc_hit_frac}
+    - {H: csc_cluster_rpc_out_of_time_frac}
+    - {H: csc_cluster_rpc_time_from_bx}
+    - {H: csc_cluster_time_spread}
+    - {H: csc_cluster_time_vs_spread}
+    - {H: csc_cluster_time_vs_rpc_bx_time}
+  dt_cluster_vars:
+    - {H: dt_cluster_size}
+    - {H: dt_cluster_eta}
+    - {H: dt_cluster_phi}
+    - {H: dt_cluster_eta_spread}
+    - {H: dt_cluster_phi_spread}
+    - {H: dt_cluster_nstation}
+    - {H: dt_cluster_nlayer}
+    - {H: dt_cluster_station_span}
+    - {H: dt_cluster_first_chamber}
+    - {H: dt_cluster_first_station}
+    - {H: dt_cluster_avg_station}
+    - {H: dt_cluster_max_station_frac}
+    - {H: dt_cluster_layer_hits_mean}
+    - {H: dt_cluster_layer_hits_rms}
+    - {H: dt_cluster_layer_hits_relrms}
+    - {H: dt_cluster_max_layer_frac}
+    - {H: dt_cluster_r_spread}
+    - {H: dt_cluster_z_spread}
+    - {H: dt_cluster_dr_muon}
+    - {H: dt_cluster_dr_jet}
+    - {H: dt_cluster_dr_muon_vs_jet}
+    - {H: dt_cluster_first_system}
+    - {H: dt_cluster_n_rpc_hits}
+    - {H: dt_cluster_n_rpc_hits_bx0}
+    - {H: dt_cluster_rpc_bx}
+    - {H: dt_cluster_rpc_bx_median}
+    - {H: dt_cluster_rpc_bx_spread}
+    - {H: dt_cluster_rpc_bx_vs_size}
+    - {H: dt_cluster_rpc_hit_frac}
+    - {H: dt_cluster_rpc_out_of_time_frac}
+    - {H: dt_cluster_rpc_time_from_bx}
+
+_repeat:
+  - over: csc_cluster_vars
+    defs:
+      <H>:
+        variants: csc_src
+        keep_base: false
+  - over: dt_cluster_vars
+    defs:
+      <H>:
+        variants: dt_src
+        keep_base: false

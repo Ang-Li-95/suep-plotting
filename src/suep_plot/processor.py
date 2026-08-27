@@ -28,6 +28,7 @@ from coffea import processor
 from coffea.analysis_tools import Weights
 from coffea.nanoevents import NanoAODSchema
 
+from .config import FILL_CONFIG_FILES, config_sources, load_config_file
 from .corrections import apply_corrections, build_correctors, load_correction_defs
 from .histograms import (
     _compile_expr,
@@ -44,52 +45,168 @@ NanoAODSchema.warn_missing_crossrefs = False
 
 
 def load_samples(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    """Read a config's ``samples.yaml`` -> {name: cfg}.
+
+    Definitions normally come from the shared registry named by ``_registry:``;
+    see :mod:`suep_plot.config` for that and the other config directives.
+    """
+    return load_config_file(path)
+
+
+def _split_xrootd_url(url: str) -> tuple[str, str]:
+    """``root://host//eos/dir`` -> (``root://host/``, ``/eos/dir``)."""
+    scheme, rest = url.split("://", 1)
+    host, _, path = rest.partition("/")
+    return f"{scheme}://{host}/", "/" + path.lstrip("/")
+
+
+def _xrootd_listdir(fs, path: str) -> list[str]:
+    """Recursively list ``*.root`` under a remote directory (server paths)."""
+    from XRootD.client.flags import DirListFlags
+
+    status, listing = fs.dirlist(path, DirListFlags.STAT)
+    if not status.ok or listing is None:
+        raise RuntimeError(f"xrootd dirlist failed for {path}: {status.message}")
+
+    out = []
+    for entry in listing:
+        child = f"{path.rstrip('/')}/{entry.name}"
+        if entry.statinfo is not None and entry.statinfo.flags & 2:  # kXR_isDir
+            out.extend(_xrootd_listdir(fs, child))
+        elif entry.name.endswith(".root"):
+            out.append(child)
+    return sorted(out)
+
+
+def _resolve_xrootd(spec: str) -> list[str]:
+    """Expand one xrootd spec: a file passes through, a directory is walked,
+    a trailing wildcard is matched against its parent directory's listing."""
+    import fnmatch
+
+    from XRootD import client
+
+    prefix, path = _split_xrootd_url(spec)
+    if "*" not in path and "?" not in path and path.endswith(".root"):
+        return [spec]
+
+    fs = client.FileSystem(prefix)
+    # Server paths are absolute, so host + path keeps the usual root://host//eos/…
+    if "*" in path or "?" in path:
+        parent, _, pattern = path.rpartition("/")
+        return [prefix + f for f in _xrootd_listdir(fs, parent)
+                if fnmatch.fnmatch(f.rpartition("/")[2], pattern)]
+    return [prefix + f for f in _xrootd_listdir(fs, path)]
 
 
 def _resolve_files(file_specs: list[str]) -> list[str]:
-    """Expand globs / pass through xrootd URLs -> flat list of file paths."""
+    """Expand globs / directories / xrootd URLs -> flat list of file paths.
+
+    A spec may be a single file, a glob, or a directory (local or xrootd), in
+    which case it is walked recursively for ``*.root``.
+    """
     import glob
+    import os
 
     out = []
     for spec in file_specs:
         if "://" in spec:
-            out.append(spec)
+            out.extend(_resolve_xrootd(spec))
         elif "*" in spec or "?" in spec:
             out.extend(sorted(glob.glob(spec)))
+        elif os.path.isdir(spec):
+            out.extend(sorted(str(p) for p in Path(spec).rglob("*.root")))
         else:
             out.append(spec)
     return out
 
 
-def _load_custom_columns():
-    """Import custom/columns.py if present -> (derive_fn or None)."""
+def resolve_sample_files(cfg: dict) -> list[str]:
+    """The files of one sample, honouring an optional ``max_files:`` cap.
+
+    A background sample can be far larger than the comparison needs -- DY is
+    5,575 files against a signal's 25 -- and a normalized shape overlay gains
+    nothing from the tail of it.  ``max_files`` takes the first N of the
+    resolved list, deterministically (the list is sorted), so a capped run is
+    reproducible and can be widened later without redoing what exists.
+    """
+    files = _resolve_files(cfg.get("files") or [])
+    cap = cfg.get("max_files")
+    return files[:int(cap)] if cap else files
+
+
+def load_columns_config(path: str) -> dict:
+    """Read a config's optional ``columns.yaml`` -> settings for ``derive()``.
+
+    Missing file = ``{}`` = the module's own defaults.  The schema is the
+    custom-columns module's business (``parameters`` / ``steps`` for the MDS
+    module); it is only forwarded here.
+    """
+    return load_config_file(path)
+
+
+def _load_custom_columns(columns_cfg: dict | None = None):
+    """Import custom/columns.py if present -> (derive_fn, settings) or (None, None).
+
+    The settings are resolved here, once, and handed to the processor -- which
+    passes them to ``derive()`` and pickles them to its workers, so a worker
+    cannot end up running on settings its parent never chose.  A bad
+    columns.yaml is fatal: it changes what the derived columns *mean*, so it
+    must not degrade to a warning and silently different histograms.
+    """
     repo_root = Path(__file__).resolve().parent.parent.parent
     if not (repo_root / "custom" / "columns.py").exists():
-        return None
+        return None, None
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     try:
         mod = importlib.import_module("custom.columns")
+        # columns.py imports its helpers from sibling modules, so reload the
+        # whole package: reloading columns.py alone would re-bind its names to
+        # the already-cached submodules and an edit there would be ignored.
+        # (This is for a live notebook kernel; a fresh suep-run imports once.)
+        # In dependency order -- params.py owns the schema the other modules
+        # import, so it goes first and columns.py last.
+        helpers = sorted(n for n in sys.modules if n.startswith("custom.")
+                         and n not in ("custom.columns", "custom.params"))
+        for name in ["custom.params", *helpers]:
+            if name in sys.modules:
+                importlib.reload(sys.modules[name])
         importlib.reload(mod)
-        return getattr(mod, "derive", None)
     except Exception as e:  # noqa: BLE001
         print(f"WARNING: could not load custom/columns.py: {e}")
-        return None
+        return None, None
+
+    derive_fn = getattr(mod, "derive", None)
+    configure = getattr(mod, "configure", None)
+    if configure is None:
+        if columns_cfg:
+            print("WARNING: columns.yaml ignored: custom/columns.py has no configure()")
+        return derive_fn, None
+    try:
+        settings = configure(columns_cfg)
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(f"ERROR in columns.yaml: {e}")
+    if derive_fn is not None:
+        print("Custom columns: loaded derive()")
+        print(f"                steps  {list(settings.steps)}")
+        print(f"                params {settings.params}")
+    return derive_fn, settings
 
 
 class SuepProcessor(processor.ProcessorABC):
     """Fill YAML-defined histograms for one sample chunk."""
 
     def __init__(self, hist_defs, sel_defs, correctors, sample_defs, derive_fn=None,
-                 reweighters=None):
+                 reweighters=None, settings=None):
         self.hist_defs = hist_defs
         self.sel_defs = sel_defs
         self.correctors = correctors
         self.sample_defs = sample_defs
         self.derive_fn = derive_fn
         self.reweighters = reweighters or {}
+        # The resolved columns.yaml.  Pickled to the workers along with the
+        # rest of the processor, so a worker cannot run on other settings.
+        self.settings = settings
 
     def process(self, events):
         dataset = events.metadata["dataset"]
@@ -98,7 +215,7 @@ class SuepProcessor(processor.ProcessorABC):
         group = cfg.get("group", "")
 
         if self.derive_fn is not None:
-            events = self.derive_fn(events)
+            events = self.derive_fn(events, self.settings, self.sel_defs)
 
         n = len(events)
         weights = Weights(n, storeIndividual=False)
@@ -154,7 +271,7 @@ class SuepProcessor(processor.ProcessorABC):
 
 
 def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
-                          reweighters=None):
+                          reweighters=None, settings=None):
     """Best-effort check: evaluate each expression on a small slice and warn.
 
     Restores clear feedback for typo'd fields, which otherwise silently produce
@@ -189,7 +306,7 @@ def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn
 
     if derive_fn is not None:
         try:
-            events = derive_fn(events)
+            events = derive_fn(events, settings, sel_defs)
         except Exception as e:  # noqa: BLE001
             print(f"  (custom derive() failed during validation: {e})")
 
@@ -230,11 +347,14 @@ def _inputs_mtime(files: list[str], config_dir: Path,
     """
     import os
 
-    paths = [config_dir / f for f in
-             ("samples.yaml", "histograms.yaml", "selections.yaml",
-              "corrections.yaml", "reweights.yaml")]
+    # Every file the set actually reads, not just the ones in its directory:
+    # a set that _extends a reference set or _includes a shared fragment is
+    # out of date when *those* change too (see config.config_sources).
+    paths = list(config_sources(config_dir, FILL_CONFIG_FILES))
     repo_root = Path(__file__).resolve().parent.parent.parent
-    paths.append(repo_root / "custom" / "columns.py")
+    # Every module of the custom-columns package, not just columns.py: the
+    # helpers live in sibling files and editing one changes the fills too.
+    paths.extend(sorted((repo_root / "custom").glob("*.py")))
     paths.extend(Path(p) for p in extra_paths)
 
     newest = 0.0
@@ -260,14 +380,16 @@ def run_all(
     force: bool = False,
     file_range: tuple[int, int] | None = None,
     part: str | int | None = None,
+    file_list: list[str] | None = None,
 ):
     """Load configs, process each sample through coffea, save per-sample pickles.
 
-    *file_range* restricts processing to a ``[start, end)`` slice of each
-    sample's resolved file list and *part* tags the output pickle as
-    ``<sample>.part<part>.pkl`` — together they let Slurm array tasks split a
-    sample by files (one shard per task).  ``suep-plot`` sums the part pickles
-    back into one sample at load time.
+    *file_list* replaces the sample's own ``files:`` with an already-resolved
+    list of files, and *part* tags the output pickle as
+    ``<sample>.part<part>.pkl``; ``suep-slurm`` uses the pair to hand each array
+    task a frozen shard of one sample (``suep-plot`` sums the part pickles back
+    into one sample at load time).  *file_range* is the equivalent for a direct
+    ``suep-run``: a ``[start, end)`` slice of the resolved file list.
     """
     config_dir = Path(config_dir)
     output_dir = Path(output_dir)
@@ -335,12 +457,11 @@ def run_all(
             print(f"WARNING: could not load corrections: {e}")
             print("         proceeding without corrections")
 
-    derive_fn = _load_custom_columns()
-    if derive_fn is not None:
-        print("Custom columns: loaded derive()")
+    columns_cfg = load_columns_config(config_dir / "columns.yaml")
+    derive_fn, settings = _load_custom_columns(columns_cfg)
 
     proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
-                         reweighters)
+                         reweighters, settings)
     rw_files = tuple(str(rw.include_path) for rw in reweighters.values()
                      if rw.include_path is not None)
     if workers and workers > 1:
@@ -354,11 +475,16 @@ def run_all(
 
     validated = False
     for name, cfg in sample_defs.items():
-        file_specs = cfg.get("files") or []
-        if not file_specs:
-            print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
-            continue
-        files = _resolve_files(file_specs)
+        # A caller-supplied list is already resolved: no directory walk here,
+        # so a shard processes exactly the files it was submitted with.
+        if file_list is not None:
+            files = list(file_list)
+        else:
+            file_specs = cfg.get("files") or []
+            if not file_specs:
+                print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
+                continue
+            files = resolve_sample_files(cfg)
         tree = cfg.get("tree", "Events")
         if not files:
             print(f"  WARNING: no files resolved for '{name}', skipping")
@@ -381,7 +507,7 @@ def run_all(
 
         if not validated:
             _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs,
-                                  derive_fn, reweighters)
+                                  derive_fn, reweighters, settings)
             validated = True
 
         t0 = time.time()

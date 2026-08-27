@@ -1,0 +1,10 @@
+# ── Base: the RPC-timing profiles, repointed ──────────────────────
+# ../common's profiles read <sys>_cluster_rpc_bx_vs_size, which this study
+# renames to ..._src (the histograms carry the population cut).  Only the
+# source moves; the axes and labels stay as ../common has them.
+_extends: ../common
+
+prof_csc_rpc_bx_vs_size:
+  source: csc_cluster_rpc_bx_vs_size_src
+prof_dt_rpc_bx_vs_size:
+  source: dt_cluster_rpc_bx_vs_size_src
