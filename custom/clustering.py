@@ -329,6 +329,9 @@ def _rpc_time(bx):
     return out
 
 
+_NO_LLP = np.zeros(0, dtype=np.int64)
+
+
 def _cluster_hits(hits, eps, min_samples, settings, merged=False):
     """DBSCAN one (possibly merged) flat hit collection -> cluster records.
 
@@ -347,6 +350,8 @@ def _cluster_hits(hits, eps, min_samples, settings, merged=False):
     from sklearn.cluster import DBSCAN
 
     match_min_hits = settings["match_min_hits"]
+    # Per cluster, every LLP clearing match_min_hits and its hit count.
+    all_idx, all_hits = [], []
     oot_cut = settings["oot_time_cut"]
     counts = hits["counts"]
     offsets = np.concatenate([[0], np.cumsum(counts)])
@@ -397,9 +402,18 @@ def _cluster_hits(hits, eps, min_samples, settings, merged=False):
                 best, nbest = int(uniq[cnt.argmax()]), int(cnt.max())
                 # How many distinct LLPs clear the match threshold in this
                 # cluster (a cluster can overlap more than one LLP's shower).
-                nmatched_llp = int((cnt >= match_min_hits).sum())
+                clears = cnt >= match_min_hits
+                nmatched_llp = int(clears.sum())
+                # ... and *which* ones, with their hit counts.  matchedLLPIdx
+                # alone names only the dominant LLP, so a second LLP whose
+                # shower landed in the same cluster would otherwise look
+                # unreconstructed even though its hits are right there.
+                all_idx.append(uniq[clears].astype(np.int64))
+                all_hits.append(cnt[clears].astype(np.int64))
             else:
                 best, nbest, nmatched_llp = -1, 0, 0
+                all_idx.append(_NO_LLP)
+                all_hits.append(_NO_LLP)
             matched = nbest >= match_min_hits
             out["size"].append(int(m.sum()))
             out["eta"].append(float(e[m].mean()))
@@ -482,8 +496,17 @@ def _cluster_hits(hits, eps, min_samples, settings, merged=False):
               "nMatchedLLP": np.int64, "hasTruth": np.bool_,
               "firstSystem": np.int64, "nRPCHits": np.int64,
               "nRPCHitsBx0": np.int64}
-    return ak.zip({f: ak.unflatten(np.asarray(v, dtype=dtypes.get(f, np.float64)), nclu)
-                   for f, v in out.items()})
+    clusters = ak.zip({f: ak.unflatten(np.asarray(v, dtype=dtypes.get(f, np.float64)), nclu)
+                       for f, v in out.items()})
+    # (event, cluster, matched-LLP): variable length, so attached after the
+    # zip of the per-cluster scalars rather than inside it.
+    for name, vals in (("matchedLLPIdxAll", all_idx),
+                       ("matchedLLPHitsAll", all_hits)):
+        inner = ak.unflatten(
+            np.concatenate(vals) if vals else np.zeros(0, dtype=np.int64),
+            np.array([len(v) for v in vals], dtype=np.int64))
+        clusters = ak.with_field(clusters, ak.unflatten(inner, nclu), name)
+    return clusters
 
 
 def _cluster_system(rechits, timefield, eps, min_samples, settings, system="csc"):

@@ -26,9 +26,10 @@ suep_mDark2_temp1:
   tree: Events
   is_data: false
   xs: 1.0
-  label: SUEP $m_{\mathrm{Dark}}$=2, $T$=1, $c\tau$=5 m
+  label: SUEP $m_{S}$=2, $T$=1, $c\tau$=5 m
   color: tab:blue
   linestyle: '-'
+  marker: o
   group: signal
 suep_mDark2_temp2:
   files:
@@ -36,9 +37,10 @@ suep_mDark2_temp2:
   tree: Events
   is_data: false
   xs: 1.0
-  label: SUEP $m_{\mathrm{Dark}}$=2, $T$=2, $c\tau$=5 m
+  label: SUEP $m_{S}$=2, $T$=2, $c\tau$=5 m
   color: tab:blue
   linestyle: '--'
+  marker: s
   group: signal
 # Remaining Gen3 grid points (mDark = 5, 12).  Same production, same 25-file
 # size; only mDark and the temperature change.
@@ -48,9 +50,10 @@ suep_mDark5_temp1:
   tree: Events
   is_data: false
   xs: 1.0
-  label: SUEP $m_{\mathrm{Dark}}$=5, $T$=1, $c\tau$=5 m
+  label: SUEP $m_{S}$=5, $T$=1, $c\tau$=5 m
   color: tab:green
   linestyle: '-'
+  marker: o
   group: signal
 suep_mDark5_temp2:
   files:
@@ -58,9 +61,10 @@ suep_mDark5_temp2:
   tree: Events
   is_data: false
   xs: 1.0
-  label: SUEP $m_{\mathrm{Dark}}$=5, $T$=2, $c\tau$=5 m
+  label: SUEP $m_{S}$=5, $T$=2, $c\tau$=5 m
   color: tab:green
   linestyle: '--'
+  marker: s
   group: signal
 suep_mDark12_temp1:
   files:
@@ -68,9 +72,10 @@ suep_mDark12_temp1:
   tree: Events
   is_data: false
   xs: 1.0
-  label: SUEP $m_{\mathrm{Dark}}$=12, $T$=1, $c\tau$=5 m
+  label: SUEP $m_{S}$=12, $T$=1, $c\tau$=5 m
   color: tab:purple
   linestyle: '-'
+  marker: o
   group: signal
 suep_mDark12_temp2:
   files:
@@ -78,9 +83,10 @@ suep_mDark12_temp2:
   tree: Events
   is_data: false
   xs: 1.0
-  label: SUEP $m_{\mathrm{Dark}}$=12, $T$=2, $c\tau$=5 m
+  label: SUEP $m_{S}$=12, $T$=2, $c\tau$=5 m
   color: tab:purple
   linestyle: '--'
+  marker: s
   group: signal
 # Gen2 T=2: the post-G4-fix leg of configs_g4compare, pinned so that comparison
 # keeps its original production when suep_mDark2_temp2 moves to a newer one.
@@ -152,6 +158,6 @@ suep_mMed125_mDark2:
   tree: Events
   is_data: false
   xs: 1.0
-  label: SUEP $m_{\mathrm{Med}}$=125, $m_{\mathrm{Dark}}$=2
+  label: SUEP $m_{\mathrm{Med}}$=125, $m_{S}$=2
   color: tab:blue
   group: signal

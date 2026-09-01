@@ -331,20 +331,35 @@ def _step_llp_reco(ctx):
     for sys, SYS in _CLUSTER_SYSTEMS:
         if sys not in ctx.clusters:
             continue
-        # (ev, nLLP, nCluster) truth-match table: cluster's best-LLP index
-        # equals this LLP's.  Unmatched clusters carry -1, which never equals
-        # an LLP index (>= 0), so they drop out.
-        sel = ctx.match_key[:, :, None] == ctx.clusters[sys].matchedLLPIdx[:, None, :]
+        clusters = ctx.clusters[sys]
+        # (ev, nLLP, nCluster, nMatchedLLP) -> does this LLP clear
+        # match_min_hits in this cluster?  Every LLP in the cluster counts,
+        # not just the dominant one: two showers landing in one cluster are
+        # both reconstructed, and crediting only the larger one understates
+        # the efficiency for the samples whose LLPs shower most readily.
+        pair = (ctx.match_key[:, :, None, None]
+                == clusters.matchedLLPIdxAll[:, None, :, :])
+        sel = ak.any(pair, axis=3)
+        # ... and how many of the cluster's hits are this LLP's own.
+        own = ak.sum(ak.where(pair, clusters.matchedLLPHitsAll[:, None, :, :], 0),
+                     axis=3)
         reco[sys] = ak.any(sel, axis=2)
         # (2) number of DBSCAN clusters truth-matched to each LLP
         nclu = ak.values_astype(ak.sum(sel, axis=2), np.int64)
         llp = ak.with_field(llp, nclu, "nRecoCluster" + SYS)
+        # (2b) which cluster: the one holding most of this LLP's hits, as an
+        # index into events.<sys>Cluster; -1 when the LLP has none.  Keeping
+        # it means the cluster is still reachable from the LLP even when it
+        # is shared, so nothing about the association is lost.
+        cidx = ak.values_astype(ak.argmax(own, axis=2, mask_identity=False),
+                                np.int64)
+        llp = ak.with_field(llp, ak.where(reco[sys], cidx, -1),
+                            "matchedClusterIdx" + SYS)
         # (3) fraction of the LLP's matched rechits captured by its best
-        # matched cluster: max over matched clusters of that cluster's
-        # matched-hit count, divided by the LLP's total matched rechits
-        # in the system.  NaN when the LLP has no matched rechit there.
-        hits_in = ak.where(sel, ctx.clusters[sys].nMatchedHits[:, None, :], 0)
-        best = ak.fill_none(ak.max(hits_in, axis=2), 0)
+        # matched cluster -- its *own* hits there, so a shared cluster is not
+        # credited with its rival's, divided by the LLP's total matched
+        # rechits in the system.  NaN when the LLP has no matched rechit.
+        best = ak.fill_none(ak.max(own, axis=2), 0)
         # With rpc_mode: merge the cluster also holds the RPC rechits of the
         # region it covers, so those count towards the LLP's hits in "this
         # system" (see _hit_fields; under "match" they do not).

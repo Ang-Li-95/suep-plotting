@@ -188,25 +188,31 @@ def _figure(ratio: bool = False):
     return fig, ax, None
 
 
+# Point size for the errorbar plots (efficiency / profile / ratio): large
+# enough that the marker shape reads at a glance, since shape is what
+# separates two samples sharing a colour.
+MARKERSIZE = 8
+
+
 def palette() -> list[str]:
     """The active colour cycle -- the fallback when a sample defines no colour."""
     return plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
 
 def _series(h: hist.Hist, sample_defs: dict):
-    """(sample, 1D slice, label, color, linestyle) per dataset.
+    """(sample, 1D slice, label, color, linestyle, marker) per dataset.
 
-    The colour falls back to the cycle.  The line style matters because
+    The colour falls back to the cycle.  Style and marker matter because
     samples that differ in only one parameter share a colour on purpose (the
-    signal grid gives both temperatures of one mDark the same colour), so the
-    style is the only thing telling them apart in a point plot.
+    signal grid gives both temperatures of one mDark the same colour), so they
+    are the only thing telling them apart in a point plot.
     """
     colors = palette()
     for i, s in enumerate(h.axes["dataset"]):
         cfg = sample_defs.get(s, {})
         yield (s, h[{"dataset": s}], cfg.get("label", s),
                cfg.get("color", colors[i % len(colors)]),
-               cfg.get("linestyle", "-"))
+               cfg.get("linestyle", "-"), cfg.get("marker", "o"))
 
 
 def _require(histograms: dict, names, plot_name: str) -> bool:
@@ -394,7 +400,7 @@ def plot_histogram_2d(
     ``log_z: true`` in the histogram config switches to a log color scale.
     """
     multi = len(h.axes["dataset"]) > 1
-    for s, h2, label, _color, _ls in _series(h, sample_defs):
+    for s, h2, label, _color, _ls, _mk in _series(h, sample_defs):
         fig, ax, _rax = _figure()
         w = h2.view().value
         norm = None
@@ -473,10 +479,10 @@ def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *,
     axis = "x" if cfg["type"] == "profile_x" else "y"
 
     fig, ax, _rax = _figure()
-    for _s, h2, label, color, ls in _series(h, sample_defs):
+    for _s, h2, label, color, ls, mk in _series(h, sample_defs):
         centers, mean, err, _edges = _profile(h2, axis)
-        ax.errorbar(centers, mean, yerr=err, marker="o", linestyle=ls,
-                    label=label, color=color, markersize=4, capsize=2,
+        ax.errorbar(centers, mean, yerr=err, marker=mk, linestyle=ls,
+                    label=label, color=color, markersize=MARKERSIZE, capsize=3,
                     linewidth=1.5)
 
     profiled = "y" if axis == "x" else "x"
@@ -527,7 +533,7 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
     fig, ax, _rax = _figure()
     centers = h_num.axes["x"].centers
     top = 0.0
-    for s, hn, label, color, ls in _series(h_num, sample_defs):
+    for s, hn, label, color, ls, mk in _series(h_num, sample_defs):
         if s not in h_den.axes["dataset"]:
             continue
         passed = hn.view().value
@@ -540,12 +546,8 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
 
         ax.errorbar(centers[filled], eff[filled],
                     yerr=[(eff - lo)[filled], (hi - eff)[filled]],
-                    marker="o", linestyle=ls, label=label, color=color,
-                    markersize=4, capsize=2, linewidth=1.5)
-        # The caps alone are sub-pixel at these statistics; the band is what
-        # actually reads on the page.
-        ax.fill_between(centers[filled], lo[filled], hi[filled],
-                        color=color, alpha=0.25, linewidth=0)
+                    marker=mk, linestyle=ls, label=label, color=color,
+                    markersize=MARKERSIZE, capsize=3, linewidth=1.5)
         if filled.any():
             top = max(top, float(hi[filled].max()))
 
@@ -571,15 +573,15 @@ def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
 
     fig, ax, _rax = _figure()
     centers = h_num.axes["x"].centers
-    for s, hn, label, color, ls in _series(h_num, sample_defs):
+    for s, hn, label, color, ls, mk in _series(h_num, sample_defs):
         if s not in h_den.axes["dataset"]:
             continue
         nv, dv = hn.view(), h_den[{"dataset": s}].view()
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = np.where(dv.value > 0, nv.value / dv.value, np.nan)
             err = np.where(dv.value > 0, np.sqrt(nv.variance) / dv.value, np.nan)
-        ax.errorbar(centers, ratio, yerr=err, marker="o", linestyle=ls,
-                    label=label, color=color, markersize=4, capsize=2,
+        ax.errorbar(centers, ratio, yerr=err, marker=mk, linestyle=ls,
+                    label=label, color=color, markersize=MARKERSIZE, capsize=3,
                     linewidth=1.5)
 
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8)
@@ -654,7 +656,7 @@ def _plot_efficiency_2d(name, cfg, h_num, h_den, sample_defs, output_dir, *,
     multi = len(h_num.axes["dataset"]) > 1
 
     plotted = 0
-    for s, hn, label, _color, _ls in _series(h_num, sample_defs):
+    for s, hn, label, _color, _ls, _mk in _series(h_num, sample_defs):
         if s not in h_den.axes["dataset"]:
             continue
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -890,8 +892,9 @@ def plot_all(
     every histogram to a ROOT file (after any lumi scaling).
 
     If *config_dir* is given, plot-time keys from its histograms.yaml (label,
-    blind, rebin, flow, log_x, log_y, log_z ...) override the ones stored in
-    the pickles, so styling can be iterated without reprocessing.
+    blind, rebin, flow, log_x, log_y, log_z ...) and its samples.yaml (label,
+    color, linestyle, marker ...) override the ones stored in the pickles, so
+    styling can be iterated without reprocessing.
     """
     pkl_files = _resolve_inputs(results_path)
     if not pkl_files:
@@ -912,6 +915,15 @@ def plot_all(
             from .histograms import load_histogram_defs
             for name, cfg in load_histogram_defs(fresh_path).items():
                 hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
+        # Sample styling too -- label, colour, linestyle, marker.  Without
+        # this a legend or marker change means refilling every pickle just to
+        # redraw, which is exactly what this override exists to avoid.
+        samples_path = Path(config_dir) / "samples.yaml"
+        if samples_path.exists():
+            from .config import load_config_file
+            for name, cfg in (load_config_file(samples_path) or {}).items():
+                if isinstance(cfg, dict):
+                    sample_defs[name] = {**sample_defs.get(name, {}), **cfg}
 
     if lumi is not None:
         apply_xs_scaling(histograms, sample_defs, data.get("sumw", {}), lumi)

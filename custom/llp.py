@@ -163,6 +163,7 @@ def _empty_llps(events, settings):
                    else ["CSC", "DT"])
         f64 += ["clusterHitFrac" + sys for sys in systems]
         i64 += ["nRecoCluster" + sys for sys in systems]
+        i64 += ["matchedClusterIdx" + sys for sys in systems]
         boo += ["reco" + sys for sys in systems] + ["reco"]
     if "llp_shape" in enabled:
         f64 += [f + sys for sys in ("CSC", "DT", "RPC", "Total")

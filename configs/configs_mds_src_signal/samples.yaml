@@ -15,13 +15,13 @@ _registry: ../../datasets.yaml
 
 clusters_llp:
   _from: suep_mDark2_temp1
-  label: 'LLP clusters (gen-matched), $m_{\mathrm{Dark}}$=2, $T$=1'
+  label: 'LLP clusters (gen-matched), $m_{S}$=2, $T$=1'
   color: '#5790fc'
   linestyle: '-'
   group: signal
 clusters_llp_temp2:
   _from: suep_mDark2_temp2
-  label: 'LLP clusters (gen-matched), $m_{\mathrm{Dark}}$=2, $T$=2'
+  label: 'LLP clusters (gen-matched), $m_{S}$=2, $T$=2'
   color: '#5790fc'
   linestyle: '--'
   group: signal
