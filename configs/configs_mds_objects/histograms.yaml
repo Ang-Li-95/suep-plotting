@@ -1,0 +1,211 @@
+# ── Prompt objects, MET and MDS cluster multiplicity on the signal grid ──
+# Standalone rather than `_extends: ../common`: the point of this set is a
+# short, readable list of event-level quantities, and inheriting the ~300
+# cluster shape histograms would bury it.  puppi_met and n_jet_sel_foriso keep
+# ../common's binning so they overlay with the other studies; the cluster
+# counts use half-integer edges instead of ../common's 0..6, which puts each
+# integer count in the middle of a bin rather than on an edge (they are read
+# against the matched counts below, not against ../common).
+#
+# Everything below is *after* JERC: the 'jerc' step (../common/columns.yaml,
+# via columns.yaml) replaces events.Jet.pt in place and rebuilds the Type-1
+# events.PuppiMET from RawPuppiMET, so no separate "raw" and "corrected"
+# variables exist -- the corrected ones are the only ones there are.
+
+# ── PUPPI MET after JERC ──────────────────────────────────────────
+puppi_met:
+  expression: "events.PuppiMET.pt"
+  bins: 50
+  lo: 0
+  hi: 500
+  label: 'PUPPI $p_T^{\mathrm{miss}}$ [GeV]'
+  log_y: true
+
+puppi_met_phi:
+  expression: "events.PuppiMET.phi"
+  bins: 32
+  lo: -3.2
+  hi: 3.2
+  label: 'PUPPI $p_T^{\mathrm{miss}}$ $\phi$'
+
+# ── Object multiplicities after selection ─────────────────────────
+# Every selections.yaml mask is attached as a column of its own name, so a
+# multiplicity is ak.sum of the cut itself: the cut lives in exactly one place,
+# retuning a working point there moves these plots with it, and there is no
+# second copy of the expression here to drift out of step.
+n_jet_sel_foriso:
+  expression: "ak.sum(events.jet_sel_foriso, axis=1)"
+  bins: 12
+  lo: -0.5
+  hi: 11.5
+  label: '$N_{\mathrm{jets}}$'
+  log_y: true
+
+n_muon_sel_foriso:
+  expression: "ak.sum(events.muon_sel_foriso, axis=1)"
+  bins: 8
+  lo: -0.5
+  hi: 7.5
+  label: '$N_{\mu}$'
+  log_y: true
+
+n_electron_sel:
+  expression: "ak.sum(events.electron_sel, axis=1)"
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: '$N_{e}$'
+  log_y: true
+
+n_photon_sel:
+  expression: "ak.sum(events.photon_sel, axis=1)"
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: '$N_{\gamma}$'
+  log_y: true
+
+n_tau_sel:
+  expression: "ak.sum(events.tau_sel, axis=1)"
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: '$N_{\tau_h}$'
+  log_y: true
+
+# ── Jet kinematics ────────────────────────────────────────────────
+# Inclusive over all JERC-corrected jets, plus the same variable restricted to
+# the jets the multiplicity above counts -- so the spectrum can be read either
+# against the full collection or against exactly what the selection keeps.
+_variant_sets:
+  jet_selected:
+    sel:
+      selections: [jet_sel_foriso]
+      label_prefix: "selected "
+
+jet_pt:
+  expression: "events.Jet.pt"
+  per_object: true
+  bins: 60
+  lo: 0
+  hi: 600
+  label: 'jet $p_{T}$ [GeV]'
+  log_y: true
+  variants: jet_selected
+
+jet_eta:
+  expression: "events.Jet.eta"
+  per_object: true
+  bins: 50
+  lo: -5
+  hi: 5
+  label: 'jet $\eta$'
+  variants: jet_selected
+
+jet_phi:
+  expression: "events.Jet.phi"
+  per_object: true
+  bins: 32
+  lo: -3.2
+  hi: 3.2
+  label: 'jet $\phi$'
+  variants: jet_selected
+
+# Scalar sum of the pT of the jets passing jet_sel_foriso -- the same jets
+# n_jet_sel_foriso counts and jet_pt_sel plots, reached through the selection
+# column so the cut is not restated.  Post-JERC, since the 'jerc' step
+# corrected events.Jet.pt in place.
+ht:
+  expression: "ak.sum(events.Jet.pt[events.jet_sel_foriso], axis=1)"
+  bins: 50
+  lo: 0
+  hi: 1000
+  label: '$H_T$ [GeV]'
+  log_y: true
+
+# ── MDS cluster multiplicity, no selection ────────────────────────
+# Every DBSCAN cluster the clustering produced, with nothing asked of it.
+# Only CSC and DT: the default rpc_mode is 'match', so there is no standalone
+# events.rpcCluster -- the RPC rechits are attached to the finished CSC and DT
+# clusters instead (see docs/derived-columns.md).
+csc_cluster_n:
+  expression: "ak.num(events.cscCluster)"
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: '$N_{\mathrm{CSC\ clusters}}$'
+  log_y: true
+
+dt_cluster_n:
+  expression: "ak.num(events.dtCluster)"
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: '$N_{\mathrm{DT\ clusters}}$'
+  log_y: true
+
+mds_cluster_n:
+  expression: "ak.num(events.cscCluster) + ak.num(events.dtCluster)"
+  bins: 11
+  lo: -0.5
+  hi: 10.5
+  label: '$N_{\mathrm{MDS\ clusters}}$ (CSC + DT)'
+  log_y: true
+
+# ── MDS cluster multiplicity, truth-matched to an LLP ──────────────
+# cluster.matched is set inside the clustering itself: a cluster is matched
+# when at least match_min_hits (10, ../common/columns.yaml) of its rechits
+# carry one common llpIdx.  Comparing these four with the four above is the
+# per-event version of the matched / unmatched cluster split.
+csc_cluster_n_matched:
+  expression: "ak.sum(events.cscCluster.matched, axis=1)"
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: '$N_{\mathrm{CSC\ clusters}}$ matched to an LLP'
+  log_y: true
+
+dt_cluster_n_matched:
+  expression: "ak.sum(events.dtCluster.matched, axis=1)"
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: '$N_{\mathrm{DT\ clusters}}$ matched to an LLP'
+  log_y: true
+
+mds_cluster_n_matched:
+  expression: "ak.sum(events.cscCluster.matched, axis=1) + ak.sum(events.dtCluster.matched, axis=1)"
+  bins: 11
+  lo: -0.5
+  hi: 10.5
+  label: '$N_{\mathrm{MDS\ clusters}}$ matched to an LLP (CSC + DT)'
+  log_y: true
+
+# ── Angular separation of the selected clusters ────────────────────
+# The largest |dphi| between any two selected clusters in the event, pooled over
+# CSC and DT: an LLP pair from a back-to-back decay lands near pi, while clusters
+# from one shower or from noise sit low.
+#
+# Read outward: pool the phi of the selected clusters of both systems, take all
+# unordered pairs, wrap each difference into (-pi, pi], and keep the largest.
+# np.subtract(*ak.unzip(...)) is what differences the two members of a pair
+# without naming it twice; a lambda over ak.combinations(..., fields=["a","b"])
+# is equivalent and reads a little better if this ever needs editing.
+#
+# Events with fewer than two selected clusters have no pair, so ak.max returns
+# None and the fill drops them (weights stay aligned) rather than banking them
+# at zero -- "no pair" is not "a pair at dphi = 0".
+max_dphi_cluster_sel:
+  expression: >-
+    ak.max(abs((np.subtract(*ak.unzip(ak.combinations(
+    ak.concatenate([events.cscCluster.phi[events.csc_cluster_sel],
+    events.dtCluster.phi[events.dt_cluster_sel]], axis=1),
+    2, axis=1))) + np.pi) % (2 * np.pi) - np.pi), axis=1)
+  bins: 32
+  lo: 0
+  hi: 3.14159265
+  # The axis stops at pi because a wrapped |dphi| cannot exceed it.  Rounding
+  # the edge up to 3.2 instead leaves the last bin only ~40% reachable, which
+  # draws as a sharp drop in the final bin and reads like a physical feature.
+  # Values landing exactly on pi are folded back by the default flow: sum.
+  label: 'max $|\Delta\phi|$ between selected MDS clusters'

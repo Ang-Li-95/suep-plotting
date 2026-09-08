@@ -54,6 +54,19 @@ def test_missing_proxy_warns_instead_of_failing_silently(config_set, tmp_path,
     assert "does not exist" in capsys.readouterr().out
 
 
+def test_the_array_is_never_throttled(config_set, tmp_path):
+    """No `%N` on the array directive: tasks run as wide as Slurm allows.
+
+    There used to be a --max-concurrent flag adding `%N`; it was removed, and a
+    throttle must not creep back in -- the scheduler's own limits are what
+    should decide how many tasks run at once.
+    """
+    script = _generate(config_set, tmp_path)
+    array = [ln for ln in script.splitlines() if "--array=" in ln]
+    assert array, "no array directive emitted"
+    assert "%" not in array[0], f"array directive is throttled: {array[0]}"
+
+
 def test_qos_directive_is_emitted_only_when_asked(config_set, tmp_path):
     """--time above the default QOS's cap is rejected at submit without this."""
     assert "#SBATCH --qos=c_medium" in _generate(

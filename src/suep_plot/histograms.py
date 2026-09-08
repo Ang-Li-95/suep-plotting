@@ -114,6 +114,63 @@ def load_selection_defs(path: str) -> dict:
     return load_config_file(path)
 
 
+def attach_selection_columns(events, sel_defs: dict):
+    """Attach every ``selections.yaml`` mask to *events* as a column of its name.
+
+    A selection is a named boolean array, which makes it exactly the kind of
+    thing an expression wants to reach: after this, ``electron_sel`` is
+    available as ``events.electron_sel``, so a histogram counts what the cut
+    keeps without restating it::
+
+        # selections.yaml -- the cut, written once
+        electron_sel:
+          level: object
+          collection: Electron
+          expression: "(events.Electron.pt > 10) & (events.Electron.cutBased >= 1)"
+
+        # histograms.yaml -- reaches for the mask, never re-derives it
+        n_electron_sel:
+          expression: "ak.sum(events.electron_sel, axis=1)"
+
+    Object-level masks arrive jagged, so ``ak.sum(..., axis=1)`` is the
+    multiplicity and ``ak.any(..., axis=1)`` the "has one" flag; event-level
+    masks are flat and usable directly. Because the column is the selection,
+    the plot and the cut cannot drift apart -- the alternative is two copies of
+    the same physics, and retuning a working point silently moves only one.
+
+    Called once per chunk, after the derived columns are attached, so masks over
+    derived collections (``events.cscCluster.matched``) work like any other.
+
+    Two things are deliberately quiet rather than fatal:
+
+    * A selection whose expression does not evaluate on *this* sample is
+      skipped. Config sets are shared across samples with different content,
+      and a genuinely broken expression is already reported by the one-time
+      expression validation.
+    * A selection whose name is already a field of ``events`` is skipped, with a
+      warning. Shadowing a real branch (a selection named ``Jet``) would change
+      what every other expression means.
+
+    Returns *events* with the columns added.
+    """
+    for name, cfg in sel_defs.items():
+        expr = cfg.get("expression")
+        if not expr:
+            continue
+        if name in events.fields:
+            print(f"  (selection '{name}' is already a field of events; "
+                  "not attaching it as a column)")
+            continue
+        try:
+            mask = _compile_expr(expr)(events)
+        except Exception:  # noqa: BLE001 - typos are reported by the validation pass
+            continue
+        if isinstance(mask, ak.Array):
+            mask = ak.fill_none(mask, False)
+        events = ak.with_field(events, mask, name)
+    return events
+
+
 def is_2d(cfg: dict) -> bool:
     return "expression_x" in cfg and "expression_y" in cfg
 
@@ -159,10 +216,15 @@ def _compile_expr(expr: str):
     code = compile(expr, "<config expression>", "eval")
 
     def _eval(events):
+        # One namespace, passed as eval's *globals*, deliberately: a name in
+        # eval's locals is invisible to a nested scope, so with the two split a
+        # lambda or comprehension in a config expression died with
+        # "NameError: name 'ak' is not defined".  Globals are what nested
+        # scopes resolve against, so this is what makes them work.
         return eval(  # noqa: S307 - trusted config expressions
             code,
-            {"__builtins__": _SAFE_BUILTINS},
-            {"events": events, "ev": events, "ak": ak, "np": np},
+            {"__builtins__": _SAFE_BUILTINS,
+             "events": events, "ev": events, "ak": ak, "np": np},
         )
 
     return _eval

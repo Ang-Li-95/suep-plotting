@@ -375,6 +375,7 @@ say so with `_extends:` and carry only the difference — see
 | [`configs/common_clustersrc/`](configs/common_clustersrc/) | **Base, not a study.** `common` with every per-object cluster histogram cut to one named population (`<sys>_cluster_src`), which the six sets below define. | no |
 | [`configs/configs_mds_src_signal/`](configs/configs_mds_src_signal/), [`_dy_jet/`](configs/configs_mds_src_dy_jet/), [`_dy_muon/`](configs/configs_mds_src_dy_muon/), [`_dy_iso/`](configs/configs_mds_src_dy_iso/), [`_zerobias/`](configs/configs_mds_src_zerobias/), [`_cosmics/`](configs/configs_mds_src_cosmics/) | **One study in six sets:** where a muon-system cluster comes from — gen-matched LLP shower, DY cluster in a jet, on a muon, or isolated from both, isolated ZeroBias cluster, Cosmics. One population per set, same fills, overlaid as six samples. See [the section below](#where-a-cluster-comes-from-six-populations-one-set-of-plots). | signal leg only |
 | [`configs/configs_mds_sigonly/`](configs/configs_mds_sigonly/) | Signal samples only — quick turnaround. | yes |
+| [`configs/configs_mds_objects/`](configs/configs_mds_objects/) | Prompt objects and MDS cluster multiplicity over the whole Gen3 signal grid: post-JERC PUPPI MET pT/φ, jet pT/η/φ (inclusive and selected), the jet / muon / electron / photon / tau counts after selection, and the CSC / DT / combined cluster counts inclusive and truth-matched to an LLP. Standalone — no `_extends`, reco steps only. | matched counts only |
 | [`configs/configs_mds_trigger/`](configs/configs_mds_trigger/) | HLT/L1 MDS trigger studies. | yes |
 | [`configs/configs_g4compare/`](configs/configs_g4compare/) | Geant4 / generator comparison of the shower simulation. | yes |
 | [`configs/configs_mds_rpcmerge/`](configs/configs_mds_rpcmerge/), [`_rpcmerge_data/`](configs/configs_mds_rpcmerge_data/) | The default studies with `rpc_mode: merge` instead of `match` — RPC rechits clustered *with* the system they overlap, so they also count towards the per-LLP hit totals. A handful of `_extends` overrides. | as the base |
@@ -461,10 +462,10 @@ export X509_USER_PROXY=$HOME/private/.proxy      # jobs inherit this
 
 suep-submit -c configs/configs_mds -o output_mds --conda-env mds \
     --time 08:00:00 --mem 8000 --partition c \
-    --chunk-size 10000 --files-per-job 5 --max-concurrent 50 --dry-run   # inspect
+    --chunk-size 10000 --files-per-job 5 --dry-run   # inspect
 suep-submit -c configs/configs_mds -o output_mds --conda-env mds \
     --time 08:00:00 --mem 8000 --partition c \
-    --chunk-size 10000 --files-per-job 5 --max-concurrent 50             # submit
+    --chunk-size 10000 --files-per-job 5             # submit
 
 squeue -u $USER                                  # watch
 suep-status -o output_mds                         # missing / truncated pickles
@@ -481,7 +482,6 @@ bash output_mds/slurm/merge_and_plot.sh            # once complete -> output_mds
 | `--chunk-size` | `100000` | Events per chunk. |
 | `--workers` | `1` | Worker processes per job (also sets `--cpus-per-task`). |
 | `--files-per-job` | — | Split each sample into tasks of this many files; parts (`<sample>.part<k>.pkl`) are summed by `suep-plot`. |
-| `--max-concurrent` | — | Cap on simultaneous array tasks (`%N`). |
 | `--dry-run` | off | Generate scripts without submitting. |
 
 `--files-per-job` is how you put more nodes in flight on a big sample: 25 files
@@ -508,7 +508,7 @@ merge as a silently incomplete sample. `suep-status` checks both against
 suep-status -o output_mds                    # report only
 suep-status -o output_mds --no-verify        # existence check only (fast, large runs)
 suep-status -o output_mds --resubmit --dry-run
-suep-status -o output_mds --resubmit --max-concurrent 50
+suep-status -o output_mds --resubmit
 ```
 
 `--resubmit` runs `sbatch --array=<missing indices>` over the *original*

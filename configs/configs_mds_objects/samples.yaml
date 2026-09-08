@@ -1,0 +1,18 @@
+# The full Gen3 signal grid: mDark = 2 / 5 / 12 GeV x T = 1 / 2, all at
+# mMed=125, ctau=5 m.  Signal only -- this set is about what the prompt
+# objects and the MDS cluster multiplicity look like in signal, so there is
+# no background or data leg to overlay.
+#
+# The registry's other `group: signal` entries are deliberately left out:
+# suep_temp2_gen2 / suep_temp2_preG4fix are pinned to older productions for
+# ../configs_g4compare (the pre-fix one has the broken displaced SIM),
+# dy_central_50to120 is a DY sample carrying that group only so it draws as a
+# step curve, and suep_mMed125_mDark2 is a single local test file.
+_registry: ../../datasets.yaml
+
+suep_mDark2_temp1:            # mDark=2, T=1
+suep_mDark2_temp2:            # mDark=2, T=2
+suep_mDark5_temp1:
+suep_mDark5_temp2:
+suep_mDark12_temp1:
+suep_mDark12_temp2:

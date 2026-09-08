@@ -295,6 +295,34 @@ def test_the_prompt_object_counts_come_from_the_same_selection():
     assert "n_jet_sel_foriso" not in ctx.events.fields
 
 
+def test_an_integer_mask_would_index_rather_than_filter():
+    """Why a working-point *index* needs an explicit '>=' in a selection.
+
+    Electron_cutBased / Photon_cutBased / the DeepTau branches are WP indices,
+    not flags.  Left bare in the '&' chain the mask comes out an integer, and
+    awkward then reads it as a list of positions: the selection silently
+    returns the wrong objects and the wrong count instead of failing.  This
+    pins the behaviour that makes that a real trap, so the comment in
+    configs/configs_mds_objects/selections.yaml stays true.
+    """
+    ak = pytest.importorskip("awkward")
+
+    photons = ak.Array([[{"pt": 30.0, "cutBased": 1},     # loose -> keep
+                         {"pt": 40.0, "cutBased": 0},     # fail  -> drop
+                         {"pt": 50.0, "cutBased": 3}]])   # tight -> keep
+    events = ak.zip({"Photon": photons}, depth_limit=1)
+
+    bare = {"level": "object", "collection": "Photon",
+            "expression": "(events.Photon.pt > 15) & events.Photon.cutBased"}
+    wrong = columns._selected_objects(events, "photon_sel", bare)
+    assert ak.to_list(ak.num(wrong)) == [3]               # not 2
+
+    explicit = {"level": "object", "collection": "Photon",
+                "expression": "(events.Photon.pt > 15) & (events.Photon.cutBased >= 1)"}
+    right = columns._selected_objects(events, "photon_sel", explicit)
+    assert ak.to_list(right.pt) == [[30.0, 50.0]]
+
+
 def test_a_missing_iso_selection_is_fatal():
     """Silently dropping drMuon would just empty every isolation plot."""
     ak = pytest.importorskip("awkward")

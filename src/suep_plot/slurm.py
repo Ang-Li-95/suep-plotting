@@ -21,7 +21,6 @@ def submit_jobs(
     qos: str | None = None,
     proxy: str | None = None,
     workers: int = 1,
-    max_concurrent: int | None = None,
     files_per_job: int | None = None,
     dry_run: bool = False,
     samples_filter: list[str] | None = None,
@@ -104,8 +103,6 @@ def submit_jobs(
               "jobs reading root:// samples will fail to authenticate")
 
     array_spec = f"0-{n_jobs - 1}"
-    if max_concurrent:
-        array_spec += f"%{max_concurrent}"
 
     directives = [
         "#SBATCH --job-name=suep_plot",

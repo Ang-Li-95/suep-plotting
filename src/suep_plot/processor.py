@@ -32,6 +32,7 @@ from .config import FILL_CONFIG_FILES, config_sources, load_config_file
 from .corrections import apply_corrections, build_correctors, load_correction_defs
 from .histograms import (
     _compile_expr,
+    attach_selection_columns,
     build_histograms,
     fill_histograms,
     load_histogram_defs,
@@ -216,6 +217,9 @@ class SuepProcessor(processor.ProcessorABC):
 
         if self.derive_fn is not None:
             events = self.derive_fn(events, self.settings, self.sel_defs)
+        # After derive(), so a selection over a derived collection becomes a
+        # column too.  See histograms.attach_selection_columns.
+        events = attach_selection_columns(events, self.sel_defs)
 
         n = len(events)
         weights = Weights(n, storeIndividual=False)
@@ -309,6 +313,9 @@ def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn
             events = derive_fn(events, settings, sel_defs)
         except Exception as e:  # noqa: BLE001
             print(f"  (custom derive() failed during validation: {e})")
+    # The same columns the fill path attaches, so a histogram reading
+    # events.<selection> is validated rather than reported as a typo.
+    events = attach_selection_columns(events, sel_defs)
 
     bad = []
     for section, defs in (("histogram", hist_defs), ("selection", sel_defs)):

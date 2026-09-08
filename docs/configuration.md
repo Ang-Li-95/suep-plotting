@@ -319,6 +319,59 @@ applied to an event-level histogram they mean "require ≥1 passing object"
 Pre-defined: `baseline`, `high_ht`, `has_muon`, `has_csc_cluster`,
 `has_dt_cluster`, `met_gt50` (event-level) and `good_jets` (object-level).
 
+#### Selections as columns
+
+Every selection is also attached to `events` as a **column of its own name**, so
+an expression anywhere else in the config set can reach the mask instead of
+re-deriving it:
+
+```yaml
+# selections.yaml -- the cut, written once
+electron_sel:
+  level: object
+  collection: Electron
+  expression: "(events.Electron.pt > 10) & (events.Electron.cutBased >= 1)"
+```
+
+```yaml
+# histograms.yaml -- counts what the cut keeps, without repeating it
+n_electron_sel:
+  expression: "ak.sum(events.electron_sel, axis=1)"
+  bins: 6
+  lo: -0.5
+  hi: 5.5
+  label: '$N_{e}$'
+```
+
+So **adding a multiplicity plot is one selection plus one histogram, and no
+Python.** The reason to prefer this over restating the cut in the histogram
+expression is that the restated version is two copies of the same physics: the
+first time a working point is retuned, only one moves, and the plot then quietly
+disagrees with the selection it is named after.
+
+Object-level masks keep their per-object structure, so:
+
+| Want | Expression |
+|---|---|
+| how many objects pass | `ak.sum(events.electron_sel, axis=1)` |
+| does any object pass | `ak.any(events.electron_sel, axis=1)` |
+| an event-level mask | `events.high_met` — already flat, use it directly |
+
+Details:
+
+- Attached **after** the `custom/columns.py` derived columns, so a selection over
+  a derived collection (`events.cscCluster.matched`) becomes a column too.
+- Missing values become `False`, so a mask built with `ak.firsts` is safe to sum
+  and to filter with.
+- A selection that does not evaluate on a given sample is **skipped**, not fatal
+  — config sets are shared across samples with different content, and a genuinely
+  broken expression is already reported by the startup expression check.
+- A selection whose name is already a field of `events` is skipped with a
+  warning: a selection named `Jet` must not redefine the collection.
+- This is independent of listing the selection under a histogram's
+  `selections:`. That still filters the fill; this makes the mask itself
+  readable as data.
+
 ### corrections.yaml
 
 Scale factors, applied via coffea's tooling. All entries optional; an empty file

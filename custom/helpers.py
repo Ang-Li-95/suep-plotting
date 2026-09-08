@@ -76,10 +76,13 @@ def _selected_objects(events, name, selection):
         return None
 
     try:
+        # One namespace, as eval's *globals* -- see histograms._compile_expr:
+        # names in eval's locals are invisible to nested scopes, which would
+        # make a lambda or comprehension in a selection fail on 'ak'.
         keep = eval(  # noqa: S307 - trusted config expressions
             selection["expression"],
-            {"__builtins__": _SAFE_BUILTINS},
-            {"events": events, "ev": events, "ak": ak, "np": np},
+            {"__builtins__": _SAFE_BUILTINS,
+             "events": events, "ev": events, "ak": ak, "np": np},
         )
     except Exception as exc:
         raise ValueError(

@@ -124,11 +124,16 @@ reports how many events contain such an object.
 
 The step also attaches the **multiplicity** of each prompt collection as an
 event-level column named after the selection — `events.n_muon_sel_foriso`,
-`events.n_jet_sel_foriso`. That is what the `n_jet_sel_foriso` histogram plots:
-the count and the isolation come from the same selection, so retuning the cut
-moves both and they cannot disagree. (A collection absent from the file gets no
-column, so an expression referencing it fails at validation rather than
-plotting zeros.)
+`events.n_jet_sel_foriso`. That is what the `n_jet_sel_foriso` histogram in
+`configs/common/` plots: the count and the isolation come from the same
+selection, so retuning the cut moves both and they cannot disagree. (A
+collection absent from the file gets no column, so an expression referencing it
+fails at validation rather than plotting zeros.)
+
+> For counting **any** selection, not just these two, see
+> [selections as columns](configuration.md#selections-as-columns): the framework
+> attaches every `selections.yaml` mask as `events.<name>`, so a multiplicity is
+> `ak.sum(events.<name>, axis=1)` with no step involved.
 
 Each config set spells the pair out, so a cut can be retuned in one study
 without moving the others. `configs_mds`, `configs_mds_signal` and

@@ -173,8 +173,7 @@ def _warn_columns_changed(job_sh: Path) -> None:
           "(suep-run --force / a fresh suep-submit).")
 
 
-def resubmit(output_dir: str, verify: bool = True, dry_run: bool = False,
-             max_concurrent: int | None = None) -> int:
+def resubmit(output_dir: str, verify: bool = True, dry_run: bool = False) -> int:
     """Resubmit exactly the incomplete array indices over the original job.sh.
 
     Returns the number of tasks resubmitted (0 when the run is complete).
@@ -191,8 +190,6 @@ def resubmit(output_dir: str, verify: bool = True, dry_run: bool = False,
     _warn_columns_changed(job_sh)
 
     array = _format_ranges([t.index for t in redo])
-    if max_concurrent:
-        array += f"%{max_concurrent}"
     cmd = ["sbatch", f"--array={array}", str(job_sh)]
 
     if dry_run or not shutil.which("sbatch"):

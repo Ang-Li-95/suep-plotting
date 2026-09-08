@@ -1,0 +1,3 @@
+# No scale factors: this set is a shape comparison across the signal grid,
+# and no MC/data agreement is being claimed.  Empty is valid -- see
+# docs/configuration.md.

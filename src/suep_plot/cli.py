@@ -215,15 +215,12 @@ def status(argv=None):
     parser.add_argument("--no-verify", action="store_true",
                         help="Only check that pickles exist and are non-empty; skip "
                              "reading them back (faster, misses truncated files)")
-    parser.add_argument("--max-concurrent", type=int, default=None,
-                        help="(with --resubmit) max simultaneous array tasks")
     args = parser.parse_args(argv)
 
     from .status import report, resubmit
     verify = not args.no_verify
     if args.resubmit:
-        n = resubmit(args.output_dir, verify=verify, dry_run=args.dry_run,
-                     max_concurrent=args.max_concurrent)
+        n = resubmit(args.output_dir, verify=verify, dry_run=args.dry_run)
         return 0 if n == 0 else 1
     return 0 if not report(args.output_dir, verify) else 1
 
@@ -251,7 +248,6 @@ def submit(argv=None):
     parser.add_argument("--chunk-size", type=int, default=100_000, help="Events per chunk")
     parser.add_argument("--workers", type=int, default=1,
                         help="Worker processes per job (also sets --cpus-per-task)")
-    parser.add_argument("--max-concurrent", type=int, default=None, help="Max simultaneous array tasks")
     parser.add_argument("--files-per-job", type=int, default=None,
                         help="Split each sample into array tasks of this many files "
                              "(default: one task per sample); parts are summed by suep-plot")
@@ -274,7 +270,6 @@ def submit(argv=None):
         conda_env=args.conda_env,
         chunk_size=args.chunk_size,
         workers=args.workers,
-        max_concurrent=args.max_concurrent,
         files_per_job=args.files_per_job,
         dry_run=args.dry_run,
     )

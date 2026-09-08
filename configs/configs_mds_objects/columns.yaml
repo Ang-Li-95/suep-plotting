@@ -1,0 +1,19 @@
+# ── derive() settings ─────────────────────────────────────────────
+# The shared clustering and jet calibration from ../common, and its four reco
+# steps -- nothing more:
+#
+#   jerc               JEC on events.Jet plus the Type-1 PuppiMET rebuilt from
+#                      RawPuppiMET, and JER smearing on MC.  This is what makes
+#                      events.PuppiMET.pt / .phi and events.Jet.pt below the
+#                      post-JERC quantities.
+#   jet_id             events.Jet.tightLepVetoId, which jet_sel_foriso needs
+#                      (2024 NanoAOD no longer stores Jet_jetId).
+#   clusters           events.cscCluster / events.dtCluster, including their
+#                      `matched` flag -- the LLP truth match is done inside the
+#                      clustering from the rechit llpIdx, so the cluster <-> LLP
+#                      counts below need no gen step.
+#   cluster_isolation  attaches events.n_muon_sel_foriso / n_jet_sel_foriso.
+#
+# No llp / llp_hits / llp_reco / llp_shape: this set fills no per-LLP variable,
+# and skipping them is a large saving on the signal grid.
+_extends: ../common
