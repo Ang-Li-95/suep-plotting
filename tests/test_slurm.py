@@ -69,8 +69,8 @@ def test_the_array_is_never_throttled(config_set, tmp_path):
 
 def test_qos_directive_is_emitted_only_when_asked(config_set, tmp_path):
     """--time above the default QOS's cap is rejected at submit without this."""
-    assert "#SBATCH --qos=c_medium" in _generate(
-        config_set, tmp_path, qos="c_medium", time_limit="20:00:00")
+    assert "#SBATCH --qos=medium" in _generate(
+        config_set, tmp_path, qos="medium", time_limit="20:00:00")
     assert "--qos" not in _generate(config_set, tmp_path)
 
 

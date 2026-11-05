@@ -237,8 +237,8 @@ def submit(argv=None):
     parser.add_argument("--account", default=None, help="Slurm account")
     parser.add_argument("--qos", default=None,
                         help="Slurm QOS; needed for --time over the default "
-                             "QOS's cap (on CLIP c_short caps at 8h, "
-                             "c_medium at 2 days, c_long at 14 days)")
+                             "QOS's cap (on CBE.next short caps at 8h, "
+                             "medium at 2 days, long at 14 days)")
     parser.add_argument("--time", default="04:00:00", help="Wall time per job")
     parser.add_argument("--mem", default="8000", help="Memory in MB per job")
     parser.add_argument("--conda-env", default="mds", help="Conda environment to activate in jobs")

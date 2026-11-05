@@ -846,7 +846,7 @@ export X509_USER_PROXY=$HOME/private/.proxy
 OUT=/groups/hephy/cms/ang.li/suep_output/clustersrc_gen3_minpts10_dr04
 
 # the shard sizes are per-sample: a Cosmics file is ~680k dense rechit events
-# and one alone outruns the 8 h c_short cap, a ZeroBias file only ~20k.
+# and one alone outruns the 8 h short cap, a ZeroBias file only ~20k.
 suep-submit -c configs/configs_mds_src_signal   -o $OUT/sig      --conda-env mds \
     --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
 suep-submit -c configs/configs_mds_src_dy_jet   -o $OUT/dy_jet   --conda-env mds \
@@ -858,7 +858,7 @@ suep-submit -c configs/configs_mds_src_dy_iso   -o $OUT/dy_iso   --conda-env mds
 suep-submit -c configs/configs_mds_src_zerobias -o $OUT/zerobias --conda-env mds \
     --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 25
 suep-submit -c configs/configs_mds_src_cosmics  -o $OUT/cosmics  --conda-env mds \
-    --partition c --qos c_medium --time 24:00:00 --mem 16000 \
+    --partition c --qos medium --time 24:00:00 --mem 16000 \
     --chunk-size 10000 --files-per-job 1
 
 for d in sig dy_jet dy_muon dy_iso zerobias cosmics; do suep-status -o $OUT/$d; done
