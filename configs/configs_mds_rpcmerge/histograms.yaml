@@ -12,82 +12,73 @@
 
 _extends: ../configs_mds_signal
 
-# The RPC region of each system now counts towards its per-LLP hit total.
-llp_nhits_csc:
-  bins: 100
-  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
-  hi: 200
-  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP
-  lo: 0
-  log_y: true
-  per_object: true
-llp_nhits_dt:
-  bins: 100
-  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
-  hi: 200
-  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP
-  lo: 0
-  log_y: true
-  per_object: true
-llpcsc_nhits_csc:
-  bins: 100
-  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
-  hi: 200
-  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
-  lo: 0
-  log_y: true
-  per_object: true
-  selections:
-  - llp_in_csc
-llpcsc_nhits_csc_den:
-  bins: 100
-  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
-  hi: 200
-  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
-  lo: 0
-  log_y: true
-  per_object: true
-  selections:
-  - llp_in_csc
-llpcsc_nhits_csc_num:
-  bins: 100
-  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap)
-  hi: 200
-  label: $N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC
-  lo: 0
-  log_y: true
-  per_object: true
-  selections:
-  - llp_in_csc
-  - llp_reco_csc
-llpdt_nhits_dt:
-  bins: 100
-  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
-  hi: 200
-  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
-  lo: 0
-  log_y: true
-  per_object: true
-  selections:
-  - llp_in_dt
-llpdt_nhits_dt_den:
-  bins: 100
-  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
-  hi: 200
-  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
-  lo: 0
-  log_y: true
-  per_object: true
-  selections:
-  - llp_in_dt
-llpdt_nhits_dt_num:
-  bins: 100
-  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel)
-  hi: 200
-  label: $N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT
-  lo: 0
-  log_y: true
-  per_object: true
-  selections:
-  - llp_in_dt
-  - llp_reco_dt
+regions:
+  llp:
+    objects:
+      all:
+        vars: &llp_all
+          - {var: llp_pt, bins: [50, 0, 50], log_y: true}
+          - llp_phi
+          - {var: llp_energy, bins: [50, 0, 100], log_y: true}
+          - {var: llp_decay_absz, bins: [60, 0, 2000], log_y: true}
+          - llp_decay_eta
+          - {name: llp_decay_rz, x: {var: llp_decay_absz, bins: [60, 0, 1500]}, y: {var: llp_decay_r, bins: [60, 0, 900]}}
+          - llp_ctau
+          - llp_llab
+          - llp_betagamma
+          - llp_nhits_csc_rpc
+          - llp_nhits_dt_rpc
+          - llp_nhits_rpc
+          - llp_nhits_total
+          - {var: llp_pt, name: llp_pt_all_den}
+          - llp_eta
+          - {var: llp_decay_r, log_y: true}
+          - {var: llp_decay_absz, name: llp_absdecayz_all_den}
+          - {name: llp_rz_all_den, x: llp_decay_absz, y: llp_decay_r}
+          - {var: llp_energy, name: llp_energy_all_den}
+      in_csc:
+        cut: llp_in_csc
+        label: decay in CSC
+        vars: &llp_in_csc
+          - llp_pt
+          - llp_nhits_csc_rpc
+          - llp_eta
+          - llp_decay_r
+          - llp_decay_absz
+          - {name: llp_rz_den_csc, x: llp_decay_absz, y: llp_decay_r}
+          - llp_nrecocluster_csc
+          - llp_energy
+      in_dt:
+        cut: llp_in_dt
+        label: decay in DT
+        vars: &llp_in_dt
+          - llp_pt
+          - llp_nhits_dt_rpc
+          - llp_eta
+          - llp_decay_r
+          - llp_decay_absz
+          - {name: llp_rz_den_dt, x: llp_decay_absz, y: llp_decay_r}
+          - llp_nrecocluster_dt
+          - llp_energy
+      in_csc_reco:
+        cut: [llp_in_csc, llp_reco_csc]
+        label: decay in CSC, reconstructed
+        vars: &llp_in_csc_reco
+          - llp_pt
+          - llp_nhits_csc_rpc
+          - llp_eta
+          - llp_decay_r
+          - llp_decay_absz
+          - {name: llp_rz_num_csc, x: llp_decay_absz, y: llp_decay_r}
+          - llp_energy
+      in_dt_reco:
+        cut: [llp_in_dt, llp_reco_dt]
+        label: decay in DT, reconstructed
+        vars: &llp_in_dt_reco
+          - llp_pt
+          - llp_nhits_dt_rpc
+          - llp_eta
+          - llp_decay_r
+          - llp_decay_absz
+          - {name: llp_rz_num_dt, x: llp_decay_absz, y: llp_decay_r}
+          - llp_energy

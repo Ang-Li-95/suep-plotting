@@ -64,11 +64,11 @@ python -m suep_plot.cli run -c configs/configs_smoke -o "$OUT" -s suep_mDark2_te
     --file-list "$OUT/one.txt" --chunk-size 2000 --force
 python -m suep_plot.cli plot "$OUT" -o "$OUT/plots" -c configs/configs_smoke --formats png
 
-for fig in csc_cluster_size csc_cluster_dr_muon; do
+for fig in csc/all/csc_cluster_size csc/all/csc_cluster_dr_muon; do
     if [ ! "$OUT/plots/$fig.png" -nt "$MARKER" ]; then
         echo "FAIL: $fig.png was not produced by this run" >&2
         exit 1
     fi
 done
 echo
-echo "OK -- $(ls "$OUT"/*.pkl | wc -l) pickle, $(ls "$OUT"/plots/*.png | wc -l) figure(s) in $OUT"
+echo "OK -- $(ls "$OUT"/*.pkl | wc -l) pickle, $(find "$OUT/plots" -name '*.png' | wc -l) figure(s) in $OUT"

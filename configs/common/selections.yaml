@@ -19,12 +19,10 @@ _axes:
 # mask is over; tightLepVetoId comes from the 'jet_id' step, since 2024
 # NanoAOD no longer stores Jet_jetId.
 muon_sel_foriso:
-  level: object
   collection: Muon
   expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
 
 jet_sel_foriso:
-  level: object
   collection: Jet
   expression: "(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId"
 
@@ -32,23 +30,14 @@ _repeat:
   - over: systems
     defs:
       # Event-level bookkeeping (cutflow.txt)
-      has_<SYS>_cluster:
-        expression: "ak.num(events.<SYS>Cluster) >= 1"
+      has_<SYS>_cluster: "ak.num(events.<SYS>Cluster) >= 1"
       # Cluster isolation from prompt activity.  In events with no muon / jet
       # at all the field carries the sentinel NO_OBJECT_DR = 999, so those
       # maximally isolated clusters pass the same comparison with no special
       # case.
-      <SYS>_cluster_iso_muon:
-        level: object
-        expression: "events.<SYS>Cluster.drMuon >= 0.4"
-      <SYS>_cluster_iso_jet:
-        level: object
-        expression: "events.<SYS>Cluster.drJet >= 0.4"
+      <SYS>_cluster_iso_muon: "events.<SYS>Cluster.drMuon >= 0.4"
+      <SYS>_cluster_iso_jet: "events.<SYS>Cluster.drJet >= 0.4"
       # RPC content of the cluster: whether it picked up any RPC rechit at all,
       # and whether its innermost hit came from something other than RPC.
-      <SYS>_cluster_has_rpc:
-        level: object
-        expression: "events.<SYS>Cluster.nRPCHits > 0"
-      <SYS>_cluster_first_not_rpc:
-        level: object
-        expression: "events.<SYS>Cluster.firstSystem != 2"
+      <SYS>_cluster_has_rpc: "events.<SYS>Cluster.nRPCHits > 0"
+      <SYS>_cluster_first_not_rpc: "events.<SYS>Cluster.firstSystem != 2"

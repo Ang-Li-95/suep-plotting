@@ -193,7 +193,8 @@ def test_isolation_selections_keep_clusters_with_no_muon_or_jet():
     # Through the loader: the study inherits these from ../common.
     sels = load_selection_defs(repo / "selections.yaml")
     defs = load_histogram_defs(repo / "histograms.yaml")
-    use = {k: defs[k] for k in ("csc_cluster_size", "csc_cluster_size_iso_muon")}
+    use = {k: defs[k] for k in ("csc/all/csc_cluster_size",
+                                "csc/iso_muon/csc_cluster_size")}
 
     clusters = ak.Array([
         [{"size": 100.0, "drMuon": 0.10, "drJet": 2.0}],   # close to a muon -> cut
@@ -208,5 +209,5 @@ def test_isolation_selections_keep_clusters_with_no_muon_or_jet():
     def total(name):
         return hists[name][{"dataset": "s"}].sum(flow=True).value
 
-    assert total("csc_cluster_size") == pytest.approx(3.0)
-    assert total("csc_cluster_size_iso_muon") == pytest.approx(2.0)
+    assert total("csc/all/csc_cluster_size") == pytest.approx(3.0)
+    assert total("csc/iso_muon/csc_cluster_size") == pytest.approx(2.0)

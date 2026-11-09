@@ -4,110 +4,177 @@
 
 _extends: ../common
 
-_variant_sets:
-  csc_variants:
-    iso_both:
-      label_prefix: 'muon+jet-isolated '
-      selections:
-      - csc_cluster_iso_muon
-      - csc_cluster_iso_jet
-    iso_jet:
-      label_prefix: 'jet-isolated '
-      selections:
-      - csc_cluster_iso_jet
-    iso_muon:
-      label_prefix: 'muon-isolated '
-      selections:
-      - csc_cluster_iso_muon
-  dt_variants:
-    iso_both:
-      label_prefix: 'muon+jet-isolated '
-      selections:
-      - dt_cluster_iso_muon
-      - dt_cluster_iso_jet
-    iso_jet:
-      label_prefix: 'jet-isolated '
-      selections:
-      - dt_cluster_iso_jet
-    iso_muon:
-      label_prefix: 'muon-isolated '
-      selections:
-      - dt_cluster_iso_muon
-
-# ── The inherited reco variables, split by the sets above ─────────
-# Each line overrides one key of a histogram defined in ../common; the
-# binning, expression and label come from there.  Add a cluster variable to
-# ../common and give it a line here for it to be split too.
-
-csc_cluster_size: {variants: csc_variants}
-csc_cluster_eta: {variants: csc_variants}
-csc_cluster_phi: {variants: csc_variants}
-csc_cluster_eta_spread: {variants: csc_variants}
-csc_cluster_phi_spread: {variants: csc_variants}
-csc_cluster_nstation: {variants: csc_variants}
-csc_cluster_time: {variants: csc_variants}
-csc_cluster_nlayer: {variants: csc_variants}
-csc_cluster_station_span: {variants: csc_variants}
-csc_cluster_first_chamber: {selections: [csc_cluster_first_not_rpc], variants: csc_variants}
-csc_cluster_first_station: {selections: [csc_cluster_first_not_rpc], variants: csc_variants}
-csc_cluster_avg_station: {variants: csc_variants}
-csc_cluster_max_station_frac: {variants: csc_variants}
-csc_cluster_layer_hits_mean: {variants: csc_variants}
-csc_cluster_layer_hits_rms: {variants: csc_variants}
-csc_cluster_layer_hits_relrms: {variants: csc_variants}
-csc_cluster_max_layer_frac: {variants: csc_variants}
-csc_cluster_nzlayer: {variants: csc_variants}
-csc_cluster_zlayer_hits_mean: {variants: csc_variants}
-csc_cluster_zlayer_hits_rms: {variants: csc_variants}
-csc_cluster_zlayer_hits_relrms: {variants: csc_variants}
-csc_cluster_max_zlayer_frac: {variants: csc_variants}
-csc_cluster_r_spread: {variants: csc_variants}
-csc_cluster_z_spread: {variants: csc_variants}
-csc_cluster_dr_muon: {variants: csc_variants}
-csc_cluster_dr_jet: {variants: csc_variants}
-csc_cluster_dr_muon_vs_jet: {variants: csc_variants}
-csc_cluster_first_system: {variants: csc_variants}
-csc_cluster_n_rpc_hits: {variants: csc_variants}
-csc_cluster_n_rpc_hits_bx0: {variants: csc_variants}
-csc_cluster_oot_hit_frac: {variants: csc_variants}
-csc_cluster_rpc_bx: {variants: csc_variants}
-csc_cluster_rpc_bx_median: {variants: csc_variants}
-csc_cluster_rpc_bx_spread: {variants: csc_variants}
-csc_cluster_rpc_hit_frac: {variants: csc_variants}
-csc_cluster_rpc_out_of_time_frac: {variants: csc_variants}
-csc_cluster_rpc_time_from_bx: {variants: csc_variants}
-csc_cluster_time_spread: {variants: csc_variants}
-
-dt_cluster_size: {variants: dt_variants}
-dt_cluster_eta: {variants: dt_variants}
-dt_cluster_phi: {variants: dt_variants}
-dt_cluster_eta_spread: {variants: dt_variants}
-dt_cluster_phi_spread: {variants: dt_variants}
-dt_cluster_nstation: {variants: dt_variants}
-dt_cluster_nlayer: {variants: dt_variants}
-dt_cluster_station_span: {variants: dt_variants}
-dt_cluster_first_chamber: {selections: [dt_cluster_first_not_rpc], variants: dt_variants}
-dt_cluster_first_station: {selections: [dt_cluster_first_not_rpc], variants: dt_variants}
-dt_cluster_avg_station: {variants: dt_variants}
-dt_cluster_max_station_frac: {variants: dt_variants}
-dt_cluster_layer_hits_mean: {variants: dt_variants}
-dt_cluster_layer_hits_rms: {variants: dt_variants}
-dt_cluster_layer_hits_relrms: {variants: dt_variants}
-dt_cluster_max_layer_frac: {variants: dt_variants}
-dt_cluster_r_spread: {variants: dt_variants}
-dt_cluster_z_spread: {variants: dt_variants}
-dt_cluster_dr_muon: {variants: dt_variants}
-dt_cluster_dr_jet: {variants: dt_variants}
-dt_cluster_dr_muon_vs_jet: {variants: dt_variants}
-dt_cluster_first_system: {variants: dt_variants}
-dt_cluster_n_rpc_hits: {variants: dt_variants}
-dt_cluster_n_rpc_hits_bx0: {variants: dt_variants}
-dt_cluster_rpc_bx: {variants: dt_variants}
-dt_cluster_rpc_bx_median: {variants: dt_variants}
-dt_cluster_rpc_bx_spread: {variants: dt_variants}
-dt_cluster_rpc_hit_frac: {variants: dt_variants}
-dt_cluster_rpc_out_of_time_frac: {variants: dt_variants}
-dt_cluster_rpc_time_from_bx: {variants: dt_variants}
-
-# The CSC Tpeak against the RPC BX of the same cluster.
-csc_cluster_time_vs_rpc_bx_time: {variants: csc_variants}
+regions:
+  csc:
+    objects:
+      all:
+        vars: &csc_all
+          - csc_cluster_size
+          - csc_cluster_eta
+          - csc_cluster_phi
+          - csc_cluster_eta_spread
+          - csc_cluster_phi_spread
+          - csc_cluster_nstation
+          - csc_cluster_time
+          - csc_cluster_nlayer
+          - csc_cluster_station_span
+          - {var: csc_cluster_first_chamber, selections: [csc_cluster_first_not_rpc]}
+          - {var: csc_cluster_first_station, selections: [csc_cluster_first_not_rpc]}
+          - csc_cluster_avg_station
+          - csc_cluster_max_station_frac
+          - csc_cluster_layer_hits_mean
+          - csc_cluster_layer_hits_rms
+          - csc_cluster_layer_hits_relrms
+          - csc_cluster_max_layer_frac
+          - csc_cluster_nzlayer
+          - csc_cluster_zlayer_hits_mean
+          - csc_cluster_zlayer_hits_rms
+          - csc_cluster_zlayer_hits_relrms
+          - csc_cluster_max_zlayer_frac
+          - csc_cluster_r_spread
+          - csc_cluster_z_spread
+          - csc_cluster_dr_muon
+          - csc_cluster_dr_jet
+          - {name: csc_cluster_dr_muon_vs_jet, x: csc_cluster_dr_muon, y: csc_cluster_dr_jet}
+          - csc_cluster_first_system
+          - csc_cluster_n_rpc_hits
+          - csc_cluster_n_rpc_hits_bx0
+          - csc_cluster_oot_hit_frac
+          - {var: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_bx_median, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_bx_spread, selections: [csc_cluster_has_rpc]}
+          - {name: csc_cluster_rpc_bx_vs_size, x: csc_cluster_size, y: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+          - csc_cluster_rpc_hit_frac
+          - {var: csc_cluster_rpc_out_of_time_frac, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+          - csc_cluster_time_spread
+          - {name: csc_cluster_time_vs_spread, x: csc_cluster_time, y: csc_cluster_time_spread}
+          - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+      iso_both:
+        cut: [csc_cluster_iso_muon, csc_cluster_iso_jet]
+        label: muon+jet-isolated
+        vars: &csc_iso_both
+          - csc_cluster_size
+          - csc_cluster_eta
+          - csc_cluster_phi
+          - csc_cluster_eta_spread
+          - csc_cluster_phi_spread
+          - csc_cluster_nstation
+          - csc_cluster_time
+          - csc_cluster_nlayer
+          - csc_cluster_station_span
+          - {var: csc_cluster_first_chamber, selections: [csc_cluster_first_not_rpc]}
+          - {var: csc_cluster_first_station, selections: [csc_cluster_first_not_rpc]}
+          - csc_cluster_avg_station
+          - csc_cluster_max_station_frac
+          - csc_cluster_layer_hits_mean
+          - csc_cluster_layer_hits_rms
+          - csc_cluster_layer_hits_relrms
+          - csc_cluster_max_layer_frac
+          - csc_cluster_nzlayer
+          - csc_cluster_zlayer_hits_mean
+          - csc_cluster_zlayer_hits_rms
+          - csc_cluster_zlayer_hits_relrms
+          - csc_cluster_max_zlayer_frac
+          - csc_cluster_r_spread
+          - csc_cluster_z_spread
+          - csc_cluster_dr_muon
+          - csc_cluster_dr_jet
+          - {name: csc_cluster_dr_muon_vs_jet, x: csc_cluster_dr_muon, y: csc_cluster_dr_jet}
+          - csc_cluster_first_system
+          - csc_cluster_n_rpc_hits
+          - csc_cluster_n_rpc_hits_bx0
+          - csc_cluster_oot_hit_frac
+          - {var: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_bx_median, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_bx_spread, selections: [csc_cluster_has_rpc]}
+          - csc_cluster_rpc_hit_frac
+          - {var: csc_cluster_rpc_out_of_time_frac, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+          - csc_cluster_time_spread
+          - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+      iso_jet:
+        cut: csc_cluster_iso_jet
+        label: jet-isolated
+        vars: *csc_iso_both
+      iso_muon:
+        cut: csc_cluster_iso_muon
+        label: muon-isolated
+        vars: *csc_iso_both
+  dt:
+    objects:
+      all:
+        vars: &dt_all
+          - dt_cluster_size
+          - dt_cluster_eta
+          - dt_cluster_phi
+          - dt_cluster_eta_spread
+          - dt_cluster_phi_spread
+          - dt_cluster_nstation
+          - dt_cluster_nlayer
+          - dt_cluster_station_span
+          - {var: dt_cluster_first_chamber, selections: [dt_cluster_first_not_rpc]}
+          - {var: dt_cluster_first_station, selections: [dt_cluster_first_not_rpc]}
+          - dt_cluster_avg_station
+          - dt_cluster_max_station_frac
+          - dt_cluster_layer_hits_mean
+          - dt_cluster_layer_hits_rms
+          - dt_cluster_layer_hits_relrms
+          - dt_cluster_max_layer_frac
+          - dt_cluster_r_spread
+          - dt_cluster_z_spread
+          - dt_cluster_dr_muon
+          - dt_cluster_dr_jet
+          - {name: dt_cluster_dr_muon_vs_jet, x: dt_cluster_dr_muon, y: dt_cluster_dr_jet}
+          - dt_cluster_first_system
+          - dt_cluster_n_rpc_hits
+          - dt_cluster_n_rpc_hits_bx0
+          - {var: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_bx_median, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_bx_spread, selections: [dt_cluster_has_rpc]}
+          - {name: dt_cluster_rpc_bx_vs_size, x: dt_cluster_size, y: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+          - dt_cluster_rpc_hit_frac
+          - {var: dt_cluster_rpc_out_of_time_frac, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_time_from_bx, selections: [dt_cluster_has_rpc]}
+      iso_both:
+        cut: [dt_cluster_iso_muon, dt_cluster_iso_jet]
+        label: muon+jet-isolated
+        vars: &dt_iso_both
+          - dt_cluster_size
+          - dt_cluster_eta
+          - dt_cluster_phi
+          - dt_cluster_eta_spread
+          - dt_cluster_phi_spread
+          - dt_cluster_nstation
+          - dt_cluster_nlayer
+          - dt_cluster_station_span
+          - {var: dt_cluster_first_chamber, selections: [dt_cluster_first_not_rpc]}
+          - {var: dt_cluster_first_station, selections: [dt_cluster_first_not_rpc]}
+          - dt_cluster_avg_station
+          - dt_cluster_max_station_frac
+          - dt_cluster_layer_hits_mean
+          - dt_cluster_layer_hits_rms
+          - dt_cluster_layer_hits_relrms
+          - dt_cluster_max_layer_frac
+          - dt_cluster_r_spread
+          - dt_cluster_z_spread
+          - dt_cluster_dr_muon
+          - dt_cluster_dr_jet
+          - {name: dt_cluster_dr_muon_vs_jet, x: dt_cluster_dr_muon, y: dt_cluster_dr_jet}
+          - dt_cluster_first_system
+          - dt_cluster_n_rpc_hits
+          - dt_cluster_n_rpc_hits_bx0
+          - {var: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_bx_median, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_bx_spread, selections: [dt_cluster_has_rpc]}
+          - dt_cluster_rpc_hit_frac
+          - {var: dt_cluster_rpc_out_of_time_frac, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_time_from_bx, selections: [dt_cluster_has_rpc]}
+      iso_jet:
+        cut: dt_cluster_iso_jet
+        label: jet-isolated
+        vars: *dt_iso_both
+      iso_muon:
+        cut: dt_cluster_iso_muon
+        label: muon-isolated
+        vars: *dt_iso_both

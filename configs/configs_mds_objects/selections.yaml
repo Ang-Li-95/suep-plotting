@@ -17,13 +17,11 @@
 # photon / tau cuts too so all five read the same way.
 
 muon_sel_foriso:
-  level: object
   collection: Muon
   label: 'muon $p_T > 10$ GeV, $|\eta| < 2.4$, loose ID'
   expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
 
 jet_sel_foriso:
-  level: object
   collection: Jet
   label: 'jet $p_T > 20$ GeV, $|\eta| < 2.4$, tight lepton-veto ID'
   expression: "(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId"
@@ -41,13 +39,11 @@ jet_sel_foriso:
 # instead of filtering it, which silently returns the wrong photons and the
 # wrong count (a fail-and-a-tight photon came back as three photons in test).
 electron_sel:
-  level: object
   collection: Electron
   label: 'electron $p_T > 10$ GeV, $|\eta| < 2.5$, cut-based veto'
   expression: "(events.Electron.pt > 10) & (abs(events.Electron.eta) < 2.5) & (events.Electron.cutBased >= 1)"
 
 photon_sel:
-  level: object
   collection: Photon
   label: 'photon $p_T > 15$ GeV, $|\eta| < 2.5$, cut-based loose'
   expression: "(events.Photon.pt > 15) & (abs(events.Photon.eta) < 2.5) & (events.Photon.cutBased >= 1)"
@@ -57,7 +53,6 @@ photon_sel:
 # '> 0' here is the loosest available point against all three -- VVVLoose vs
 # jets and electrons, VLoose vs muons.
 tau_sel:
-  level: object
   collection: Tau
   label: 'tau $p_T > 20$ GeV, $|\eta| < 2.5$, DeepTau2018v2p5 VVVLoose'
   expression: "(events.Tau.pt > 20) & (abs(events.Tau.eta) < 2.5) & (abs(events.Tau.dz) < 0.2) & (events.Tau.idDeepTau2018v2p5VSjet > 0) & (events.Tau.idDeepTau2018v2p5VSe > 0) & (events.Tau.idDeepTau2018v2p5VSmu > 0)"
@@ -71,18 +66,14 @@ tau_sel:
 #
 # Only CSC and DT: with rpc_mode: match there is no standalone rpcCluster.
 csc_cluster_sel:
-  level: object
   label: 'CSC cluster $\Delta R > 0.4$ from any selected muon and jet'
   expression: "(events.cscCluster.drMuon >= 0.4) & (events.cscCluster.drJet >= 0.4)"
 
 dt_cluster_sel:
-  level: object
   label: 'DT cluster $\Delta R > 0.4$ from any selected muon and jet'
   expression: "(events.dtCluster.drMuon >= 0.4) & (events.dtCluster.drJet >= 0.4)"
 
 # ── Event bookkeeping (cutflow.txt) ───────────────────────────────
-has_csc_cluster:
-  expression: "ak.num(events.cscCluster) >= 1"
+has_csc_cluster: "ak.num(events.cscCluster) >= 1"
 
-has_dt_cluster:
-  expression: "ak.num(events.dtCluster) >= 1"
+has_dt_cluster: "ak.num(events.dtCluster) >= 1"

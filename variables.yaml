@@ -15,3 +15,169 @@
 #
 # Read with the same loader as every config file, so _axes / _repeat write a
 # CSC/DT family once.  See docs/configuration.md.
+
+# ── CSC clusters (DBSCAN, events.cscCluster) ──────────────────────────
+csc_cluster_avg_station: {expression: events.cscCluster.avgStation, bins: [30, 1, 4], label: CSC cluster $\langle$station$\rangle$}
+csc_cluster_dr_jet: {expression: events.cscCluster.drJet, bins: [60, 0, 6], label: CSC cluster $\Delta R$(closest jet), log_y: true}
+csc_cluster_dr_muon: {expression: events.cscCluster.drMuon, bins: [60, 0, 6], label: CSC cluster $\Delta R$(closest muon), log_y: true}
+csc_cluster_eta: {expression: events.cscCluster.eta, bins: [50, -3, 3], label: CSC cluster $\eta$}
+csc_cluster_eta_spread: {expression: events.cscCluster.etaSpread, bins: [40, 0, 0.4], label: CSC cluster $\eta$ spread}
+csc_cluster_first_chamber: {expression: events.cscCluster.firstChamber, bins: [50, -0.5, 49.5], label: CSC cluster first-hit chamber (ME station/ring)}
+csc_cluster_first_station: {expression: events.cscCluster.firstStation, bins: [6, -0.5, 5.5], label: CSC cluster first-hit station}
+csc_cluster_first_system: {expression: events.cscCluster.firstSystem, bins: [3, 0, 3], label: 'CSC cluster innermost hit system (0 CSC, 1 DT, 2 RPC)'}
+csc_cluster_layer_hits_mean: {expression: events.cscCluster.layerHitsMean, bins: [40, 0, 120], label: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{chamber}\rangle$', log_y: true}
+csc_cluster_layer_hits_relrms: {expression: events.cscCluster.layerHitsRelRMS, bins: [30, 0, 3], label: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{chamber}$'}
+csc_cluster_layer_hits_rms: {expression: events.cscCluster.layerHitsRMS, bins: [40, 0, 80], label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)', log_y: true}
+csc_cluster_max_layer_frac: {expression: events.cscCluster.maxLayerFrac, bins: [21, 0, 1.05], label: CSC cluster max chamber hit fraction}
+csc_cluster_max_station_frac: {expression: events.cscCluster.maxStationFrac, bins: [21, 0, 1.05], label: CSC cluster max station hit fraction}
+csc_cluster_max_zlayer_frac: {expression: events.cscCluster.maxZLayerFrac, bins: [21, 0, 1.05], label: CSC cluster max z-layer hit fraction}
+csc_cluster_n: {expression: ak.num(events.cscCluster), bins: [6, 0, 6], label: '$N_{\mathrm{CSC\ clusters}}$', log_y: true}
+csc_cluster_n_matched: {expression: 'ak.sum(events.cscCluster.matched, axis=1)', bins: [6, -0.5, 5.5], label: '$N_{\mathrm{CSC\ clusters}}$ matched to an LLP', log_y: true}
+csc_cluster_n_rpc_hits: {expression: events.cscCluster.nRPCHits, bins: [50, 0, 100], label: 'CSC cluster $N_{\mathrm{RPC\ hits}}$', log_y: true}
+csc_cluster_n_rpc_hits_bx0: {expression: events.cscCluster.nRPCHitsBx0, bins: [50, 0, 100], label: 'CSC cluster $N_{\mathrm{RPC\ hits}}$ at BX 0', log_y: true}
+csc_cluster_nlayer: {expression: events.cscCluster.nLayer, bins: [12, 0, 12], label: 'CSC cluster $N_{\mathrm{layers}}$'}
+csc_cluster_nmatchedhits: {expression: events.cscCluster.nMatchedHits, bins: [50, 0, 200], label: 'CSC cluster $N_{\mathrm{hits}}^{\mathrm{LLP-matched}}$', log_y: true}
+csc_cluster_nmatchedllp: {expression: events.cscCluster.nMatchedLLP, bins: [6, 0, 6], label: 'CSC cluster $N_{\mathrm{LLP\ matched}}$', log_y: true}
+csc_cluster_nstation: {expression: events.cscCluster.nStation, bins: [5, 0, 5], label: 'CSC cluster $N_{\mathrm{stations}}$'}
+csc_cluster_nzlayer: {expression: events.cscCluster.nZLayer, bins: [30, 0.5, 30.5], label: 'CSC cluster $N_{\mathrm{z-layers}}$'}
+csc_cluster_oot_hit_frac: {expression: events.cscCluster.ootHitFrac, bins: [50, 0, 1], label: 'CSC cluster out-of-time hit fraction ($|t_{\mathrm{peak}}| > 12.5$ ns)', log_y: true}
+csc_cluster_phi: {expression: events.cscCluster.phi, bins: [32, -3.2, 3.2], label: CSC cluster $\phi$}
+csc_cluster_phi_spread: {expression: events.cscCluster.phiSpread, bins: [40, 0, 0.4], label: CSC cluster $\phi$ spread}
+csc_cluster_r_spread: {expression: events.cscCluster.rSpread, bins: [40, 0, 200], label: 'CSC cluster $r$ spread [cm]'}
+csc_cluster_rpc_bx: {expression: events.cscCluster.rpcBx, bins: [9, -4.5, 4.5], label: CSC cluster mean RPC BX, log_y: true}
+csc_cluster_rpc_bx_median: {expression: events.cscCluster.rpcBxMedian, bins: [9, -4.5, 4.5], label: CSC cluster median RPC BX, log_y: true}
+csc_cluster_rpc_bx_spread: {expression: events.cscCluster.rpcBxSpread, bins: [40, 0, 4], label: CSC cluster RPC BX RMS, log_y: true}
+csc_cluster_rpc_hit_frac: {expression: events.cscCluster.rpcHitFrac, bins: [50, 0, 1], label: CSC cluster RPC hit fraction, log_y: true}
+csc_cluster_rpc_out_of_time_frac: {expression: events.cscCluster.rpcOutOfTimeFrac, bins: [50, 0, 1], label: CSC cluster out-of-time RPC hit fraction, log_y: true}
+csc_cluster_rpc_time_from_bx: {expression: events.cscCluster.rpcBx * 25, bins: [40, -100, 100], label: 'CSC cluster RPC time from BX [ns]'}
+csc_cluster_size: {expression: events.cscCluster.size, bins: [50, 0, 500], label: 'CSC cluster $N_{\mathrm{hits}}$', log_y: true}
+csc_cluster_station_span: {expression: events.cscCluster.stationSpan, bins: [4, -0.5, 3.5], label: CSC cluster station span (max-min)}
+csc_cluster_time: {expression: events.cscCluster.time, bins: [60, -30, 90], label: 'CSC cluster mean $t_{\mathrm{peak}}$ [ns]', log_y: true}
+csc_cluster_time_spread: {expression: events.cscCluster.timeSpread, bins: [50, 0, 50], label: 'CSC cluster $t_{\mathrm{peak}}$ RMS [ns]', log_y: true}
+csc_cluster_z_spread: {expression: events.cscCluster.zSpread, bins: [40, 0, 250], label: 'CSC cluster $z$ spread [cm]'}
+csc_cluster_zlayer_hits_mean: {expression: events.cscCluster.zLayerHitsMean, bins: [40, 0, 40], label: 'CSC cluster $\langle N_{\mathrm{hits}}/\mathrm{z-layer}\rangle$', log_y: true}
+csc_cluster_zlayer_hits_relrms: {expression: events.cscCluster.zLayerHitsRelRMS, bins: [30, 0, 3], label: 'CSC cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{z-layer}$'}
+csc_cluster_zlayer_hits_rms: {expression: events.cscCluster.zLayerHitsRMS, bins: [40, 0, 20], label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{z-layer}$)', log_y: true}
+
+# ── DT clusters (DBSCAN, events.dtCluster) ────────────────────────────
+dt_cluster_avg_station: {expression: events.dtCluster.avgStation, bins: [30, 1, 4], label: DT cluster $\langle$station$\rangle$}
+dt_cluster_dr_jet: {expression: events.dtCluster.drJet, bins: [60, 0, 6], label: DT cluster $\Delta R$(closest jet), log_y: true}
+dt_cluster_dr_muon: {expression: events.dtCluster.drMuon, bins: [60, 0, 6], label: DT cluster $\Delta R$(closest muon), log_y: true}
+dt_cluster_eta: {expression: events.dtCluster.eta, bins: [50, -3, 3], label: DT cluster $\eta$}
+dt_cluster_eta_spread: {expression: events.dtCluster.etaSpread, bins: [40, 0, 0.4], label: DT cluster $\eta$ spread}
+dt_cluster_first_chamber: {expression: events.dtCluster.firstChamber, bins: [50, -0.5, 49.5], label: DT cluster first-hit chamber (MB station/wheel)}
+dt_cluster_first_station: {expression: events.dtCluster.firstStation, bins: [6, -0.5, 5.5], label: DT cluster first-hit station}
+dt_cluster_first_system: {expression: events.dtCluster.firstSystem, bins: [3, 0, 3], label: 'DT cluster innermost hit system (0 CSC, 1 DT, 2 RPC)'}
+dt_cluster_layer_hits_mean: {expression: events.dtCluster.layerHitsMean, bins: [40, 0, 20], label: 'DT cluster $\langle N_{\mathrm{hits}}/\mathrm{layer}\rangle$', log_y: true}
+dt_cluster_layer_hits_relrms: {expression: events.dtCluster.layerHitsRelRMS, bins: [30, 0, 3], label: 'DT cluster RMS/mean of $N_{\mathrm{hits}}/\mathrm{layer}$'}
+dt_cluster_layer_hits_rms: {expression: events.dtCluster.layerHitsRMS, bins: [40, 0, 10], label: 'DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)', log_y: true}
+dt_cluster_max_layer_frac: {expression: events.dtCluster.maxLayerFrac, bins: [21, 0, 1.05], label: DT cluster max layer hit fraction}
+dt_cluster_max_station_frac: {expression: events.dtCluster.maxStationFrac, bins: [21, 0, 1.05], label: DT cluster max station hit fraction}
+dt_cluster_n: {expression: ak.num(events.dtCluster), bins: [6, 0, 6], label: '$N_{\mathrm{DT\ clusters}}$', log_y: true}
+dt_cluster_n_matched: {expression: 'ak.sum(events.dtCluster.matched, axis=1)', bins: [6, -0.5, 5.5], label: '$N_{\mathrm{DT\ clusters}}$ matched to an LLP', log_y: true}
+dt_cluster_n_rpc_hits: {expression: events.dtCluster.nRPCHits, bins: [50, 0, 100], label: 'DT cluster $N_{\mathrm{RPC\ hits}}$', log_y: true}
+dt_cluster_n_rpc_hits_bx0: {expression: events.dtCluster.nRPCHitsBx0, bins: [50, 0, 100], label: 'DT cluster $N_{\mathrm{RPC\ hits}}$ at BX 0', log_y: true}
+dt_cluster_nlayer: {expression: events.dtCluster.nLayer, bins: [60, 0, 60], label: 'DT cluster $N_{\mathrm{layers}}$'}
+dt_cluster_nmatchedhits: {expression: events.dtCluster.nMatchedHits, bins: [50, 0, 200], label: 'DT cluster $N_{\mathrm{hits}}^{\mathrm{LLP-matched}}$', log_y: true}
+dt_cluster_nmatchedllp: {expression: events.dtCluster.nMatchedLLP, bins: [6, 0, 6], label: 'DT cluster $N_{\mathrm{LLP\ matched}}$', log_y: true}
+dt_cluster_nstation: {expression: events.dtCluster.nStation, bins: [5, 0, 5], label: 'DT cluster $N_{\mathrm{stations}}$'}
+dt_cluster_phi: {expression: events.dtCluster.phi, bins: [32, -3.2, 3.2], label: DT cluster $\phi$}
+dt_cluster_phi_spread: {expression: events.dtCluster.phiSpread, bins: [40, 0, 0.4], label: DT cluster $\phi$ spread}
+dt_cluster_r_spread: {expression: events.dtCluster.rSpread, bins: [40, 0, 200], label: 'DT cluster $r$ spread [cm]'}
+dt_cluster_rpc_bx: {expression: events.dtCluster.rpcBx, bins: [9, -4.5, 4.5], label: DT cluster mean RPC BX, log_y: true}
+dt_cluster_rpc_bx_median: {expression: events.dtCluster.rpcBxMedian, bins: [9, -4.5, 4.5], label: DT cluster median RPC BX, log_y: true}
+dt_cluster_rpc_bx_spread: {expression: events.dtCluster.rpcBxSpread, bins: [40, 0, 4], label: DT cluster RPC BX RMS, log_y: true}
+dt_cluster_rpc_hit_frac: {expression: events.dtCluster.rpcHitFrac, bins: [50, 0, 1], label: DT cluster RPC hit fraction, log_y: true}
+dt_cluster_rpc_out_of_time_frac: {expression: events.dtCluster.rpcOutOfTimeFrac, bins: [50, 0, 1], label: DT cluster out-of-time RPC hit fraction, log_y: true}
+dt_cluster_rpc_time_from_bx: {expression: events.dtCluster.rpcBx * 25, bins: [40, -100, 100], label: 'DT cluster RPC time from BX [ns]'}
+dt_cluster_size: {expression: events.dtCluster.size, bins: [50, 0, 500], label: 'DT cluster $N_{\mathrm{hits}}$', log_y: true}
+dt_cluster_station_span: {expression: events.dtCluster.stationSpan, bins: [4, -0.5, 3.5], label: DT cluster station span (max-min)}
+dt_cluster_z_spread: {expression: events.dtCluster.zSpread, bins: [40, 0, 250], label: 'DT cluster $z$ spread [cm]'}
+
+# ── CSC + DT clusters together ────────────────────────────────────────
+mds_cluster_n: {expression: ak.num(events.cscCluster) + ak.num(events.dtCluster), bins: [11, -0.5, 10.5], label: '$N_{\mathrm{MDS\ clusters}}$ (CSC + DT)', log_y: true}
+mds_cluster_n_matched: {expression: 'ak.sum(events.cscCluster.matched, axis=1) + ak.sum(events.dtCluster.matched, axis=1)', bins: [11, -0.5, 10.5], label: '$N_{\mathrm{MDS\ clusters}}$ matched to an LLP (CSC + DT)', log_y: true}
+
+# ── Rechits ───────────────────────────────────────────────────────────
+csc_rechit_dr_llp: {expression: events.cscRechits.drLLP, bins: [60, 0, 0.6], label: CSC rechit $\Delta R$ to LLP centroid, log_y: true, flow: sum}
+dt_rechit_dr_llp: {expression: events.dtRecHits.drLLP, bins: [60, 0, 0.6], label: DT rechit $\Delta R$ to LLP centroid, log_y: true, flow: sum}
+evt_n_csc_rechits_matched: {expression: 'ak.sum(events.cscRechits.llpIdx >= 0, axis=1)', bins: [100, 0, 1000], label: '$N_{\mathrm{CSC\ rechits}}$ gen-matched to LLPs', log_y: true}
+rpc_rechit_dr_llp: {expression: events.rpcRecHits.drLLP, bins: [60, 0, 0.6], label: RPC rechit $\Delta R$ to LLP centroid, log_y: true, flow: sum}
+
+# ── LLPs (events.llp, gen level) ──────────────────────────────────────
+llp_abseta: {expression: abs(events.llp.eta), bins: [30, 0, 3], label: LLP $|\eta|$}
+llp_betagamma: {expression: events.llp.betagamma, bins: [60, 0, 30], label: LLP $\beta\gamma$, log_y: true}
+llp_clusterhitfrac_csc: {expression: events.llp.clusterHitFracCSC, bins: [22, 0, 1.1], label: LLP matched-rechit fraction in best CSC cluster, log_y: true}
+llp_clusterhitfrac_dt: {expression: events.llp.clusterHitFracDT, bins: [22, 0, 1.1], label: LLP matched-rechit fraction in best DT cluster, log_y: true}
+llp_ctau: {expression: events.llp.ctau, bins: [60, 0, 3000], label: 'LLP $c\tau$ (proper) [cm]', log_y: true}
+llp_decay_absz: {expression: abs(events.llp.decayZ), bins: [75, 0, 1500], label: 'LLP decay $|z|$ [cm]'}
+llp_decay_eta: {expression: events.llp.decayEta, bins: [40, -5, 5], label: LLP decay vertex $\eta$}
+llp_decay_r: {expression: events.llp.decayR, bins: [60, 0, 1200], label: 'LLP decay $r$ [cm]'}
+llp_decay_z: {expression: events.llp.decayZ, bins: [48, -1200, 1200], label: 'LLP decay $z$ [cm]'}
+llp_dr50_csc: {expression: events.llp.dr50CSC, bins: [60, 0, 0.6], label: 'LLP CSC rechits: $\Delta R$ containing 50% of rechits', flow: sum}
+llp_dr50_dt: {expression: events.llp.dr50DT, bins: [60, 0, 0.6], label: 'LLP DT rechits: $\Delta R$ containing 50% of rechits', flow: sum}
+llp_dr50_rpc: {expression: events.llp.dr50RPC, bins: [60, 0, 0.6], label: 'LLP RPC rechits: $\Delta R$ containing 50% of rechits', flow: sum}
+llp_dr50_total: {expression: events.llp.dr50Total, bins: [60, 0, 0.6], label: 'LLP muon rechits: $\Delta R$ containing 50% of rechits', flow: sum}
+llp_dr80_csc: {expression: events.llp.dr80CSC, bins: [60, 0, 0.6], label: 'LLP CSC rechits: $\Delta R$ containing 80% of rechits', flow: sum}
+llp_dr80_dt: {expression: events.llp.dr80DT, bins: [60, 0, 0.6], label: 'LLP DT rechits: $\Delta R$ containing 80% of rechits', flow: sum}
+llp_dr80_rpc: {expression: events.llp.dr80RPC, bins: [60, 0, 0.6], label: 'LLP RPC rechits: $\Delta R$ containing 80% of rechits', flow: sum}
+llp_dr80_total: {expression: events.llp.dr80Total, bins: [60, 0, 0.6], label: 'LLP muon rechits: $\Delta R$ containing 80% of rechits', flow: sum}
+llp_dr90_csc: {expression: events.llp.dr90CSC, bins: [60, 0, 1.0], label: 'LLP CSC rechits: $\Delta R$ containing 90%', flow: sum}
+llp_dr90_dt: {expression: events.llp.dr90DT, bins: [60, 0, 0.6], label: 'LLP DT rechits: $\Delta R$ containing 90% of rechits', flow: sum}
+llp_dr90_rpc: {expression: events.llp.dr90RPC, bins: [60, 0, 0.6], label: 'LLP RPC rechits: $\Delta R$ containing 90% of rechits', flow: sum}
+llp_dr90_total: {expression: events.llp.dr90Total, bins: [60, 0, 0.6], label: 'LLP muon rechits: $\Delta R$ containing 90% of rechits', flow: sum}
+llp_drmax_csc: {expression: events.llp.drMaxCSC, bins: [60, 0, 0.6], label: 'LLP CSC rechits: $\Delta R$ containing 100% of rechits (max)', flow: sum}
+llp_drmax_dt: {expression: events.llp.drMaxDT, bins: [60, 0, 0.6], label: 'LLP DT rechits: $\Delta R$ containing 100% of rechits (max)', flow: sum}
+llp_drmax_rpc: {expression: events.llp.drMaxRPC, bins: [60, 0, 0.6], label: 'LLP RPC rechits: $\Delta R$ containing 100% of rechits (max)', flow: sum}
+llp_drmax_total: {expression: events.llp.drMaxTotal, bins: [60, 0, 0.6], label: 'LLP muon rechits: $\Delta R$ containing 100% of rechits (max)', flow: sum}
+llp_drpair_max_csc: {expression: events.llp.drPairMaxCSC, bins: [60, 0, 1.5], label: 'LLP CSC rechits: max pairwise $\Delta R$', log_y: true, flow: sum}
+llp_drpair_max_dt: {expression: events.llp.drPairMaxDT, bins: [60, 0, 1.5], label: 'LLP DT rechits: max pairwise $\Delta R$', log_y: true, flow: sum}
+llp_drpair_max_rpc: {expression: events.llp.drPairMaxRPC, bins: [60, 0, 1.5], label: 'LLP RPC rechits: max pairwise $\Delta R$', log_y: true, flow: sum}
+llp_drpair_max_total: {expression: events.llp.drPairMaxTotal, bins: [60, 0, 1.5], label: 'LLP muon rechits: max pairwise $\Delta R$', log_y: true, flow: sum}
+llp_drpair_min_csc: {expression: events.llp.drPairMinCSC, edges: [0.0001, 0.00013335, 0.00017783, 0.00023714, 0.00031623, 0.0004217, 0.00056234, 0.00074989, 0.001, 0.0013335, 0.0017783, 0.0023714, 0.0031623, 0.004217, 0.0056234, 0.0074989, 0.01, 0.013335, 0.017783, 0.023714, 0.031623, 0.04217, 0.056234, 0.074989, 0.1, 0.13335, 0.17783, 0.23714, 0.31623, 0.4217, 0.56234, 0.74989, 1], label: 'LLP CSC rechits: min pairwise $\Delta R$', log_x: true, log_y: true, flow: sum}
+llp_drpair_min_dt: {expression: events.llp.drPairMinDT, edges: [0.0001, 0.00013335, 0.00017783, 0.00023714, 0.00031623, 0.0004217, 0.00056234, 0.00074989, 0.001, 0.0013335, 0.0017783, 0.0023714, 0.0031623, 0.004217, 0.0056234, 0.0074989, 0.01, 0.013335, 0.017783, 0.023714, 0.031623, 0.04217, 0.056234, 0.074989, 0.1, 0.13335, 0.17783, 0.23714, 0.31623, 0.4217, 0.56234, 0.74989, 1], label: 'LLP DT rechits: min pairwise $\Delta R$', log_x: true, log_y: true, flow: sum}
+llp_drpair_min_rpc: {expression: events.llp.drPairMinRPC, edges: [0.0001, 0.00013335, 0.00017783, 0.00023714, 0.00031623, 0.0004217, 0.00056234, 0.00074989, 0.001, 0.0013335, 0.0017783, 0.0023714, 0.0031623, 0.004217, 0.0056234, 0.0074989, 0.01, 0.013335, 0.017783, 0.023714, 0.031623, 0.04217, 0.056234, 0.074989, 0.1, 0.13335, 0.17783, 0.23714, 0.31623, 0.4217, 0.56234, 0.74989, 1], label: 'LLP RPC rechits: min pairwise $\Delta R$', log_x: true, log_y: true, flow: sum}
+llp_drpair_min_total: {expression: events.llp.drPairMinTotal, edges: [0.0001, 0.00013335, 0.00017783, 0.00023714, 0.00031623, 0.0004217, 0.00056234, 0.00074989, 0.001, 0.0013335, 0.0017783, 0.0023714, 0.0031623, 0.004217, 0.0056234, 0.0074989, 0.01, 0.013335, 0.017783, 0.023714, 0.031623, 0.04217, 0.056234, 0.074989, 0.1, 0.13335, 0.17783, 0.23714, 0.31623, 0.4217, 0.56234, 0.74989, 1], label: 'LLP muon rechits: min pairwise $\Delta R$', log_x: true, log_y: true, flow: sum}
+llp_energy: {expression: events.llp.energy, edges: [0, 2, 4, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 70, 100], label: 'LLP energy [GeV]'}
+llp_eta: {expression: events.llp.eta, bins: [60, -3, 3], label: LLP $\eta$}
+llp_llab: {expression: events.llp.Llab, bins: [60, 0, 6000], label: 'LLP lab decay length [cm]', log_y: true}
+llp_n: {expression: ak.num(events.llp), bins: [60, 0, 60], label: '$N_{\mathrm{LLP}}$'}
+llp_n_calo: {expression: 'ak.sum(events.llp.inCalo, axis=1)', bins: [15, 0, 15], label: '$N_{\mathrm{LLP}}$ decaying in the calorimeters'}
+llp_n_csc: {expression: 'ak.sum(events.llp.inCSC, axis=1)', bins: [15, 0, 15], label: '$N_{\mathrm{LLP}}$ decaying in CSC'}
+llp_n_csc_dt: {expression: 'ak.sum(events.llp.inCSC | events.llp.inDT, axis=1)', bins: [15, 0, 15], label: '$N_{\mathrm{LLP}}$ decaying in CSC or DT'}
+llp_n_dt: {expression: 'ak.sum(events.llp.inDT, axis=1)', bins: [15, 0, 15], label: '$N_{\mathrm{LLP}}$ decaying in DT'}
+llp_n_tracker: {expression: 'ak.sum(events.llp.inTracker, axis=1)', bins: [15, 0, 15], label: '$N_{\mathrm{LLP}}$ decaying in the tracker'}
+llp_nhits_csc: {expression: events.llp.nHitsCSC, bins: [100, 0, 200], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP in CSC', log_y: true}
+llp_nhits_csc_rpc: {expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap), bins: [100, 0, 200], label: '$N_{\mathrm{CSC+RPC\ rechits}}$ from LLP in CSC', log_y: true}
+llp_nhits_dt: {expression: events.llp.nHitsDT, bins: [100, 0, 200], label: '$N_{\mathrm{DT\ rechits}}$ from LLP in DT', log_y: true}
+llp_nhits_dt_rpc: {expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel), bins: [100, 0, 200], label: '$N_{\mathrm{DT+RPC\ rechits}}$ from LLP in DT', log_y: true}
+llp_nhits_rpc: {expression: events.llp.nHitsRPC, bins: [60, 0, 60], label: '$N_{\mathrm{RPC\ rechits}}$ from LLP', log_y: true}
+llp_nhits_total: {expression: events.llp.nHitsTotal, bins: [100, 0, 300], label: '$N_{\mathrm{muon\ rechits}}$ from LLP (CSC+DT+RPC)', log_y: true}
+llp_nrecocluster_csc: {expression: events.llp.nRecoClusterCSC, bins: [6, 0, 6], label: '$N_{\mathrm{CSC\ clusters}}$ matched to LLP', log_y: true}
+llp_nrecocluster_dt: {expression: events.llp.nRecoClusterDT, bins: [6, 0, 6], label: '$N_{\mathrm{DT\ clusters}}$ matched to LLP', log_y: true}
+llp_opening_angle: {expression: events.llp.openingAngle, bins: [64, 0, 3.2], label: 'LLP decay opening angle [rad]', log_y: true, flow: sum}
+llp_phi: {expression: events.llp.phi, bins: [32, -3.2, 3.2], label: LLP $\phi$}
+llp_pt: {expression: events.llp.pt, edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50], label: 'LLP $p_T$ [GeV]'}
+
+# ── Event-level cluster and trigger quantities ────────────────────────
+evt_max_csc_cluster_size: {expression: 'ak.fill_none(ak.max(events.cscCluster.size, axis=1), 0)', bins: [120, 0, 1200], label: 'largest CSC cluster $N_{\mathrm{hits}}$', log_y: true}
+evt_max_dt_cluster_size: {expression: 'ak.fill_none(ak.max(events.dtCluster.size, axis=1), 0)', bins: [120, 0, 1200], label: 'largest DT cluster $N_{\mathrm{hits}}$', log_y: true}
+evt_max_hlt_dt_cluster_size: {expression: 'ak.fill_none(ak.max(events.dtMDSHLTCluster.size, axis=1), 0)', edges: [0, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400], label: 'largest HLT DT cluster $N_{\mathrm{hits}}$'}
+evt_second_csc_cluster_size: {expression: 'ak.fill_none(ak.pad_none(ak.sort(events.cscCluster.size, axis=1, ascending=False), 2, axis=1)[:, 1], 0)', bins: [120, 0, 1200], label: '2nd-largest CSC cluster $N_{\mathrm{hits}}$', log_y: true}
+
+# ── Prompt objects and event-level quantities ─────────────────────────
+ht: {expression: 'ak.sum(events.Jet.pt[events.jet_sel_foriso], axis=1)', bins: [50, 0, 1000], label: '$H_T$ [GeV]', log_y: true}
+jet_eta: {expression: events.Jet.eta, bins: [50, -5, 5], label: jet $\eta$}
+jet_phi: {expression: events.Jet.phi, bins: [32, -3.2, 3.2], label: jet $\phi$}
+jet_pt: {expression: events.Jet.pt, bins: [60, 0, 600], label: 'jet $p_{T}$ [GeV]', log_y: true}
+max_dphi_cluster_sel: {expression: 'ak.max(abs((np.subtract(*ak.unzip(ak.combinations( ak.concatenate([events.cscCluster.phi[events.csc_cluster_sel], events.dtCluster.phi[events.dt_cluster_sel]], axis=1), 2, axis=1))) + np.pi) % (2 * np.pi) - np.pi), axis=1)', bins: [32, 0, 3.14159265], label: max $|\Delta\phi|$ between selected MDS clusters}
+n_electron_sel: {expression: 'ak.sum(events.electron_sel, axis=1)', bins: [6, -0.5, 5.5], label: '$N_{e}$', log_y: true}
+n_fatjet: {expression: ak.num(events.FatJet), bins: [6, -0.5, 5.5], label: '$N_{\mathrm{AK8\ jets}}$', log_y: true}
+n_jet_sel_foriso: {expression: events.n_jet_sel_foriso, bins: [12, -0.5, 11.5], label: '$N_{\mathrm{jets}}$ passing jet_sel_foriso', log_y: true}
+n_jet_sel_foriso_mask: {expression: 'ak.sum(events.jet_sel_foriso, axis=1)', bins: [12, -0.5, 11.5], label: '$N_{\mathrm{jets}}$', log_y: true}
+n_muon_sel_foriso: {expression: 'ak.sum(events.muon_sel_foriso, axis=1)', bins: [8, -0.5, 7.5], label: '$N_{\mu}$', log_y: true}
+n_photon_sel: {expression: 'ak.sum(events.photon_sel, axis=1)', bins: [6, -0.5, 5.5], label: '$N_{\gamma}$', log_y: true}
+n_tau_sel: {expression: 'ak.sum(events.tau_sel, axis=1)', bins: [6, -0.5, 5.5], label: '$N_{\tau_h}$', log_y: true}
+pf_met: {expression: events.PFMET.pt, edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 500], label: 'PF $p_T^{\mathrm{miss}}$ [GeV]', log_y: true}
+puppi_met: {expression: events.PuppiMET.pt, bins: [50, 0, 500], label: 'PUPPI $p_T^{\mathrm{miss}}$ [GeV]', log_y: true}
+puppi_met_phi: {expression: events.PuppiMET.phi, bins: [32, -3.2, 3.2], label: 'PUPPI $p_T^{\mathrm{miss}}$ $\phi$'}

@@ -1,3 +1,5 @@
 # Nothing derived at plot time -- every entry in histograms.yaml is already
 # the quantity of interest, and there is no 2D histogram to profile or
 # project.
+
+{}

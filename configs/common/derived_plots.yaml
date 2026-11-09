@@ -4,12 +4,14 @@
 # with the number of hits.  Reco-only, so every study gets them.
 
 prof_csc_rpc_bx_vs_size:
-  label_x: CSC cluster $N_{\mathrm{hits}}$
-  label_y: $\langle$RPC BX$\rangle$
-  source: csc_cluster_rpc_bx_vs_size
   type: profile_x
+  region: csc
+  cut: all
+  label_y: $\langle$RPC BX$\rangle$
+  vars: [csc_cluster_rpc_bx_vs_size]
 prof_dt_rpc_bx_vs_size:
-  label_x: DT cluster $N_{\mathrm{hits}}$
-  label_y: $\langle$RPC BX$\rangle$
-  source: dt_cluster_rpc_bx_vs_size
   type: profile_x
+  region: dt
+  cut: all
+  label_y: $\langle$RPC BX$\rangle$
+  vars: [dt_cluster_rpc_bx_vs_size]

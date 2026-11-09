@@ -4,14 +4,82 @@
 # What is left is exactly what a non-collision control is for: the cluster
 # shapes and the RPC bunch-crossing timing, with no isolation splits (there is
 # nothing to be isolated from) and therefore no variant sets either.
+
 _extends: ../common
 
-csc_cluster_dr_muon: null
-csc_cluster_dr_jet: null
-csc_cluster_dr_muon_vs_jet: null
-dt_cluster_dr_muon: null
-dt_cluster_dr_jet: null
-dt_cluster_dr_muon_vs_jet: null
-puppi_met: null
-n_jet_sel_foriso: null
-n_fatjet: null
+regions:
+  csc:
+    objects:
+      all:
+        vars: &csc_all
+          - csc_cluster_size
+          - csc_cluster_eta
+          - csc_cluster_phi
+          - csc_cluster_eta_spread
+          - csc_cluster_phi_spread
+          - csc_cluster_nstation
+          - csc_cluster_time
+          - csc_cluster_nlayer
+          - csc_cluster_station_span
+          - csc_cluster_first_chamber
+          - csc_cluster_first_station
+          - csc_cluster_avg_station
+          - csc_cluster_max_station_frac
+          - csc_cluster_layer_hits_mean
+          - csc_cluster_layer_hits_rms
+          - csc_cluster_layer_hits_relrms
+          - csc_cluster_max_layer_frac
+          - csc_cluster_nzlayer
+          - csc_cluster_zlayer_hits_mean
+          - csc_cluster_zlayer_hits_rms
+          - csc_cluster_zlayer_hits_relrms
+          - csc_cluster_max_zlayer_frac
+          - csc_cluster_r_spread
+          - csc_cluster_z_spread
+          - csc_cluster_first_system
+          - csc_cluster_n_rpc_hits
+          - csc_cluster_n_rpc_hits_bx0
+          - csc_cluster_oot_hit_frac
+          - {var: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_bx_median, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_bx_spread, selections: [csc_cluster_has_rpc]}
+          - {name: csc_cluster_rpc_bx_vs_size, x: csc_cluster_size, y: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+          - csc_cluster_rpc_hit_frac
+          - {var: csc_cluster_rpc_out_of_time_frac, selections: [csc_cluster_has_rpc]}
+          - {var: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+          - csc_cluster_time_spread
+          - {name: csc_cluster_time_vs_spread, x: csc_cluster_time, y: csc_cluster_time_spread}
+          - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+  dt:
+    objects:
+      all:
+        vars: &dt_all
+          - dt_cluster_size
+          - dt_cluster_eta
+          - dt_cluster_phi
+          - dt_cluster_eta_spread
+          - dt_cluster_phi_spread
+          - dt_cluster_nstation
+          - dt_cluster_nlayer
+          - dt_cluster_station_span
+          - dt_cluster_first_chamber
+          - dt_cluster_first_station
+          - dt_cluster_avg_station
+          - dt_cluster_max_station_frac
+          - dt_cluster_layer_hits_mean
+          - dt_cluster_layer_hits_rms
+          - dt_cluster_layer_hits_relrms
+          - dt_cluster_max_layer_frac
+          - dt_cluster_r_spread
+          - dt_cluster_z_spread
+          - dt_cluster_first_system
+          - dt_cluster_n_rpc_hits
+          - dt_cluster_n_rpc_hits_bx0
+          - {var: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_bx_median, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_bx_spread, selections: [dt_cluster_has_rpc]}
+          - {name: dt_cluster_rpc_bx_vs_size, x: dt_cluster_size, y: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+          - dt_cluster_rpc_hit_frac
+          - {var: dt_cluster_rpc_out_of_time_frac, selections: [dt_cluster_has_rpc]}
+          - {var: dt_cluster_rpc_time_from_bx, selections: [dt_cluster_has_rpc]}
+  event: null

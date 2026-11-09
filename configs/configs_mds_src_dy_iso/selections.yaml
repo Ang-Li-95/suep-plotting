@@ -13,10 +13,8 @@
 _extends: ../common_clustersrc
 
 csc_cluster_src:
-  level: object
   label: $\Delta R$(cluster, jet and muon) $\geq$ 0.4
   expression: "(events.cscCluster.drJet >= 0.4) & (events.cscCluster.drMuon >= 0.4)"
 dt_cluster_src:
-  level: object
   label: $\Delta R$(cluster, jet and muon) $\geq$ 0.4
   expression: "(events.dtCluster.drJet >= 0.4) & (events.dtCluster.drMuon >= 0.4)"

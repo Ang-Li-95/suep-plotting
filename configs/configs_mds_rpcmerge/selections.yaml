@@ -12,9 +12,5 @@
 
 _extends: ../configs_mds_signal
 
-llp_hits10_csc:
-  expression: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap) >= 10
-  level: object
-llp_hits10_dt:
-  expression: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel) >= 10
-  level: object
+llp_hits10_csc: (events.llp.nHitsCSC + events.llp.nHitsRPCEndcap) >= 10
+llp_hits10_dt: (events.llp.nHitsDT + events.llp.nHitsRPCBarrel) >= 10
