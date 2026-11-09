@@ -98,11 +98,11 @@ in the examples are relative to it.
 
 ## Requirements
 
-The framework runs in the **`mds`** conda environment (coffea 2026.x, uproot 5,
+The framework runs in the **`rootmds`** conda environment (coffea 2026.x, uproot 5,
 awkward 2, hist 2, mplhep, correctionlib, numpy/scipy/matplotlib, pyyaml).
 
 ```bash
-conda activate mds
+conda activate rootmds
 ```
 
 | Package | Purpose |
@@ -116,12 +116,12 @@ conda activate mds
 | `pyyaml` | YAML config parsing |
 
 `scikit-learn` is additionally needed for the MDS config sets (`custom/columns.py`
-runs DBSCAN); it is present in the `mds` env.
+runs DBSCAN); it is present in the `rootmds` env.
 
 > **Note on corrections:** coffea's `lookup_tools` package (which contains
 > `correctionlib_wrapper`) eagerly imports Rochester/double-Crystal-Ball modules
 > that reference a scipy helper removed in newer scipy. `src/suep_plot/_compat.py`
-> restores that helper *before* coffea loads, so no changes to the shared `mds`
+> restores that helper *before* coffea loads, so no changes to the shared `rootmds`
 > environment are required. See
 > [Corrections & the scipy compat shim](#corrections--the-scipy-compat-shim).
 
@@ -136,7 +136,7 @@ Install once into the env (editable), which puts the console scripts
 your `PATH`:
 
 ```bash
-conda activate mds
+conda activate rootmds
 cd /users/ang.li/public/SUEP/suep-plotting
 pip install -e .
 ```
@@ -188,7 +188,7 @@ suep-plot /tmp/smoke -o /tmp/smoke/plots -c configs/configs_mds
 ### One command: process + plot
 
 ```bash
-conda activate mds
+conda activate rootmds
 cd /users/ang.li/public/SUEP/suep-plotting
 export X509_USER_PROXY=$HOME/private/.proxy      # only if inputs are on xrootd
 suep-run -c configs/configs_mds --plot
@@ -456,14 +456,14 @@ export `PYTHONPATH=<repo>/src`, so no install is needed inside the job.
 The full cycle:
 
 ```bash
-conda activate mds
+conda activate rootmds
 export X509_USER_PROXY=$HOME/private/.proxy      # jobs inherit this
 # clustering knobs need no exporting: they live in configs/configs_mds/columns.yaml
 
-suep-submit -c configs/configs_mds -o output_mds --conda-env mds \
+suep-submit -c configs/configs_mds -o output_mds --conda-env rootmds \
     --time 08:00:00 --mem 8000 --partition c \
     --chunk-size 10000 --files-per-job 5 --dry-run   # inspect
-suep-submit -c configs/configs_mds -o output_mds --conda-env mds \
+suep-submit -c configs/configs_mds -o output_mds --conda-env rootmds \
     --time 08:00:00 --mem 8000 --partition c \
     --chunk-size 10000 --files-per-job 5             # submit
 
@@ -476,7 +476,7 @@ bash output_mds/slurm/merge_and_plot.sh            # once complete -> output_mds
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-s` / `--samples` | all | Submit only these samples (e.g. signal-only reruns). |
-| `--conda-env` | `mds` | Environment activated inside each job. |
+| `--conda-env` | `rootmds` | Environment activated inside each job. |
 | `--time` / `--mem` | `04:00:00` / `8000` | Wall time / memory (MB) per job. |
 | `--partition` / `--account` | — | Slurm partition / account. |
 | `--chunk-size` | `100000` | Events per chunk. |
@@ -841,23 +841,23 @@ takes a single background directory (it globs `*.pkl`, so links are enough and
 nothing is copied):
 
 ```bash
-conda activate mds
+conda activate rootmds
 export X509_USER_PROXY=$HOME/private/.proxy
 OUT=/groups/hephy/cms/ang.li/suep_output/clustersrc_gen3_minpts10_dr04
 
 # the shard sizes are per-sample: a Cosmics file is ~680k dense rechit events
 # and one alone outruns the 8 h short cap, a ZeroBias file only ~20k.
-suep-submit -c configs/configs_mds_src_signal   -o $OUT/sig      --conda-env mds \
+suep-submit -c configs/configs_mds_src_signal   -o $OUT/sig      --conda-env rootmds \
     --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
-suep-submit -c configs/configs_mds_src_dy_jet   -o $OUT/dy_jet   --conda-env mds \
+suep-submit -c configs/configs_mds_src_dy_jet   -o $OUT/dy_jet   --conda-env rootmds \
     --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
-suep-submit -c configs/configs_mds_src_dy_muon  -o $OUT/dy_muon  --conda-env mds \
+suep-submit -c configs/configs_mds_src_dy_muon  -o $OUT/dy_muon  --conda-env rootmds \
     --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
-suep-submit -c configs/configs_mds_src_dy_iso   -o $OUT/dy_iso   --conda-env mds \
+suep-submit -c configs/configs_mds_src_dy_iso   -o $OUT/dy_iso   --conda-env rootmds \
     --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 5
-suep-submit -c configs/configs_mds_src_zerobias -o $OUT/zerobias --conda-env mds \
+suep-submit -c configs/configs_mds_src_zerobias -o $OUT/zerobias --conda-env rootmds \
     --partition c --time 08:00:00 --mem 8000 --chunk-size 10000 --files-per-job 25
-suep-submit -c configs/configs_mds_src_cosmics  -o $OUT/cosmics  --conda-env mds \
+suep-submit -c configs/configs_mds_src_cosmics  -o $OUT/cosmics  --conda-env rootmds \
     --partition c --qos medium --time 24:00:00 --mem 16000 \
     --chunk-size 10000 --files-per-job 1
 
@@ -903,7 +903,7 @@ RPC is not drawn. The chamber layout is a z > 0 quarter view, so the display is
 folded to |z| and a −z cluster lands on the same picture as a +z one.
 
 ```bash
-conda activate mds
+conda activate rootmds
 export X509_USER_PROXY=$HOME/private/.proxy
 python scripts/event_display.py -c configs/configs_mds -d suep_mDark2_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
 ```
@@ -1037,7 +1037,7 @@ set's `columns.yaml`, so the display clusters exactly as its histograms were
 filled):
 
 ```bash
-conda activate mds
+conda activate rootmds
 export X509_USER_PROXY=$HOME/private/.proxy
 python scripts/event_display.py -c configs/configs_mds -d suep_mDark2_temp1 -n 5 --matched-only --min-size 50 --zoom --with-etaphi
 ```
@@ -1108,7 +1108,7 @@ Corrections use **coffea's own tools**:
 
 `coffea.lookup_tools.__init__` eagerly imports Rochester / double-Crystal-Ball
 modules that do `from scipy.stats._continuous_distns import _lazywhere` — a helper
-removed in newer scipy (the `mds` env has scipy 1.18). That import failure would
+removed in newer scipy (the `rootmds` env has scipy 1.18). That import failure would
 otherwise block `correctionlib_wrapper`, `jetmet_tools`, and `extractor`.
 `src/suep_plot/_compat.py` re-installs the small `_lazywhere` function **before**
 coffea loads (imported at the top of `suep_plot/__init__.py`), which restores

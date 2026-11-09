@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 
 # ── environment ──────────────────────────────────────────────────────
 eval "$(conda shell.bash hook)"
-conda activate mds
+conda activate rootmds
 export X509_USER_PROXY=$HOME/private/.proxy
 
 # Fail early without a live proxy (xrootd reads would otherwise error out).

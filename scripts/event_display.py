@@ -8,7 +8,7 @@ min_samples), so the shapes on the display are the objects the cluster
 histograms are filled from -- pass ``-c <config set>`` to pick up that set's
 ``columns.yaml`` parameters.  RPC is not drawn.
 
-    conda activate mds
+    conda activate rootmds
     export X509_USER_PROXY=$HOME/private/.proxy
     python scripts/event_display.py -d suep_mDark2_temp1 -n 5
 

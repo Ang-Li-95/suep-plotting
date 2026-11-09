@@ -27,18 +27,18 @@ is still up to 50% away from isotropic after folding.
 
 ## Reproducing
 
-Needs the `mds` conda env. The MDSNANO files are read from the local EOS mount,
+Needs the `rootmds` conda env. The MDSNANO files are read from the local EOS mount,
 so no grid proxy is required.
 
 ```bash
-/groups/hephy/cms/ang.li/anaconda3/envs/mds/bin/python extract.py
+/groups/hephy/cms/ang.li/conda/envs/rootmds/bin/python extract.py
 ```
 
 `extract.py` reads 3 files (60k events, T=1 and T=2) and caches the flat arrays
 to `gen_asymmetry.npz`. Then:
 
 ```bash
-/groups/hephy/cms/ang.li/anaconda3/envs/mds/bin/python plots.py
+/groups/hephy/cms/ang.li/conda/envs/rootmds/bin/python plots.py
 ```
 
 `plots.py` writes `fig1`–`fig9` and prints every number quoted on the slides.
@@ -46,7 +46,7 @@ Figure 8 is read from `../../output_mds_llp/*.pkl`, not from the npz. The
 notation schematic is standalone and needs no input:
 
 ```bash
-/groups/hephy/cms/ang.li/anaconda3/envs/mds/bin/python fig0.py
+/groups/hephy/cms/ang.li/conda/envs/rootmds/bin/python fig0.py
 ```
 
 `toy.py` re-implements `SuepShower` in ~60 lines and runs it with and without
@@ -54,12 +54,12 @@ the typo; `fig10.py` overlays that toy on the real samples. Both are standalone
 apart from `gen_asymmetry.npz`:
 
 ```bash
-/groups/hephy/cms/ang.li/anaconda3/envs/mds/bin/python toy.py
-/groups/hephy/cms/ang.li/anaconda3/envs/mds/bin/python fig10.py
+/groups/hephy/cms/ang.li/conda/envs/rootmds/bin/python toy.py
+/groups/hephy/cms/ang.li/conda/envs/rootmds/bin/python fig10.py
 ```
 
 ```bash
-/groups/hephy/cms/ang.li/anaconda3/envs/mds/bin/python deck.py
+/groups/hephy/cms/ang.li/conda/envs/rootmds/bin/python deck.py
 ```
 
 `deck.py` assembles `SUEP_LLP_eta_asymmetry.pptx` from the figures. It needs

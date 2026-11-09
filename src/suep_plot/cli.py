@@ -241,7 +241,7 @@ def submit(argv=None):
                              "medium at 2 days, long at 14 days)")
     parser.add_argument("--time", default="04:00:00", help="Wall time per job")
     parser.add_argument("--mem", default="8000", help="Memory in MB per job")
-    parser.add_argument("--conda-env", default="mds", help="Conda environment to activate in jobs")
+    parser.add_argument("--conda-env", default="rootmds", help="Conda environment to activate in jobs")
     parser.add_argument("--proxy", default=None,
                         help="Grid proxy to bake into job.sh "
                              "(default: $X509_USER_PROXY, else ~/private/.proxy)")
