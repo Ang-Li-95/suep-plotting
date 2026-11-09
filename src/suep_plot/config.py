@@ -332,10 +332,15 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
     return out
 
 
-# The files a config set is made of.
+# The files a config set is made of.  variables.yaml is optional: a set's own
+# overrides of the global variable catalog (see GLOBAL_VARIABLES).
 CONFIG_FILES = ("samples.yaml", "histograms.yaml", "selections.yaml",
                 "corrections.yaml", "reweights.yaml", "derived_plots.yaml",
-                "columns.yaml")
+                "columns.yaml", "variables.yaml")
+
+# The variable catalog every set reads: expression, binning and axis title of
+# each variable, written once (next to datasets.yaml at the repo root).
+GLOBAL_VARIABLES = Path(__file__).resolve().parents[2] / "variables.yaml"
 
 # The subset that decides what lands in the pickles.  derived_plots.yaml is
 # deliberately absent: it is read by suep-plot only, so editing a profile or an
@@ -362,4 +367,6 @@ def config_sources(config_dir: str | Path, files=CONFIG_FILES) -> set:
             # A broken config is the run's problem, not the freshness check's;
             # whatever was read before it failed still counts.
             pass
+    if "variables.yaml" in files and GLOBAL_VARIABLES.exists():
+        sources.add(GLOBAL_VARIABLES.resolve())
     return sources

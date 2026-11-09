@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import pickle
 import re
+import time
 from pathlib import Path
 
 import hist
@@ -171,8 +172,58 @@ def merge_results(paths: list[str]) -> dict:
 
 
 def load_derived_plot_defs(path: str) -> dict:
+    """A set's derived_plots.yaml, with region-aware entries expanded."""
     from .config import load_config_file
-    return load_config_file(path)
+    return expand_region_derived(load_config_file(path), path)
+
+
+def expand_region_derived(defs: dict, path="derived_plots.yaml") -> dict:
+    """Region-aware derived plots -> one explicit entry per variable.
+
+    ::
+
+        matchfrac_csc:
+          type: efficiency
+          region: csc
+          numerator: matched        # object cuts of that region
+          denominator: all
+          vars: [csc_cluster_size, csc_cluster_eta]
+
+    becomes ``csc/matchfrac_csc/csc_cluster_size`` (numerator
+    ``csc/matched/csc_cluster_size``, denominator
+    ``csc/all/csc_cluster_size``) and the same for ``csc_cluster_eta``.
+    Single-source types (profiles, projections) take ``cut:`` instead; a cut
+    left out means the region's per-event histogram.
+    """
+    from .config import ConfigError
+    from .histograms import entry_leaf, region_hist_name
+
+    out = {}
+    for name, cfg in defs.items():
+        if not isinstance(cfg, dict) or "region" not in cfg:
+            out[name] = cfg
+            continue
+        where = f"{path}: derived plot '{name}'"
+        cfg = dict(cfg)
+        region, specs = cfg.pop("region"), cfg.pop("vars", None)
+        entry = DERIVED_TYPES.get(cfg.get("type", ""))
+        if entry is None:
+            raise ConfigError(f"ERROR in {where}: unknown type '{cfg.get('type')}'; "
+                              f"known: {', '.join(DERIVED_TYPES)}")
+        if not specs:
+            raise ConfigError(f"ERROR in {where}: a region-aware derived plot needs "
+                              "'vars'")
+        keys = entry[1]
+        for spec in specs:
+            leaf = entry_leaf(spec)
+            one = dict(cfg)
+            if keys == ("source",):
+                one["source"] = region_hist_name(region, one.pop("cut", None), leaf)
+            else:
+                for key in keys:
+                    one[key] = region_hist_name(region, cfg.get(key), leaf)
+            out[f"{region}/{name}/{leaf}"] = one
+    return out
 
 
 def _is_2d_hist(h: hist.Hist) -> bool:
@@ -316,19 +367,28 @@ def _require(histograms: dict, names, plot_name: str) -> bool:
 
 
 def _finish(fig, ax, output_dir: str, name: str, formats, *,
-            lumi=None, has_data=False, xlabel=None, ylabel=None, legend=True):
-    """Label, CMS-tag, save and close one figure -- the tail of every renderer."""
+            lumi=None, has_data=False, xlabel=None, ylabel=None, legend=True,
+            annotation=None):
+    """Label, CMS-tag, save and close one figure -- the tail of every renderer.
+
+    *annotation* (a region histogram's "CSC · muon-isolated") becomes the
+    legend title, or a corner text when there is no legend.  A *name* with
+    slashes (``csc/iso_muon/csc_cluster_size``) is saved into subfolders.
+    """
     if xlabel is not None:
         ax.set_xlabel(xlabel)
     if ylabel is not None:
         ax.set_ylabel(ylabel)
     if legend:
-        ax.legend(fontsize=18, loc="best")
+        ax.legend(fontsize=18, loc="best", title=annotation, title_fontsize=16)
+    elif annotation:
+        ax.text(0.03, 0.97, annotation, transform=ax.transAxes, ha="left",
+                va="top", fontsize=16)
     _cms_label(ax, lumi=lumi, has_data=has_data)
-    os.makedirs(output_dir, exist_ok=True)
+    base = os.path.join(output_dir, name)
+    os.makedirs(os.path.dirname(base), exist_ok=True)
     for ext in formats:
-        fig.savefig(os.path.join(output_dir, f"{name}.{ext}"), dpi=150,
-                    bbox_inches="tight")
+        fig.savefig(f"{base}.{ext}", dpi=150, bbox_inches="tight")
     plt.close(fig)
     return 1
 
@@ -448,7 +508,8 @@ def plot_histogram(
 
     _finish(fig, ax, output_dir, name, formats, lumi=lumi,
             has_data=bool(data_samples), xlabel="" if rax is not None else None,
-            ylabel="Normalized" if normalize else "Events")
+            ylabel="Normalized" if normalize else "Events",
+            annotation=hist_cfg.get("annotation"))
 
 
 def _draw_ratio_panel(rax, data_hists: list[hist.Hist], bkg_hists: list[hist.Hist]):
@@ -507,7 +568,8 @@ def plot_histogram_2d(
         _finish(fig, ax, output_dir, f"{name}_{s}" if multi else name, formats,
                 lumi=lumi, legend=False,
                 xlabel=hist_cfg.get("label_x", name),
-                ylabel=hist_cfg.get("label_y", ""))
+                ylabel=hist_cfg.get("label_y", ""),
+                annotation=hist_cfg.get("annotation"))
 
 
 # ── Derived-plot helpers ──────────────────────────────────────────
@@ -872,47 +934,90 @@ def export_root(histograms: dict[str, hist.Hist], path: str):
 # ── HTML gallery ─────────────────────────────────────────────────
 
 
-def write_gallery(output_dir: str) -> str | None:
-    """Write an index.html thumbnail gallery of every PNG in *output_dir*.
+def write_gallery(output_dir: str, formats=None, since: float | None = None) -> str | None:
+    """Write an index.html thumbnail gallery of the PNGs under *output_dir*.
 
-    Each thumbnail links to the PDF when one exists (else the PNG), so the
-    whole plot set can be browsed from a single page over ssh/web.
+    Figures are grouped by folder (a region histogram ``csc/iso_muon/x`` sits
+    under ``csc/iso_muon``), and a filter box narrows the page to the figures
+    whose name contains every word typed.  With *since*, only figures written
+    since then are shown -- a figure left from an earlier run of a histogram
+    that no longer exists does not reappear.  A thumbnail links to its PDF
+    only when this run wrote PDFs (*formats*), never to a stale one.
     """
+    import html as _html
+
     out = Path(output_dir)
-    pngs = sorted(out.glob("*.png"))
+    pngs = sorted(p for p in out.rglob("*.png")
+                  if since is None or p.stat().st_mtime >= since - 1)
     if not pngs:
         return None
+    link_pdf = formats is None or "pdf" in formats
 
-    cards = []
+    groups: dict[str, list[Path]] = {}
     for png in pngs:
-        pdf = png.with_suffix(".pdf")
-        href = pdf.name if pdf.exists() else png.name
-        cards.append(
-            f'<figure><a href="{href}"><img src="{png.name}" loading="lazy" '
-            f'alt="{png.stem}"></a><figcaption>{png.stem}</figcaption></figure>'
-        )
+        groups.setdefault(png.parent.relative_to(out).as_posix(), []).append(png)
+
+    sections = []
+    for folder in sorted(groups):
+        cards = []
+        for png in groups[folder]:
+            rel = png.relative_to(out).as_posix()
+            pdf = png.with_suffix(".pdf")
+            fresh_pdf = link_pdf and pdf.exists() and \
+                (since is None or pdf.stat().st_mtime >= since - 1)
+            href = pdf.relative_to(out).as_posix() if fresh_pdf else rel
+            cards.append(
+                f'<figure data-name="{_html.escape(rel.lower())}"><a href="{href}">'
+                f'<img src="{_html.escape(rel)}" loading="lazy" alt="{png.stem}"></a>'
+                f'<figcaption>{_html.escape(png.stem)}</figcaption></figure>')
+        title = "(top level)" if folder == "." else folder
+        sections.append(f'<section><h2>{_html.escape(title)} '
+                        f'<small>({len(cards)})</small></h2>\n<div class="grid">\n'
+                        + "\n".join(cards) + "\n</div></section>")
+
     cutflow_link = ('<p><a href="cutflow.txt">cutflow.txt</a> · '
                     '<a href="cutflow.csv">cutflow.csv</a></p>'
                     if (out / "cutflow.txt").exists() else "")
 
-    html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>suep-plot: {out.name}</title>
+    page = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>suep-plot: {_html.escape(out.name)}</title>
 <style>
  body {{ font-family: sans-serif; margin: 1.5em; }}
+ #filter {{ font-size: 1.1em; padding: 4px 8px; width: min(40em, 90%); }}
+ h2 {{ font-family: monospace; margin-top: 1.5em; }}
  .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1em; }}
  figure {{ margin: 0; border: 1px solid #ddd; border-radius: 6px; padding: 6px; }}
  img {{ width: 100%; height: auto; }}
  figcaption {{ text-align: center; font-size: 0.85em; padding-top: 4px;
                font-family: monospace; word-break: break-all; }}
 </style></head><body>
-<h1>{out.name} ({len(pngs)} plots)</h1>
+<h1>{_html.escape(out.name)} ({len(pngs)} plots)</h1>
 {cutflow_link}
-<div class="grid">
-{chr(10).join(cards)}
-</div></body></html>
+<p><input id="filter" placeholder="filter: words that must all appear in the name, e.g. iso_muon size" autofocus>
+ <span id="count"></span></p>
+{chr(10).join(sections)}
+<script>
+const box = document.getElementById("filter"), count = document.getElementById("count");
+box.addEventListener("input", () => {{
+  const words = box.value.toLowerCase().split(/\\s+/).filter(Boolean);
+  let shown = 0;
+  document.querySelectorAll("section").forEach(sec => {{
+    let n = 0;
+    sec.querySelectorAll("figure").forEach(fig => {{
+      const ok = words.every(w => fig.dataset.name.includes(w));
+      fig.style.display = ok ? "" : "none";
+      if (ok) n++;
+    }});
+    sec.style.display = n ? "" : "none";
+    shown += n;
+  }});
+  count.textContent = words.length ? shown + " shown" : "";
+}});
+</script>
+</body></html>
 """
     path = out / "index.html"
-    path.write_text(html)
+    path.write_text(page)
     return str(path)
 
 
@@ -987,6 +1092,7 @@ def plot_all(
     color, linestyle, marker ...) override the ones stored in the pickles, so
     styling can be iterated without reprocessing.
     """
+    started = time.time()
     pkl_files = _resolve_inputs(results_path)
     if not pkl_files:
         print("No .pkl files found.")
@@ -1061,7 +1167,7 @@ def plot_all(
         else:
             print(f"  {name}")
 
-    gallery = write_gallery(output_dir)
+    gallery = write_gallery(output_dir, formats=formats, since=started)
     if gallery:
         print(f"Gallery: {gallery}")
 

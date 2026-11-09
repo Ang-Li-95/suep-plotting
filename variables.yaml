@@ -1,0 +1,17 @@
+# ── The variable catalog ──────────────────────────────────────────
+# Every variable a histogram can plot, written once: what is filled
+# (expression), how it is binned (bins: [n, lo, hi] or edges) and its axis
+# title (label), plus optional 1D display defaults (log_x, log_y, flow, rebin,
+# blind).  A histogram names a variable instead of repeating all of that:
+#
+#   csc_cluster_size: {x: csc_cluster_size}                  # histograms.yaml
+#   regions: {csc: {objects: {all: {vars: [csc_cluster_size]}}}}
+#
+# and anything the histogram writes itself (bins, label, ...) overrides the
+# default here.  A config set can retune a default for all of its histograms
+# with its own configs/<set>/variables.yaml, merged over this file:
+#
+#   llp_decay_r: {bins: [90, 0, 900]}
+#
+# Read with the same loader as every config file, so _axes / _repeat write a
+# CSC/DT family once.  See docs/configuration.md.

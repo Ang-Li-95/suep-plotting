@@ -48,7 +48,8 @@ def _resolved_columns(config_dir: Path) -> dict:
 
 def dump(config_dir: Path) -> dict:
     from suep_plot.corrections import load_correction_defs
-    from suep_plot.histograms import load_histogram_defs, load_selection_defs
+    from suep_plot.histograms import (load_histogram_defs, load_selection_defs,
+                                      load_variables)
     from suep_plot.plot import load_derived_plot_defs
     from suep_plot.processor import load_columns_config, load_samples
     from suep_plot.reweights import load_reweight_defs
@@ -61,6 +62,8 @@ def dump(config_dir: Path) -> dict:
         "reweights": lambda p: load_reweight_defs(p / "reweights.yaml"),
         "derived_plots": lambda p: load_derived_plot_defs(str(p / "derived_plots.yaml")),
         "columns": lambda p: load_columns_config(p / "columns.yaml"),
+        # The catalog the set sees: the global variables.yaml + its overrides.
+        "variables": load_variables,
         # The settings derive() actually runs on, not the YAML that produced
         # them: two configs that spell the defaults out differently are the
         # same run, and this is the level a refactor has to preserve.

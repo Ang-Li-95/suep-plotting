@@ -319,3 +319,73 @@ def test_merge_takes_per_object_from_whichever_pickle_filled_it(tmp_path):
         paths.append(str(tmp_path / name))
 
     assert merge_results(paths)["hist_defs"]["h"]["per_object"] is True
+
+
+# ── region-aware derived plots, folders, gallery ──────────────────
+
+
+def test_a_region_derived_plot_expands_per_variable():
+    from suep_plot.plot import expand_region_derived
+
+    defs = expand_region_derived({
+        "matchfrac": {"type": "efficiency", "region": "csc", "numerator": "matched",
+                      "denominator": "all", "vars": ["size", "eta"],
+                      "label_y": "matched fraction"},
+        "prof": {"type": "profile_x", "region": "llp", "cut": "in_csc",
+                 "vars": [["eta", "nhits"]]},
+        "explicit": {"type": "ratio", "numerator": "a", "denominator": "b"},
+    })
+
+    assert defs["csc/matchfrac/size"] == {
+        "type": "efficiency", "numerator": "csc/matched/size",
+        "denominator": "csc/all/size", "label_y": "matched fraction"}
+    assert defs["csc/matchfrac/eta"]["numerator"] == "csc/matched/eta"
+    assert defs["llp/prof/eta_vs_nhits"]["source"] == "llp/in_csc/eta_vs_nhits"
+    assert defs["explicit"] == {"type": "ratio", "numerator": "a", "denominator": "b"}
+
+
+def test_figures_of_region_histograms_go_into_folders(tmp_path):
+    from suep_plot.plot import plot_histogram
+
+    h = make_hist("sig", [10.0, 60.0])
+    plot_histogram(h, {"label": "x", "annotation": "CSC · iso"}, {}, str(tmp_path),
+                   "csc/iso/size", formats=("png",))
+
+    assert (tmp_path / "csc" / "iso" / "size.png").exists()
+
+
+def test_the_gallery_groups_by_folder_and_skips_old_figures(tmp_path):
+    import os
+    import time
+
+    from suep_plot.plot import write_gallery
+
+    (tmp_path / "csc" / "all").mkdir(parents=True)
+    (tmp_path / "csc" / "all" / "size.png").write_bytes(b"png")
+    old = tmp_path / "gone.png"
+    old.write_bytes(b"png")
+    t = time.time() - 3600
+    os.utime(old, (t, t))
+    stale_pdf = tmp_path / "csc" / "all" / "size.pdf"
+    stale_pdf.write_bytes(b"pdf")
+    os.utime(stale_pdf, (t, t))
+
+    page = (tmp_path / "index.html")
+    write_gallery(str(tmp_path), formats=("png",), since=time.time() - 60)
+    text = page.read_text()
+
+    assert "csc/all/size.png" in text
+    assert "gone.png" not in text                    # not written by this run
+    assert 'href="csc/all/size.pdf"' not in text     # stale PDF not linked
+    assert 'id="filter"' in text
+
+
+def test_the_root_export_nests_region_histograms(tmp_path):
+    import uproot
+
+    from suep_plot.plot import export_root
+
+    export_root({"csc/all/size": make_hist("sig", [10.0])}, str(tmp_path / "out.root"))
+
+    with uproot.open(tmp_path / "out.root") as f:
+        assert f["csc/all/size/sig"].values().sum() == 1

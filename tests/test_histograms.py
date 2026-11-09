@@ -423,3 +423,160 @@ def test_a_selection_can_be_just_its_expression(tmp_path):
 
     assert load_selection_defs(p) == {"highmet": {"expression": "events.met > 50"},
                                       "good": {"expression": "events.Jet.pt > 60"}}
+
+
+# ── the variable catalog ──────────────────────────────────────────
+
+CATALOG = {
+    "met": {"expression": "events.met", "bins": 10, "lo": 0, "hi": 200,
+            "label": "MET", "log_y": True},
+    "jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
+               "label": "jet pT"},
+    "jet_eta": {"expression": "events.Jet.eta", "edges": [-3, 0, 3],
+                "label": "jet eta"},
+}
+
+
+def test_a_histogram_takes_a_variable_from_the_catalog(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"met": {"x": "met"},
+                                    "met_wide": {"x": "met", "bins": [20, 0, 400],
+                                                 "log_y": False}})
+    defs = load_histogram_defs(p, variables=CATALOG)
+
+    assert defs["met"] == {"expression": "events.met", "bins": 10, "lo": 0,
+                           "hi": 200, "label": "MET", "log_y": True}
+    # What the histogram writes wins, key by key.
+    assert (defs["met_wide"]["bins"], defs["met_wide"]["hi"],
+            defs["met_wide"]["log_y"]) == (20, 400, False)
+
+
+def test_an_unknown_variable_names_the_closest(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"pt": {"x": "jet_ptt"}})
+
+    with pytest.raises(ConfigError, match="did you mean jet_pt"):
+        load_histogram_defs(p, variables=CATALOG)
+
+
+def test_a_set_retunes_one_key_of_a_global_variable(tmp_path, monkeypatch):
+    from suep_plot import histograms
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"met": {"expression": "events.met", "bins": [10, 0, 200],
+                          "label": "MET"}})
+    monkeypatch.setattr(histograms, "GLOBAL_VARIABLES", glob)
+    _yaml(tmp_path / "set" / "variables.yaml", {"met": {"bins": [20, 0, 200]}})
+
+    met = histograms.load_variables(tmp_path / "set")["met"]
+    assert (met["bins"], met["hi"], met["label"]) == (20, 200, "MET")
+
+
+def test_a_variable_with_an_unknown_key_is_reported(tmp_path, monkeypatch):
+    from suep_plot import histograms
+    from suep_plot.config import ConfigError
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"met": {"expression": "events.met", "bins": [10, 0, 200],
+                          "titel": "MET"}})
+    monkeypatch.setattr(histograms, "GLOBAL_VARIABLES", glob)
+
+    with pytest.raises(ConfigError, match="unknown key"):
+        histograms.load_variables()
+
+
+# ── regions ───────────────────────────────────────────────────────
+
+
+def test_regions_expand_to_one_histogram_per_cut_and_variable(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {
+        "jets": {
+            "label": "Jets",
+            "events": ["highmet"],
+            "per_event": ["met"],
+            "objects": {
+                "all": {"vars": ["jet_pt", ["jet_pt", "jet_eta"]]},
+                "central": {"cut": ["central"], "label": "|eta| < 1",
+                            "vars": ["jet_pt", {"var": "jet_pt", "name": "jet_pt_fine",
+                                                "bins": [40, 0, 400]}]},
+            }}}})
+    defs = load_histogram_defs(p, variables=CATALOG)
+
+    assert sorted(defs) == ["jets/all/jet_pt", "jets/all/jet_pt_vs_jet_eta",
+                            "jets/central/jet_pt", "jets/central/jet_pt_fine",
+                            "jets/met"]
+    assert defs["jets/central/jet_pt"]["selections"] == ["highmet", "central"]
+    assert defs["jets/met"]["selections"] == ["highmet"]
+    assert defs["jets/central/jet_pt"]["annotation"] == "Jets · |eta| < 1"
+    assert defs["jets/all/jet_pt"]["annotation"] == "Jets"
+    assert defs["jets/central/jet_pt_fine"]["bins"] == 40
+    assert defs["jets/all/jet_pt_vs_jet_eta"]["edges_y"] == [-3, 0, 3]
+
+
+def test_a_region_family_is_written_once_with_repeat(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {
+        "_axes": {"systems": [{"SYS": "a"}, {"SYS": "b"}]},
+        "regions": {"_repeat": [{"over": "systems", "defs": {
+            "<SYS>": {"objects": {"all": {"vars": ["jet_pt"]}}}}}]},
+    })
+
+    assert sorted(load_histogram_defs(p, variables=CATALOG)) == \
+        ["a/all/jet_pt", "b/all/jet_pt"]
+
+
+def test_a_child_set_adds_a_cut_to_an_inherited_region(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    _yaml(tmp_path / "base" / "histograms.yaml", {"regions": {
+        "jets": {"objects": {"all": {"vars": ["jet_pt"]}}}}})
+    child = _yaml(tmp_path / "child" / "histograms.yaml", {
+        "_extends": "../base",
+        "regions": {"jets": {"objects": {"central": {"cut": "central",
+                                                     "vars": ["jet_pt"]}}}}})
+
+    assert sorted(load_histogram_defs(child, variables=CATALOG)) == \
+        ["jets/all/jet_pt", "jets/central/jet_pt"]
+
+
+def test_a_variable_listed_twice_under_one_cut_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {
+        "jets": {"objects": {"all": {"vars": ["jet_pt", "jet_pt"]}}}}})
+
+    with pytest.raises(ConfigError, match="listed twice"):
+        load_histogram_defs(p, variables=CATALOG)
+
+
+def test_a_misspelled_region_key_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {"jets": {"event": ["x"]}}})
+
+    with pytest.raises(ConfigError, match="unknown key"):
+        load_histogram_defs(p, variables=CATALOG)
+
+
+def test_region_histograms_fill_after_both_cuts():
+    from suep_plot.histograms import expand_regions, resolve_axes
+
+    defs = expand_regions({"jets": {"events": ["highmet"], "objects": {
+        "hard": {"cut": ["good"], "vars": ["jet_pt"]}}}})
+    defs = {n: resolve_axes(n, c, CATALOG) for n, c in defs.items()}
+    sels = {"good": {"expression": "events.Jet.pt > 60"},
+            "highmet": {"expression": "events.met > 50"}}
+    hists = build_histograms(defs, ["s"])
+
+    fill_histograms(hists, defs, sels, make_events(), "s", np.ones(3))
+
+    # met > 50: events 2 and 3; jets > 60 there: only the 200 GeV one
+    assert totals(hists["jets/hard/jet_pt"]) == 1
