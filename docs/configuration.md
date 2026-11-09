@@ -1,141 +1,134 @@
 # Configuration reference
 
-A **config set** is a directory of YAML files describing one study. `suep-run`
-and `suep-plot` take it with `-c`:
+A **config set** is a directory of YAML files describing one study. `suep-run`,
+`suep-submit` and `suep-plot` take it with `-c`:
 
 ```
 configs/configs_mds_signal/
-├── samples.yaml         # which datasets to run, cross sections, styling
-├── histograms.yaml      # histogram definitions (NanoEvents expressions)
-├── selections.yaml      # named event-/object-level cuts
-├── corrections.yaml     # correctionlib scale-factor definitions
+├── set.yaml             # optional: parent set, one-line description, abstract
+├── samples.yaml         # which datasets to run (from ../../datasets.yaml)
+├── histograms.yaml      # what to fill: regions -> cuts -> variables
+├── selections.yaml      # named event- and object-level cuts
+├── corrections.yaml     # correctionlib scale factors
 ├── reweights.yaml       # event-/object-level reweighting
-├── derived_plots.yaml   # profiles/projections/efficiency/ratio at plot time
-└── columns.yaml         # parameters + steps of derive() -- see derived-columns.md
+├── derived_plots.yaml   # efficiencies, ratios, profiles ... at plot time
+├── columns.yaml         # derive() parameters and steps -- see derived-columns.md
+└── variables.yaml       # optional: this set's overrides of the variable catalog
 ```
 
-Every one of them is read by `src/suep_plot/config.py`, so the directives in the
-next section mean the same thing in all of them.
+Every file is read by `src/suep_plot/config.py`, so the directives below mean
+the same thing in all of them. To see what a set really defines once
+everything is inherited and expanded:
+
+```bash
+suep-config show configs/configs_mds_signal --grep cluster_size
+suep-config check configs/configs_mds_signal      # references, then every expression
+```
 
 ---
 
-## Directives
+## Config sets and inheritance
 
-These four keys are understood in **every** config file. They are directives,
-not definitions: like any `_`-prefixed key they never become a histogram, a
-selection or a sample.
+### `set.yaml`
 
-### The two bases
+```yaml
+extends: ../configs_mds          # every file this set does not have comes from there
+description: "configs_mds with the standard MDS clustering: min cluster size 50"
+abstract: true                   # bases only: never run on their own
+```
 
-`configs/common/` and `configs/common_gen/` are config *sets* that no run uses
-directly. `common` holds the reco-level cluster histograms and selections every
-study fills; `common_gen` `_extends` it and adds the gen-level ones — the LLP
-collection, the truth splits, the efficiency chain and its derived plots.
+- **`extends`** -- any config file missing from the set behaves as
+  `_extends: <parent>`. A set that changes one setting is therefore two files:
+  `set.yaml` and the file that differs (see `configs/configs_mds_minpts50/`).
+  A file the set *does* have keeps its own meaning: start it with
+  `_extends: <parent>` to change only part of the parent's file, or it
+  replaces the parent's file entirely (`suep-config check` warns about this).
+- **`description`** -- listed when `-c` names something that is not a set.
+- **`abstract`** -- `common`, `common_gen` and `common_clustersrc` are bases
+  that only exist to be extended; `suep-run` / `suep-submit` refuse them.
+
+### The bases
 
 ```
 configs/common/            reco histograms + selections + derived plots,
   │                        rpc_mode: match, the four reco steps
   ├── configs_mds/                  _extends ../common      (and nothing else)
-  ├── configs_mds_data/             _extends ../common + the isolation splits
-  ├── configs/common_clustersrc/    + every cluster histogram cut to one named
-  │     └── configs_mds_src_*/        population; the five sets define what it is
-  └── configs/common_gen/  + LLP collection, truth splits, efficiency chain,
+  │     └── configs_mds_minpts50/   set.yaml + columns.yaml (min cluster size 50)
+  ├── configs_mds_data/             + the isolation cuts
+  ├── configs_mds_cosmics/          the cluster plots that need no prompt object
+  ├── common_clustersrc/            every cluster plot cut to one population
+  │     └── configs_mds_src_*/        the six sets define the population
+  └── common_gen/          + LLP collection, truth cuts, efficiency chain,
         │                    and the four gen steps
         ├── configs_mds_signal/     _extends ../common_gen  (and nothing else)
-        └── configs_mds_rpcmerge/   _extends ../configs_mds_signal, rpc_mode: merge
+        ├── configs_mds_gen/        + the LLP shower-shape family
+        └── configs_mds_rpcmerge/   configs_mds_signal with rpc_mode: merge
 ```
 
 `common` carries only the **reco** steps (`jerc, jet_id, clusters,
 cluster_isolation`); `common_gen` adds the four gen ones. A study with no
-gen-level fills should not pay for them, and `events.llp` being absent is what
-makes a stray gen expression fail at validation instead of filling empty.
+gen-level fills does not pay for them, and `events.llp` being absent is what
+makes a stray gen expression fail at startup instead of filling empty.
 
-`common` also fixes **`rpc_mode: match`** as the default, so there is no
-standalone `events.rpcCluster` and no `rpc_cluster_*` histogram anywhere: the
-RPC rechits are attached to the finished CSC and DT clusters, which carry their
-RPC content and timing. Everything per-system is therefore a CSC/DT pair — the
-`systems` axis in `common/selections.yaml` has two entries, and `common_gen`
-inherits it.
+---
 
-A study attaches its own splits by overriding **one key** of an inherited
-histogram — `csc_cluster_size: {variants: csc_variants}` — because mappings
-merge deeply. That is why `common` deliberately defines no `_variant_sets` and
-puts no `variants:` on anything: what a cluster is split by is the study's
-business, and `configs_mds` wants the inclusive fills on their own.
+## Directives
 
-### `_extends` — inherit another config set
+Five keys are understood in **every** config file. They are directives, not
+definitions: like any `_`-prefixed key they never become a histogram, a
+selection or a sample. An unknown `_` key (a typo like `_extend:`) is an
+error, as is a file that is not valid YAML.
+
+### `_extends` -- inherit the same file from another set
 
 ```yaml
 _extends: ../configs_mds_signal
 
-cluster_size_rpc: null            # drop an inherited definition
-cluster_size_csc:                 # override part of one (mappings merge deeply)
-  hi: 800
+some_selection: null            # drop an inherited definition
+regions:
+  csc:
+    objects:
+      iso_muon: {cut: csc_cluster_iso_muon, vars: [csc_cluster_size]}   # add a cut
 ```
 
 The same-named file from the other set is loaded first and this file's keys are
-merged over it. `null` deletes. Chains are followed, and a cycle is an error.
+merged over it: **mappings merge deeply, lists are replaced, `null` deletes**.
+Chains are followed, a list of parents is merged left to right, and a cycle is
+an error.
 
-This is how the RPC-mode studies are defined: `configs/configs_mds_rpcmerge/`
-is `configs_mds_signal` with `rpc_mode: merge`, a handful of deletions and the
-RPC timing histograms added — so the two stay comparable plot for plot by
-construction, instead of being kept in step by hand.
-
-### `_repeat` — write a per-system family once
-
-Most definitions in this analysis exist once per muon subdetector. `_repeat`
-expands one template over a list of substitutions:
+### `_repeat` and `_axes` -- write a per-system family once
 
 ```yaml
 _axes:
   systems:
     - {SYS: csc, SYSU: CSC}
     - {SYS: dt,  SYSU: DT}
-    - {SYS: rpc, SYSU: RPC}
 
 _repeat:
   - over: systems                 # or an inline list of mappings
     defs:
-      llp_in_<SYS>:
-        level: object
-        expression: "events.llp.in<SYSU>"
+      <SYS>_cluster_matched: "events.<SYS>Cluster.matched"
 ```
 
-- The sigil is `<NAME>`, **not** `{NAME}` — the labels are full of LaTeX braces.
+- The sigil is `<NAME>`, **not** `{NAME}` -- the labels are full of LaTeX braces.
 - Substitution reaches keys and every string leaf, including inside lists.
 - A value that is *exactly* one placeholder keeps the substituted **type**, so
-  `hi: <HI>` with `HI: 500` stays the integer 500 and `edges: <EDGES>` can carry
-  a whole list. Embedded in text (`label: "up to <HI> GeV"`) it interpolates as
-  a string.
-- There are no conditionals: a family that covers only CSC and DT lists only
-  those two.
+  `hi: <HI>` with `HI: 500` stays the integer 500.
+- Axes are inherited through `_extends`; a `regions:` block may hold its own
+  `_repeat` (see below).
 - A generated name colliding with an explicit definition is an error.
 
-Per-system definitions that genuinely differ — different expressions, different
-binning per system — are better written out; a `_repeat` whose axis has to carry
-a dozen hoisted values is harder to read than the thing it replaced.
-
-### `_include` — merge in a shared fragment
+### `_include` -- merge in a shared fragment
 
 ```yaml
-_include: [../_common/shared_cuts.yaml]
+_include: [../_shared/cuts.yaml]
 ```
 
-Definitions from the named files are merged in, then this file's own keys are
-merged over them. Unlike `_extends`, which follows the config *set*, an include
-names one file — reach for it when a handful of definitions are shared by sets
-that are siblings rather than variants of each other.
+Definitions from the named files are merged in, then this file's keys over them.
+Unlike `_extends`, which follows the config *set*, an include names one file.
+No shipped set uses it.
 
-No config set uses it today: the prompt-object cuts that were its one candidate
-are written out in each `selections.yaml` instead, so a cut can be retuned in
-one study without silently moving the others (see
-[derived-columns.md](derived-columns.md#prompt-objects-live-in-selectionsyaml)).
-
-> The up-to-date check follows `_include`, `_extends` and `_registry` (see
-> `config.config_sources`), so editing an included fragment does reprocess every
-> set that reads it — no `--force` needed.
-
-### `_registry` — select from a pool
+### `_registry` -- select from a pool
 
 What `samples.yaml` does with the central dataset registry:
 
@@ -149,233 +142,240 @@ signal_alias:
   label: "the same data, another name"
 ```
 
-`_registry` and `_include` deliberately mean opposite things for an entry with
-no value: an include *merges*, so `name:` deletes; a registry is a pool you
-*select* from, so `name:` takes. A file with no `_registry` needs every
-definition spelled out.
+`_registry` and `_include` mean opposite things for an entry with no value: an
+include *merges*, so `name:` deletes; a registry is a pool you *select* from, so
+`name:` takes.
+
+The up-to-date check of `suep-run` follows all of these (and `set.yaml`), so
+editing an inherited or included file reprocesses every set that reads it.
 
 ---
 
-All behaviour is controlled by the YAML files of a config set under `configs/`.
+## The variable catalog: `variables.yaml`
 
-### samples.yaml
-
-```yaml
-suep_mMed125_mDark2:
-  files:                                    # paths, globs, directories, or xrootd URLs
-    - "/path/to/NanoAOD/*.root"             # a directory is walked recursively for *.root
-  tree: Events                              # TTree name (default: Events)
-  is_data: false                            # true for collision data
-  xs: 1.0                                   # cross section in pb (MC; used by --lumi scaling)
-  label: "SUEP $m_{Med}$=125"               # legend label (LaTeX ok)
-  color: "tab:blue"                         # matplotlib color
-  linestyle: "--"                           # optional: dash pattern for step curves
-  group: signal                             # signal / background (data via is_data)
-  scale: 100                                # optional: draw signal x100 (legend shows "×100")
-```
-
-A `files:` entry may be a file, a glob (`*`/`?`), or a **directory** — local or
-xrootd — in which case it is walked recursively for `*.root`. `group` drives plot
-styling: `background` → stacked fill, `signal` → step overlay (or fill if alone),
-`is_data: true` → error bars.
-
-#### Central dataset registry
-
-Datasets are defined once in the top-level [`datasets.yaml`](../datasets.yaml); each
-config picks the combination it needs instead of repeating the definitions:
+Every variable a histogram can plot, written once at the repo root:
 
 ```yaml
-_include: ../../datasets.yaml    # one path or a list; relative to this samples.yaml
-
-suep_mDark2_temp1:            # registry entry, verbatim
-suep_mDark2_temp2:            # registry entry with per-study overrides
-  color: "black"
-  scale: 100
-dy:                           # same dataset under a different config name
-  _from: dy_central_50to120
-qcd_private:                  # full standalone definition — registry not required
-  files: ["/my/private/dir"]
-  xs: 1.0
+csc_cluster_size: {expression: events.cscCluster.size, bins: [50, 0, 500], label: 'CSC cluster $N_{\mathrm{hits}}$', log_y: true}
+llp_decay_r:      {expression: events.llp.decayR, bins: [60, 0, 1200], label: 'LLP decay $r$ [cm]'}
+llp_pt:           {expression: events.llp.pt, edges: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 30, 50], label: 'LLP $p_T$ [GeV]'}
 ```
 
-Per-sample keys are merged over the registry entry (config wins). A name that is
-neither in the registry nor carries its own `files:` is an error listing the
-available datasets, so typos fail at startup rather than mid-run. Configs that
-define everything inline keep working unchanged — `_include` is optional.
-`sumw` (Σ genWeight) and `nevents` are recorded per sample in the pickle; when
-`--lumi` is passed to the plotter, each MC sample is normalized by
-`xs × lumi × 1000 / sumw` (data is never scaled; MC without `xs`/`sumw` is left
-raw with a warning).
-
-### histograms.yaml
-
-**The main file you edit to add plots.** Expressions use NanoEvents object syntax.
-
-```yaml
-jet_pt:
-  expression: "events.Jet.pt"               # per-jet pt (jagged)
-  bins: 60
-  lo: 0
-  hi: 600
-  label: "$p_{T}^{jet}$ [GeV]"
-  per_object: true                          # flatten jagged -> one entry per jet
-  selections: [baseline, high_ht]           # AND of these cuts (optional)
-  weight: "events.someScalarBranch"         # extra per-event weight (optional)
-```
-
-Fill-time fields (changing them requires re-running `suep-run`):
-
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `expression` | yes | — | NanoEvents expression (see [Expression language](#expression-language)). |
-| `bins` / `lo` / `hi` | yes* | — | Uniform axis binning. |
-| `edges` | yes* | — | Explicit bin edges for variable binning, e.g. `[0, 20, 40, 80, 160]` (alternative to `bins/lo/hi`). |
-| `per_object` | no | `false` | If `true`, expression returns a jagged array (e.g. one value per jet); it is flattened, with per-event weights repeated per object. Otherwise it must return one value per event. |
-| `selections` | no | `[]` | Selection names from `selections.yaml`, AND-ed. |
-| `weight` | no | — | Extra per-event weight (× genWeight × corrections). |
-| `variants` | no | — | Repeat this histogram under extra selections — see [`variants`](#the-same-plot-under-several-selections-variants). |
-
-Plot-time fields (take effect on the next `suep-plot`, **no reprocessing**):
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `label` | name | X-axis label (LaTeX between `$…$`). |
-| `blind` | `false` | Don't draw data for this histogram (signal regions). |
-| `rebin` | — | Merge N adjacent bins at plot time (1D only). |
-| `flow` | `sum` | Under/overflow is folded into the first/last bin, so nothing is lost off the axis; `none` drops it instead. |
-| `log_x` / `log_y` | `false` | Logarithmic axes for this histogram. |
-| `log_z` | `false` | Log color scale (2D histograms). |
-
-**2D histograms** use `expression_x`/`expression_y` with
-`bins_x/lo_x/hi_x/bins_y/lo_y/hi_y` (or `edges_x`/`edges_y`) and
-`label_x/label_y`. They render as colz and can feed the derived
-profile/projection plots.
-
-#### The same plot under several selections (`variants`)
-
-Cluster studies usually want every variable under the same handful of cuts
-(matched / unmatched, in-time / out-of-time, per station …). Write the variable
-once and list the cuts — the loader expands the (variable × selection) matrix:
-
-```yaml
-_variant_sets:                  # reusable; top-level '_' keys are not histograms
-  csc_match:
-    matched:   {selections: [csc_cluster_matched],   label_prefix: "matched "}
-    unmatched: {selections: [csc_cluster_unmatched], label_prefix: "unmatched "}
-
-csc_cluster_size:
-  expression: "events.cscCluster.size"
-  per_object: true
-  selections: [has_csc_cluster]     # base cuts: kept by every variant
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'CSC cluster $N_{\mathrm{hits}}$'
-  variants: csc_match               # or an inline mapping of the same shape
-```
-
-That yields three histograms — `csc_cluster_size` (base cuts only),
-`csc_cluster_size_matched` and `csc_cluster_size_unmatched` — and adding a third
-cut to `csc_match` adds one plot to *every* variable that references it.
-
-| Variant key | Effect |
+| Key | Meaning |
 |---|---|
-| `selections` | **Appended** to the base `selections`, so base cuts keep applying. |
-| `label_prefix` / `label_suffix` | Decorate the base `label` (legends and axis titles stay distinguishable). |
-| any other key | Overrides the base outright — e.g. `log_y: false`, a different `hi`. |
-| `keep_base: false` | *On the histogram, not the variant:* drop the unselected version and keep only the variants. |
+| `expression` | what is filled (see [Expression language](#expression-language)) |
+| `bins: [n, lo, hi]` or `edges: [...]` | the default binning |
+| `label` | the axis title |
+| `log_x`, `log_y`, `flow`, `rebin`, `blind` | optional display defaults of its 1D histograms |
 
-Expansion happens where the YAML is read, so variants behave exactly like
-hand-written entries: they appear in `cutflow.txt`, the `index.html` gallery and
-`derived_plots.yaml` under their expanded names (`<name>_<variant>`), and their
-selection names are validated the same way. A variant that would overwrite an
-existing histogram, or an unknown variant-set name, is a fatal config error.
-
-### selections.yaml
-
-Named boolean cuts referenced by histograms.
+Anything else is an error. A histogram names the variable and overrides any of
+these for itself. A config set can retune a default for all of its histograms
+in its own `configs/<set>/variables.yaml`, merged over the global file (and
+inherited through `_extends` / `set.yaml` like every other file):
 
 ```yaml
-baseline:                                    # event-level
-  label: "Baseline"
-  expression: "ak.num(events.Jet) >= 1"
-
-good_jets:                                   # object-level
-  label: "$p_T^{jet} > 30$, $|\\eta| < 2.4$"
-  expression: "(events.Jet.pt > 30) & (abs(events.Jet.eta) < 2.4)"
-  level: object
+# configs/configs_xyz/variables.yaml
+llp_decay_r: {bins: [90, 0, 900]}       # every histogram of llp_decay_r follows
+my_new_variable: {expression: "events.llp.pt / events.llp.energy", bins: [50, 0, 1], label: '$p_T/E$'}
 ```
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `expression` | yes | Boolean array. Event-level → one per event; object-level → jagged, matching a collection. |
-| `level` | no | `event` (default) or `object`. |
-| `label` | no | Human-readable label. |
+---
 
-**Object-level** selections filter which objects enter a `per_object` histogram;
-applied to an event-level histogram they mean "require ≥1 passing object"
-(auto `ak.any(…, axis=1)`). Multiple selections on one histogram are AND-ed.
+## `histograms.yaml`
 
-Pre-defined: `baseline`, `high_ht`, `has_muon`, `has_csc_cluster`,
-`has_dt_cluster`, `met_gt50` (event-level) and `good_jets` (object-level).
+### Regions: event cuts → object cuts → variables
 
-#### Selections as columns
-
-Every selection is also attached to `events` as a **column of its own name**, so
-an expression anywhere else in the config set can reach the mask instead of
-re-deriving it:
+Most histograms are written as a **region tree**:
 
 ```yaml
-# selections.yaml -- the cut, written once
-electron_sel:
-  level: object
-  collection: Electron
-  expression: "(events.Electron.pt > 10) & (events.Electron.cutBased >= 1)"
+regions:
+  csc:                                      # region
+    label: CSC clusters                     # shown on the figures (default: the name)
+    events: [has_csc_cluster]               # event-level cuts, AND-ed (may be omitted)
+    per_event: [csc_cluster_n]              # filled once per event after the event cuts
+    objects:                                # object-level cuts -> variables
+      all:                                  # no cut: every cluster
+        vars: &csc_vars
+          - csc_cluster_size
+          - csc_cluster_eta
+          - {var: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+          - {name: csc_cluster_dr_muon_vs_jet, x: csc_cluster_dr_muon, y: csc_cluster_dr_jet}
+      iso_muon:
+        cut: csc_cluster_iso_muon           # one selection, or a list (AND-ed)
+        label: muon-isolated
+        vars: *csc_vars                     # YAML anchors reuse a list in one file
 ```
+
+Each entry becomes one histogram named **`<region>/<cut>/<variable>`**
+(`csc/iso_muon/csc_cluster_size`), or `<region>/<variable>` for `per_event`.
+The name is also the figure's folder: `plots/csc/iso_muon/csc_cluster_size.png`.
+
+- **Selections** of a histogram: the region's `events`, then the cut's `cut`,
+  then the entry's own `selections` (all AND-ed).
+- **Per object or per event** is read off the expression: a variable with one
+  entry per object (`events.cscCluster.size`) fills once per object passing the
+  cuts; a per-event variable under an object cut fills once per event with at
+  least one passing object.
+- **Labels**: the x-axis title is the variable's; the region and cut labels go
+  on the figure ("CSC clusters · muon-isolated"). A cut's label defaults to its
+  name, except `all`.
+
+An **entry** is one of:
+
+| Entry | Histogram |
+|---|---|
+| `csc_cluster_size` | the catalog variable, 1D, leaf name = the variable |
+| `[llp_decay_absz, llp_decay_r]` | 2D, x and y from the catalog, leaf `llp_decay_absz_vs_llp_decay_r` |
+| `{var: llp_pt, bins: [50, 0, 50], log_y: true}` | 1D with overrides |
+| `{name: llp_decay_rz, x: llp_decay_absz, y: {var: llp_decay_r, bins: [60, 0, 900]}}` | 2D with a name and a per-axis override |
+| `{var: x, selections: [...], weight: ...}` | extra cuts or a weight for this histogram only |
+
+Overrides are any histogram key (binning, `label`, `weight`, display keys);
+the same variable listed twice under one cut needs a `name:` for one of them.
+
+**Inheritance.** Regions merge deeply, so a child set adds a cut to an
+inherited region with one entry, or deletes one with `<cut>: null`. A `vars`
+list is replaced, not appended: to change one variable of an inherited cut,
+restate its list. `per_event: []` clears an inherited list.
+
+A per-system family of regions can be written once with a `_repeat` inside
+`regions:` (using the file's `_axes`).
+
+### Histograms written out on their own
+
+Outside `regions:` a histogram is defined directly; this is also the form the
+regions expand to, and what `suep-config show` displays:
 
 ```yaml
-# histograms.yaml -- counts what the cut keeps, without repeating it
-n_electron_sel:
-  expression: "ak.sum(events.electron_sel, axis=1)"
-  bins: 6
-  lo: -0.5
-  hi: 5.5
-  label: '$N_{e}$'
+leading_jet_pt:
+  x: jet_pt                       # a catalog variable ...
+  expression: "ak.firsts(events.Jet.pt)"     # ... with its expression replaced
+  bins: [50, 0, 500]
+
+met_vs_ht:                        # 2D: an x and a y axis
+  x: {expression: "events.PuppiMET.pt", bins: [40, 0, 400], label: 'MET [GeV]'}
+  y: {var: ht}
+  log_z: true
+
+old_style:                        # the long form still works
+  expression: "events.Muon.dxy"
+  bins: 100
+  lo: -0.05
+  hi: 0.05
+  label: '$d_{xy}^{\mu}$ [cm]'
 ```
 
-So **adding a multiplicity plot is one selection plus one histogram, and no
-Python.** The reason to prefer this over restating the cut in the histogram
-expression is that the restated version is two copies of the same physics: the
-first time a working point is retuned, only one moves, and the plot then quietly
-disagrees with the selection it is named after.
+Shorthands: `bins: [n, lo, hi]` for a regular axis (and `bins_x`, `bins_y`).
+An `x:` / `y:` value is a variable name, `{var: name, <overrides>}`, or an
+inline `{expression, bins | edges, label}`. In 1D, keys written at the top
+level override the x axis. Replacing inherited `edges` with `bins` (or the other
+way round) needs `edges: null` (`bins: null`) for the old one.
 
-Object-level masks keep their per-object structure, so:
+Fill-time keys (changing them needs `suep-run` again): `expression` /
+`expression_x` / `expression_y`, the binning, `selections`, `weight`.
+
+Plot-time keys (take effect on the next `suep-plot`, **no reprocessing**):
+
+| Key | Default | Effect |
+|---|---|---|
+| `label` (`label_x`, `label_y`) | name | axis titles |
+| `annotation` | region · cut | text on the figure |
+| `blind` | `false` | don't draw data |
+| `rebin` | -- | merge N adjacent bins (1D) |
+| `flow` | `sum` | fold under/overflow into the edge bins; `none` drops it |
+| `log_x` / `log_y` / `log_z` | `false` | log axes / colour scale |
+
+`per_object` is no longer written: it is read off the expression (jagged =
+per object). An explicit value must agree with the expression, or the run
+stops naming the histogram.
+
+#### `variants` (older form)
+
+`variants:` and `_variant_sets` still work -- a histogram repeated under extra
+selections as `<name>_<suffix>` -- but the shipped configs use regions instead,
+where the same split is a cut under a region.
+
+---
+
+## `selections.yaml`
+
+Named boolean cuts. A selection is just its expression, or a mapping when it
+needs a `label` or a `collection`:
+
+```yaml
+has_csc_cluster: "ak.num(events.cscCluster) >= 1"      # one entry per event
+
+csc_cluster_iso_muon: "events.cscCluster.drMuon >= 0.4" # one entry per cluster
+
+muon_sel_foriso:                                        # read by the isolation step
+  collection: Muon
+  label: 'loose muon, $p_T > 10$ GeV'
+  expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
+```
+
+Whether a selection is event- or object-level is read off its mask (one entry
+per object = object-level); a `level:` key is accepted but must agree.
+Object-level selections filter the objects a per-object histogram fills;
+applied to a per-event histogram they mean "at least one object passes".
+
+### Selections as columns
+
+Every selection is also attached to `events` as a **column of its own name**,
+so any expression can reach the mask instead of restating the cut:
+
+```yaml
+# variables.yaml
+n_electron_sel: {expression: "ak.sum(events.electron_sel, axis=1)", bins: [6, -0.5, 5.5], label: '$N_{e}$'}
+```
 
 | Want | Expression |
 |---|---|
 | how many objects pass | `ak.sum(events.electron_sel, axis=1)` |
 | does any object pass | `ak.any(events.electron_sel, axis=1)` |
-| an event-level mask | `events.high_met` — already flat, use it directly |
+| an event-level mask | `events.high_met` -- already flat |
 
-Details:
-
-- Attached **after** the `custom/columns.py` derived columns, so a selection over
-  a derived collection (`events.cscCluster.matched`) becomes a column too.
-- Missing values become `False`, so a mask built with `ak.firsts` is safe to sum
-  and to filter with.
-- A selection that does not evaluate on a given sample is **skipped**, not fatal
-  — config sets are shared across samples with different content, and a genuinely
-  broken expression is already reported by the startup expression check.
+- Attached **after** the `custom/` derived columns, so a selection over a
+  derived collection (`events.cscCluster.matched`) becomes a column too.
+- Missing values become `False`.
+- Selections may read each other's columns in any order.
 - A selection whose name is already a field of `events` is skipped with a
-  warning: a selection named `Jet` must not redefine the collection.
-- This is independent of listing the selection under a histogram's
-  `selections:`. That still filters the fill; this makes the mask itself
-  readable as data.
+  message: a selection named `Jet` must not redefine the collection.
 
-### corrections.yaml
+---
 
-Scale factors, applied via coffea's tooling. All entries optional; an empty file
-means no corrections. Data samples are always skipped.
+## `samples.yaml` and `datasets.yaml`
+
+Datasets are defined once in [`datasets.yaml`](../datasets.yaml); each set's
+`samples.yaml` selects from it with `_registry` (see above).
+
+```yaml
+dy_2mu_50to120:
+  files:                       # files, globs or directories, local or xrootd
+    - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/.../MDSnano/...
+  tree: Events                 # default: Events
+  is_data: false
+  xs: 1.0                      # pb, for --lumi; 1.0 here is a placeholder
+  label: 'DY$\to2\mu$ (50-120)'
+  color: tab:orange
+  linestyle: "--"              # optional
+  group: background            # signal / background (data via is_data)
+  scale: 100                   # optional: draw signal x100
+  max_files: 1000              # optional: the first N files only
+  files_per_job: 25            # optional: suep-submit's shard size for it
+```
+
+A directory is walked recursively for `*.root` (over xrootd too). `suep-submit`
+freezes the resolved file list per task at submission time. `group` drives the
+styling: `background` stacked, `signal` overlaid, `is_data` points. Every MC
+`xs` in the MDS sets is the placeholder `1.0`, so never pass `--lumi` to them
+(`suep-plot` warns).
+
+---
+
+## `corrections.yaml`
+
+Scale factors through coffea's tooling. An empty file means no corrections;
+data samples are always skipped. A correction that fails to load stops the run.
 
 ```yaml
 pileup:
@@ -391,25 +391,17 @@ pileup:
 | `file` | yes | correctionlib `.json(.gz)`, or `auto:POG/year/file` (resolved from `$CORRECTIONLIB_DATA`, then cvmfs jsonpog-integration). |
 | `name` | yes | Correction name inside the JSON. |
 | `inputs` | yes | Expressions passed to the evaluator **in the order the correction declares its inputs**. Bare string literals like `"'nominal'"` select a systematic/category axis. |
-| `kind` | yes | `event_weight` (one weight/event) or `object_sf` (one SF/object; per-event weight = product over objects). |
+| `kind` | no | `event_weight` (default; one weight per event) or `object_sf` (one SF per object; per-event weight = product over objects). |
 | `apply_to` | no | `all` (default) or a list of sample groups. |
 
-For `object_sf`, jagged (per-object) inputs are flattened automatically and scalar
-inputs (the systematic string) are passed through, so the correctionlib string
-axis works correctly; the per-event weight is
-`ak.prod(ak.unflatten(sf, counts), axis=1)`. Each correction is registered into a
-`coffea.analysis_tools.Weights` object, so up/down systematics are a natural
-extension (`weights.add(name, nominal, up, down)`).
+---
 
-### reweights.yaml
+## `reweights.yaml`
 
-Analysis-level **reweighting** for studies — flatten a spectrum, match MC
-kinematics to data, emulate a trigger turn-on. Weights multiply into the event
-weight alongside genWeight and `corrections.yaml` scale factors (all via
-coffea `Weights`), so they also show up in cutflows and `--lumi` scaling.
-Config errors here are fatal (they change physics results).
-
-Two kinds, auto-detected:
+Analysis-level **reweighting** -- flatten a spectrum, match MC kinematics to
+data, emulate a trigger turn-on. Weights multiply into the event weight
+alongside genWeight and the scale factors, so they also show up in cutflows
+and `--lumi` scaling. Config errors here are fatal.
 
 ```yaml
 soft_met_weight:                       # expression -> weight per event
@@ -434,59 +426,79 @@ ht_dataMC:                             # map file generated by suep-reweight
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `expression` | — | NanoEvents expression → weight (event-level scalar, or jagged with `level: object`). |
-| `variable` (+ `edges`, `weights`) | — | 1D binned lookup. 2D: `variable_x/variable_y`, `edges_x/edges_y`, nested `weights`. |
-| `file` | — | Load map fields from another YAML (relative to the config dir); entry keys override. |
-| `level` | `event` | `object`: one weight per object, event weight = product over objects (empty events → 1). |
+| `expression` | -- | NanoEvents expression → weight (event-level scalar, or jagged with `level: object`). |
+| `variable` (+ `edges`, `weights`) | -- | 1D binned lookup. 2D: `variable_x/variable_y`, `edges_x/edges_y`, nested `weights`. |
+| `file` | -- | Load map fields from another YAML, relative to the reweights.yaml that names it; entry keys override. |
+| `level` | `event` | `object`: one weight per object, event weight = product over objects. |
 | `apply_to` | `all` | Sample groups to reweight (MC only). |
-| `samples` | — | Explicit sample list (overrides `apply_to`; may include data). |
+| `samples` | -- | Explicit sample list (overrides `apply_to`; may include data). |
 | `clamp` | `false` | Binned maps: out-of-range values use the nearest bin (default: weight 1 outside). |
-| `fill_only` | `false` | Don't apply globally; only used where a histogram sets `weight: "@<name>"`. |
+| `fill_only` | `false` | Don't apply globally; only where a histogram sets `weight: "@<name>"`. |
 
-**Per-object fill weighting:** a histogram's `weight` may be a jagged
-expression or a `"@<map name>"` reference. For `per_object` histograms each
-object then carries its own weight (e.g. reweight the jet-pT spectrum and look
-at other jet variables); for event-level histograms the per-object weights are
-multiplied into one weight per event. Mark such maps `fill_only: true` or the
-weight is applied twice (the processor warns).
+A histogram's `weight` may be a jagged expression or a `"@<map name>"`
+reference: for per-object histograms each object carries its own weight, for
+per-event histograms the per-object weights are multiplied. Mark such maps
+`fill_only: true` or the weight is applied twice (the run warns).
 
-**Deriving a map from processed samples** — the classic "reweight MC to match
-data in X" study:
+Deriving a map from processed samples:
 
 ```bash
-suep-run -c configs/configs_mds -o output                 # 1. fill histograms as usual
-suep-reweight output/ --hist ht \
-    --num data_2024 --den qcd \
-    -o configs/configs_mds/ht_map.yaml        # 2. map = shape ratio data/MC
-# 3. reference it in configs/configs_mds/reweights.yaml (ht_dataMC above), then
-suep-run -c configs/configs_mds -o output                 # 4. only affected samples re-run
+suep-run -c configs/configs_mds -o output                  # 1. fill as usual
+suep-reweight output/ --hist jet/ht --num data_2024 --den qcd \
+    -o configs/configs_mds/ht_map.yaml                     # 2. shape ratio data/MC
+# 3. reference it in reweights.yaml (ht_dataMC above), then run again
 ```
 
-The generated map stores the histogram's own fill expression, bin edges and
-the (by default normalized, shape-only) ratio; `--no-normalize` keeps the
-absolute ratio, `--no-clamp` gives weight 1 outside the map range. 2D
-histograms produce 2D maps. Bins with an empty denominator get weight 1.
+---
 
-### derived_plots.yaml
+## `derived_plots.yaml`
 
-Computed at **plot time** from saved histograms — no reprocessing. Types:
-`profile_x`/`profile_y` (from a 2D hist), `projection_x`/`projection_y`,
-`efficiency` (Clopper–Pearson errors), `ratio`. See the file header for fields.
+Computed at **plot time** from saved histograms -- no reprocessing.
+
+| `type` | Reads | Draws |
+|---|---|---|
+| `efficiency` | `numerator`, `denominator` | ratio with Clopper-Pearson intervals; `spans: [{lo, hi, label}]` shades x ranges; 2D sources give a 2D map |
+| `ratio` | `numerator`, `denominator` | plain ratio |
+| `profile_x` / `profile_y` | `source` (2D) | mean of y per x bin (or x per y) |
+| `projection_x` / `projection_y` | `source` (2D) | projection onto one axis |
+| `sig_vs_bkg` | `signal`, `background` | signal samples from one histogram, background samples from another, unit-normalized (`normalize: false` keeps yields) |
+
+Common keys: `label_x` (default: the source's axis title), `label_y`, `log_y`.
+
+**Region-aware form** -- one entry for a list of variables:
+
+```yaml
+matchfrac_csc:
+  type: efficiency
+  region: csc
+  numerator: matched              # cuts of that region
+  denominator: all
+  label_y: fraction of CSC clusters LLP-matched
+  vars: [csc_cluster_size, csc_cluster_eta, csc_cluster_time]
+```
+
+expands to `csc/matchfrac_csc/csc_cluster_size` (numerator
+`csc/matched/csc_cluster_size`, denominator `csc/all/csc_cluster_size`) and so
+on. Single-source types take `cut:` instead; a cut left out means the region's
+per-event histogram. The explicit form names the histograms itself:
+
+```yaml
+eff_trigger:
+  type: efficiency
+  numerator: hlt_csccluster_loose/evt_max_csc_cluster_size
+  denominator: csc/evt_max_csc_cluster_size
+```
 
 ---
 
 ## Expression language
 
-Expressions in `histograms.yaml`, `selections.yaml`, `corrections.yaml`,
-`reweights.yaml`, and any `weight` are `eval`'d with these names in scope
-(histogram `weight` fields may instead reference a reweight map as
-`"@<name>"`):
+Expressions in histograms, variables, selections, corrections, reweights and
+any `weight` are evaluated with these names in scope:
 
-- `events` — the coffea NanoEvents array (also aliased `ev`)
-- `ak` — awkward, `np` — numpy
+- `events` -- the coffea NanoEvents array (also `ev`)
+- `ak` -- awkward, `np` -- numpy
 - builtins `abs`, `len`, `min`, `max`
-
-Because objects carry NanoAOD behaviours you get vectors and helpers for free:
 
 ```python
 events.Jet.pt                                  # jagged per-jet pt
@@ -494,18 +506,30 @@ ak.num(events.Muon)                            # muons per event
 ak.sum(events.Jet.pt, axis=1)                  # scalar HT
 abs(events.Jet.eta) < 2.4                      # object-level mask
 ak.firsts(events.Jet.pt)                       # None-safe leading jet
-(events.Muon[:, 0] + events.Muon[:, 1]).mass   # dimuon mass (needs ≥2 muons)
-events.Jet.nearest(events.Muon).delta_r(events.Jet)   # ΔR to nearest muon
+events.Jet.nearest(events.Muon).delta_r(events.Jet)   # dR to nearest muon
 ```
 
-Collections in the MDSNano file include `Jet`, `Muon`, `Electron`, `PuppiMET`,
-`GenMET`, `Pileup`, `PFCand`, `SUEPGenPart`, `cscMDSHLTCluster`, `dtMDSHLTCluster`.
-A typo (e.g. `events.Jet.ptX`) is caught: the processor runs a one-time expression
-check on a small slice (with `custom/columns.py` derived fields attached) and
-prints a warning listing any expressions that fail.
+Missing values (`ak.firsts` on an empty event, `nearest` with no partner) are
+dropped while filling, with the weights kept aligned. To see which collections
+and fields a sample has after `derive()`:
 
-Expressions that produce missing values are safe: `None` entries (from
-`ak.firsts` on empty events, `nearest` with no partner, …) are dropped
-automatically during filling, with event weights kept aligned.
+```bash
+suep-config fields configs/configs_mds -s suep_mDark2_temp1 --grep cscCluster --ranges
+```
 
----
+## When something is wrong
+
+Nothing fails quietly:
+
+- **Config mistakes** stop the run before any file is opened, naming the file:
+  invalid YAML, an unknown directive, an unknown variable / selection /
+  reweight map (with the closest name suggested), an unknown key in a region,
+  axis or catalog entry, a histogram without an expression or binning, a bad
+  `columns.yaml`, a step without what it needs.
+- **Expressions** are evaluated on the first events of every sample's first
+  file before processing starts; any that fails stops the run with a list. A
+  failure later, on some chunk, stops it too, naming the histogram or
+  selection, the sample and the expression. A histogram that cannot fill on
+  one of the set's samples (a branch that sample lacks) therefore belongs in a
+  set without that sample.
+- `suep-config check <set>` runs all of this without processing anything.

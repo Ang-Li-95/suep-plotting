@@ -1,36 +1,21 @@
 # ── Reco-level cluster histograms shared by every MDS study ───────
 # The DBSCAN cluster properties and shower shapes, filled identically on
 # signal, background and data -- nothing here touches gen information.
+# Histograms are <region>/<cut>/<variable>; each variable's expression,
+# binning and axis title come from the catalog, ../../variables.yaml.
 #
 # There is no standalone RPC cluster collection: the default rpc_mode is
 # 'match' (../common/columns.yaml), so the RPC rechits are associated to the
 # finished CSC and DT clusters instead of being clustered on their own, and
-# each of those carries its RPC content and timing (nRPCHits, rpcTime*,
-# rpcBx*).  See docs/derived-columns.md.
+# each of those carries its RPC content and timing (nRPCHits, rpcBx*).  The
+# RPC-timing variables are NaN on a cluster without RPC hits, so they carry
+# the <sys>_cluster_has_rpc cut themselves.  See docs/derived-columns.md.
 #
 # Studies pull these in with `_extends: ../common` and add only what is
-# theirs: the truth splits live in ../common_gen, the isolation splits in
-# configs_mds_data.  A study attaches its own splits by overriding just the
-# one key, e.g. `csc_cluster_size: {variants: csc_variants}` -- the inherited
-# body is merged, not replaced.
-#
-# Deliberately no `_variant_sets` and no `variants:` here: what a cluster is
-# split by is the study's business, and configs_mds wants the inclusive fills
-# on their own.
-
-# ── Reco-level cluster histograms shared by every MDS study ───────
-# The DBSCAN cluster properties and shower shapes, filled identically on
-# signal, background and data -- nothing here touches gen information.
-#
-# Studies pull these in with `_extends: ../common` and add only what is
-# theirs: the truth splits live in ../common_gen, the isolation splits in
-# configs_mds_data.  A study attaches its own splits by overriding just the
-# one key, e.g. `csc_cluster_size: {variants: csc_variants}` -- the inherited
-# body is merged, not replaced.
-#
-# Deliberately no `_variant_sets` and no `variants:` here: what a cluster is
-# split by is the study's business, and configs_mds wants the inclusive fills
-# on their own.
+# theirs: the truth splits (matched / unmatched ...) live in ../common_gen,
+# the isolation splits in configs_mds_data -- each a new cut under the
+# inherited csc / dt region.  Only the inclusive cut, `all`, is here: what a
+# cluster is split by is the study's business.
 
 regions:
   csc:

@@ -1,4 +1,4 @@
-# ── Category 2/5: DY clusters inside a jet ────────────────────────
+# ── Category 2/6: DY clusters inside a jet ────────────────────────
 # Punch-through and the tail of a hadronic shower: the cluster sits on a jet.
 # drJet is the dR from the cluster centroid to the closest jet passing
 # jet_sel_foriso (../common), attached by the cluster_isolation step; in an

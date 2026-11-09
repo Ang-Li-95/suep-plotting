@@ -1,7 +1,7 @@
-# ── Category 1/5: clusters gen-matched to an LLP ──────────────────
+# ── Category 1/6: clusters gen-matched to an LLP ──────────────────
 # The reference signal point of the Gen3 grid.  Named after the *population*
-# rather than the dataset, because the legend of the five-way comparison is a
-# list of cluster sources -- and because the four background sets name theirs
+# rather than the dataset, because the legend of the six-way comparison is a
+# list of cluster sources -- and because the five background sets name theirs
 # the same way (two of them are the same DY dataset under two cuts, which only
 # works with distinct config names).
 #

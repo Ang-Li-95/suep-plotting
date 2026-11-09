@@ -1,8 +1,8 @@
 # Central dataset registry.
 #
-# One definition per dataset; configs pull them in via
+# One definition per dataset; a config set's samples.yaml selects from it with
 #
-#   _include: ../datasets.yaml
+#   _registry: ../../datasets.yaml
 #   suep_mDark2_temp1:          # verbatim
 #   suep_mDark2_temp2:          # with overrides
 #     color: "black"
@@ -12,6 +12,8 @@
 # 'files' may be a file, a glob, or a directory (walked recursively for *.root),
 # local or xrootd.  Keep plot-only keys (label, color) here as defaults and
 # override them per config where a study needs something different.
+# files_per_job (optional) is the shard size suep-submit uses for a dataset
+# when --files-per-job is not given.
 # Signal points to Gen3 (2026-08-05); Gen2 kept below for the G4 comparison.
 #
 # The Gen3 grid is ggH, mMed=125, ctau=5 m, scanned in (mDark, temperature):

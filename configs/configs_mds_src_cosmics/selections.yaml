@@ -1,4 +1,4 @@
-# ── Category 5/5: every Cosmics cluster ───────────────────────────
+# ── Category 5/6: every Cosmics cluster ───────────────────────────
 # No dR requirement, as asked, and none is possible: with no Jet and no Muon
 # collection the cluster_isolation step cannot run, so drJet / drMuon do not
 # exist on a Cosmics cluster at all.  The whole sample *is* the category --

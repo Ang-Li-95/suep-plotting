@@ -3,7 +3,7 @@
 # FatJet or PuppiMET -- so everything that needs a prompt object is dropped.
 # What is left is exactly what a non-collision control is for: the cluster
 # shapes and the RPC bunch-crossing timing, with no isolation splits (there is
-# nothing to be isolated from) and therefore no variant sets either.
+# nothing to be isolated from).
 
 _extends: ../common
 

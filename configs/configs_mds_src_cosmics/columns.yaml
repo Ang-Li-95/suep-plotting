@@ -1,4 +1,4 @@
-# ── Category 5/5: every Cosmics cluster ───────────────────────────
+# ── Category 5/6: every Cosmics cluster ───────────────────────────
 # Clustering only, as in configs_mds_cosmics/: 'jerc' and 'jet_id' would be
 # no-ops without a Jet collection and 'cluster_isolation' would raise, since
 # the selections it reads are deleted in selections.yaml.  Same clustering

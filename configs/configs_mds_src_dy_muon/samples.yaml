@@ -1,4 +1,4 @@
-# ── Category 3/5: DY clusters on a muon ───────────────────────────
+# ── Category 3/6: DY clusters on a muon ───────────────────────────
 # The same dataset and the same 1,000-file slice as configs_mds_src_dy_jet/,
 # under the muon cut instead; see that set's samples.yaml.
 _registry: ../../datasets.yaml

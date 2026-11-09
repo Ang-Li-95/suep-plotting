@@ -1,6 +1,7 @@
-# ── Category 1/5: clusters gen-matched to an LLP ──────────────────
-# The only set of the five that needs gen information, so the only one whose
-# derive() runs the truth steps: cluster.matched comes from llp_reco.  The
-# clustering parameters are ../common's, which ../common_clustersrc pins for
-# all five, so the populations stay comparable bin for bin.
+# ── Category 1/6: clusters gen-matched to an LLP ──────────────────
+# The only set of the six that needs gen information: its src cut is the
+# clusters' truth match (cluster.matched).  It extends ../common_gen, so its
+# derive() runs the truth steps too.  The clustering parameters are
+# ../common's, which ../common_clustersrc pins for all six, so the populations
+# stay comparable bin for bin.
 _extends: ../common_gen
