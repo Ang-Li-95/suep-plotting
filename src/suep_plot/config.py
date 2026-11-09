@@ -53,17 +53,33 @@ so the three directives below mean the same thing wherever they appear —
     no conditionals.
 
 Keys starting with ``_`` are directives or reusable fragments, never
-definitions — the convention the configs already used.
+definitions — the convention the configs already used.  An unknown one is an
+error: a misspelled directive (``_extend:``) would otherwise be dropped and
+take everything it should have inherited with it.
+
+``set.yaml``
+    Optional, one per config set: ``extends: ../configs_mds`` makes every
+    config file the set does *not* have behave as ``_extends: ../configs_mds``
+    -- so a variant that changes one setting is ``set.yaml`` plus the one file
+    that differs.  ``description:`` is the one-line summary shown when ``-c``
+    names something that is not a set, and ``abstract: true`` marks a base
+    that is only ever inherited from (``suep-run`` refuses it).
 """
 
 from __future__ import annotations
 
+import difflib
 import re
 from pathlib import Path
 
 import yaml
 
 DIRECTIVES = ("_extends", "_include", "_registry", "_axes", "_repeat")
+# Underscore keys that carry reusable definitions rather than directives.
+FRAGMENTS = ("_variant_sets",)
+
+SET_FILE = "set.yaml"
+SET_KEYS = ("extends", "description", "abstract")
 
 _SUBST = re.compile(r"<([A-Za-z_][A-Za-z0-9_]*)>")
 
@@ -75,8 +91,11 @@ class ConfigError(SystemExit):
 def _read(path: Path) -> dict:
     if not path.exists():
         return {}
-    with open(path) as f:
-        raw = yaml.safe_load(f)
+    try:
+        with open(path) as f:
+            raw = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise ConfigError(f"ERROR in {path}: not valid YAML:\n{e}") from None
     if raw is None:
         return {}
     if not isinstance(raw, dict):
@@ -86,16 +105,44 @@ def _read(path: Path) -> dict:
 
 
 def _merge(base: dict, over: dict) -> dict:
-    """*over* merged onto *base*; ``None`` deletes, nested mappings merge deeply."""
+    """*over* merged onto *base*; ``None`` deletes, nested mappings merge deeply.
+
+    A ``None`` for a key the base does not have is dropped too, never stored:
+    there is nothing to delete, and a stored ``None`` only resurfaces later as
+    an unrelated crash.
+    """
     out = dict(base)
     for key, value in over.items():
-        if value is None and key in out:
-            del out[key]
+        if value is None:
+            out.pop(key, None)
         elif isinstance(value, dict) and isinstance(out.get(key), dict):
             out[key] = _merge(out[key], value)
         else:
             out[key] = value
     return out
+
+
+def read_set_file(config_dir: str | Path) -> dict:
+    """A config set's ``set.yaml`` (``{}`` if it has none), checked."""
+    path = Path(config_dir) / SET_FILE
+    meta = _read(path)
+    unknown = sorted(set(meta) - set(SET_KEYS))
+    if unknown:
+        raise ConfigError(f"ERROR in {path}: unknown key(s) {unknown}; "
+                          f"known: {list(SET_KEYS)}")
+    return meta
+
+
+def _check_directives(raw: dict, path: Path) -> None:
+    known = DIRECTIVES + FRAGMENTS
+    unknown = [k for k in raw if isinstance(k, str) and k.startswith("_")
+               and k not in known]
+    if unknown:
+        hints = [f"'{k}' -> did you mean '{c[0]}'?" for k in unknown
+                 if (c := difflib.get_close_matches(k, known, n=1))]
+        hint = ("\n  " + "\n  ".join(hints)) if hints else ""
+        raise ConfigError(f"ERROR in {path}: unknown directive(s) {unknown}; "
+                          f"known: {', '.join(known)}{hint}")
 
 
 def _substitute(node, values: dict):
@@ -187,17 +234,25 @@ def _resolve_registry(defs: dict, registry: dict, path: Path) -> dict:
 
 
 def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
-                     _seen=None) -> dict:
+                     normalize=None, _seen=None) -> dict:
     """Load one config file with ``_extends`` / ``_include`` / ``_repeat`` applied.
 
-    A missing file loads as ``{}``, so an optional config (``columns.yaml``,
-    ``reweights.yaml``) needs no special case at the call site.  Directive keys
-    are consumed here; what comes back is definitions only.
+    A missing file loads as ``{}`` -- or, when its set has a ``set.yaml`` with
+    ``extends:``, as that parent set's file -- so an optional config
+    (``columns.yaml``, ``reweights.yaml``) needs no special case at the call
+    site.
 
     What comes back is definitions only: ``_``-prefixed keys are directives or
     reusable fragments, never definitions, so they are stripped.  Pass
     *with_fragments* to keep them -- ``load_histogram_defs`` does, because
     ``expand_variants`` reads ``_variant_sets`` off the merged result.
+
+    *normalize* ``(defs, path, axes) -> defs`` rewrites each file's own
+    definitions into canonical form *before* they are merged over what the file
+    inherits, so a shorthand in one file and a partial override in another
+    compose (``bins: [50, 0, 500]`` in the base, ``hi: 800`` in the child).
+    It is applied to every file reached through ``_extends`` / ``_include``,
+    not to a ``_registry`` pool.
 
     Pass a set as *sources* to collect every file that was actually read,
     including the ones reached through ``_extends`` / ``_include`` /
@@ -209,6 +264,13 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
     raw = _read(path)
     if sources is not None and path.exists():
         sources.add(path.resolve())
+    if not path.exists() and path.name in CONFIG_FILES:
+        parent = read_set_file(path.parent).get("extends")
+        if parent:
+            raw = {"_extends": parent}
+            if sources is not None:
+                sources.add((path.parent / SET_FILE).resolve())
+    _check_directives(raw, path)
 
     _seen = _seen or []
     resolved = path.resolve()
@@ -229,7 +291,8 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
             raise ConfigError(f"ERROR in {path}: _extends config set not found: "
                               f"{base_dir}")
         merged = _merge(merged, load_config_file(
-            base_path, with_fragments=True, sources=sources, _seen=[*_seen, resolved]))
+            base_path, with_fragments=True, sources=sources, normalize=normalize,
+            _seen=[*_seen, resolved]))
         axes.update(merged.pop("_axes", {}) or {})
 
     includes = raw.pop("_include", [])
@@ -240,7 +303,8 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
         if not inc_path.exists():
             raise ConfigError(f"ERROR in {path}: _include file not found: {inc_path}")
         merged = _merge(merged, load_config_file(
-            inc_path, with_fragments=True, sources=sources, _seen=[*_seen, resolved]))
+            inc_path, with_fragments=True, sources=sources, normalize=normalize,
+            _seen=[*_seen, resolved]))
         axes.update(merged.pop("_axes", {}) or {})
 
     registry_spec = raw.pop("_registry", None)
@@ -259,6 +323,8 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
             registry.update(load_config_file(reg_path, sources=sources,
                                              _seen=[*_seen, resolved]))
         defs = _resolve_registry(defs, registry, path)
+    if normalize is not None:
+        defs = normalize(defs, path, axes)
 
     out = _merge(merged, defs)
     if not with_fragments:

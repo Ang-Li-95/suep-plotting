@@ -117,3 +117,45 @@ def test_an_empty_file_list_is_rejected(monkeypatch, tmp_path):
     with pytest.raises(SystemExit, match="empty"):
         _run_args(monkeypatch, ["-c", CONFIGS_MDS, "-o", str(tmp_path),
                                 "-s", "sig", "--file-list", str(listing)])
+
+
+# ── set.yaml: base sets and descriptions ──────────────────────────
+
+
+def test_a_base_set_is_refused_for_running_but_not_for_plotting(tmp_path):
+    base = _make_set(tmp_path / "configs" / "common")
+    (base / "set.yaml").write_text("abstract: true\n")
+    _make_set(tmp_path / "configs" / "configs_mds")
+
+    with pytest.raises(SystemExit, match="base set") as excinfo:
+        _check_config_dir(str(base))
+    assert "configs_mds" in str(excinfo.value)
+    assert _check_config_dir(str(base), runnable=False) == str(base)
+
+
+def test_a_set_of_only_set_yaml_is_a_config_set(tmp_path):
+    variant = tmp_path / "variant"
+    variant.mkdir()
+    (variant / "set.yaml").write_text("extends: ../configs_mds\n")
+
+    assert _is_config_set(str(variant))
+
+
+def test_a_misspelled_set_name_gets_a_suggestion(tmp_path):
+    _make_set(tmp_path / "configs" / "configs_mds")
+
+    with pytest.raises(SystemExit, match="did you mean"):
+        _check_config_dir(str(tmp_path / "configs" / "configs_mdss"))
+
+
+def test_the_set_list_shows_descriptions_and_hides_bases(tmp_path):
+    study = _make_set(tmp_path / "configs" / "configs_mds")
+    (study / "set.yaml").write_text("description: the reco study\n")
+    base = _make_set(tmp_path / "configs" / "common")
+    (base / "set.yaml").write_text("abstract: true\n")
+
+    with pytest.raises(SystemExit) as excinfo:
+        _check_config_dir(str(tmp_path / "configs"))
+    message = str(excinfo.value)
+    assert "the reco study" in message
+    assert "common" not in message.replace("configs_mds", "")

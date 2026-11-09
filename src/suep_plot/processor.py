@@ -348,7 +348,7 @@ class SuepProcessor(processor.ProcessorABC):
             events = self.derive_fn(events, self.settings, self.sel_defs)
         # After derive(), so a selection over a derived collection becomes a
         # column too.  See histograms.attach_selection_columns.
-        events = attach_selection_columns(events, self.sel_defs)
+        events = attach_selection_columns(events, self.sel_defs, dataset)
 
         n = len(events)
         weights = Weights(n, storeIndividual=False)
@@ -363,9 +363,10 @@ class SuepProcessor(processor.ProcessorABC):
 
         histograms = build_histograms(self.hist_defs, [dataset])
         wvec = weights.weight()
+        layout: dict = {}
         sel_cache = fill_histograms(histograms, self.hist_defs, self.sel_defs,
                                     events, dataset, wvec,
-                                    reweighters=self.reweighters)
+                                    reweighters=self.reweighters, layout=layout)
 
         cutflow = self._cutflow(events, sel_cache, wvec, n)
 
@@ -375,6 +376,9 @@ class SuepProcessor(processor.ProcessorABC):
             "sumw": {dataset: sumw},
             "nevents": {dataset: n},
             "cutflow": {dataset: cutflow},
+            # Sets, because coffea accumulates them by union across chunks.
+            "layout": {"object": {k for k, v in layout.items() if v},
+                       "event": {k for k, v in layout.items() if not v}},
         }
 
     def _cutflow(self, events, sel_cache, wvec, n):
@@ -387,10 +391,9 @@ class SuepProcessor(processor.ProcessorABC):
         for sname, scfg in self.sel_defs.items():
             sel = sel_cache.get(sname)
             if sel is None:
-                try:
-                    sel = _compile_expr(scfg["expression"])(events)
-                except Exception:  # noqa: BLE001 - typos already warned at validation
-                    continue
+                # Already evaluated once as a selection column, so this cannot
+                # fail where the fill did not.
+                sel = _compile_expr(scfg["expression"])(events)
                 if isinstance(sel, ak.Array):
                     sel = ak.fill_none(sel, False)
             if isinstance(sel, ak.Array) and sel.ndim > 1:
@@ -403,75 +406,90 @@ class SuepProcessor(processor.ProcessorABC):
         return accumulator
 
 
-def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
-                          reweighters=None, settings=None):
-    """Best-effort check: evaluate each expression on a small slice and warn.
-
-    Restores clear feedback for typo'd fields, which otherwise silently produce
-    empty histograms.
-    """
+def open_events(path: str, tree: str = "Events", n: int = 200):
+    """The first *n* events of one file as NanoEvents, read lazily."""
     from coffea.nanoevents import NanoEventsFactory
 
-    from .histograms import _compile_expr
+    # "virtual" mode reads branches lazily, so a check only touches the
+    # branches the expressions actually use (an eager open materializes every
+    # branch -- seconds of wasted I/O on files with PFCand etc.).
+    try:
+        return NanoEventsFactory.from_root(
+            {path: tree}, mode="virtual", schemaclass=NanoAODSchema,
+            entry_stop=n).events()
+    except TypeError:
+        return NanoEventsFactory.from_root(
+            {path: tree}, mode="eager", schemaclass=NanoAODSchema,
+            entry_stop=n).events()
+
+
+def prepare_events(events, derive_fn, settings, sel_defs, sample: str = "?"):
+    """What every expression sees: derived columns, then selection columns."""
+    if derive_fn is not None:
+        events = derive_fn(events, settings, sel_defs)
+    return attach_selection_columns(events, sel_defs, sample)
+
+
+def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
+                      reweighters=None, settings=None, sample: str = "?") -> list[str]:
+    """Evaluate every expression on the first events of *files*; return the failures.
+
+    Each histogram's and selection's expression must evaluate, and an explicit
+    ``per_object`` / ``level`` must agree with what the expression gives, on
+    every sample -- the fill treats any failure as fatal, so finding them here
+    stops the run in seconds instead of on some chunk an hour in.
+    """
+    from .histograms import is_2d, is_jagged
 
     if not files:
-        return
-    # "virtual" mode reads branches lazily, so validation only touches the
-    # branches the expressions actually use (an eager open materializes every
-    # branch — seconds of wasted I/O on files with PFCand etc.).
+        return []
     try:
-        events = NanoEventsFactory.from_root(
-            {files[0]: tree}, mode="virtual", schemaclass=NanoAODSchema,
-            entry_stop=200,
-        ).events()
-    except TypeError:
-        try:
-            events = NanoEventsFactory.from_root(
-                {files[0]: tree}, mode="eager", schemaclass=NanoAODSchema,
-                entry_stop=200,
-            ).events()
-        except Exception as e:  # noqa: BLE001
-            print(f"  (skipped expression validation: {e})")
-            return
-    except Exception as e:  # noqa: BLE001
-        print(f"  (skipped expression validation: {e})")
-        return
-
-    if derive_fn is not None:
-        try:
-            events = derive_fn(events, settings, sel_defs)
-        except Exception as e:  # noqa: BLE001
-            print(f"  (custom derive() failed during validation: {e})")
-    # The same columns the fill path attaches, so a histogram reading
-    # events.<selection> is validated rather than reported as a typo.
-    events = attach_selection_columns(events, sel_defs)
+        events = open_events(files[0], tree)
+    except Exception as e:  # noqa: BLE001 - reported
+        return [f"cannot open {files[0]}: {type(e).__name__}: {e}"]
+    try:
+        events = prepare_events(events, derive_fn, settings, sel_defs, sample)
+    except Exception as e:  # noqa: BLE001 - reported
+        return [f"derived columns / selections failed: {type(e).__name__}: {e}"]
 
     bad = []
-    for section, defs in (("histogram", hist_defs), ("selection", sel_defs)):
-        for name, cfg in defs.items():
-            for key in ("expression", "expression_x", "expression_y", "weight"):
-                expr = cfg.get(key)
-                if not expr or expr.startswith("@"):
-                    continue
-                try:
-                    _compile_expr(expr)(events)
-                except Exception as e:  # noqa: BLE001
-                    bad.append(f"    {section} '{name}'.{key}: {type(e).__name__}: {str(e)[:80]}")
+
+    def evaluate(what: str, expr: str):
+        try:
+            return _compile_expr(expr)(events)
+        except Exception as e:  # noqa: BLE001 - reported
+            bad.append(f"{what} ({expr!r}): {type(e).__name__}: {str(e)[:120]}")
+            return None
+
+    for name, cfg in sel_defs.items():
+        mask = evaluate(f"selection '{name}'", cfg["expression"])
+        level = cfg.get("level")
+        if mask is not None and level is not None \
+                and (level == "object") != is_jagged(mask):
+            bad.append(f"selection '{name}': declared 'level: {level}' but the "
+                       "mask says otherwise (drop the key, it is inferred)")
+    for name, cfg in hist_defs.items():
+        keys = ("expression_x", "expression_y") if is_2d(cfg) else ("expression",)
+        values = [evaluate(f"histogram '{name}' {k}", cfg[k]) for k in keys]
+        if all(v is not None for v in values):
+            jagged = {is_jagged(v) for v in values}
+            declared = cfg.get("per_object")
+            if len(jagged) > 1:
+                bad.append(f"histogram '{name}': one axis per object, the other "
+                           "per event")
+            elif declared is not None and bool(declared) != jagged.pop():
+                bad.append(f"histogram '{name}': declared 'per_object: {declared}' "
+                           "but the expression says otherwise (drop the key)")
+        weight = cfg.get("weight")
+        if weight and not str(weight).startswith("@"):
+            evaluate(f"histogram '{name}' weight", weight)
     for name, cfg in corr_defs.items():
         for expr in cfg.get("inputs", []):
-            try:
-                _compile_expr(expr)(events)
-            except Exception as e:  # noqa: BLE001
-                bad.append(f"    correction '{name}' input '{expr}': {type(e).__name__}: {str(e)[:60]}")
+            evaluate(f"correction '{name}' input", expr)
     for name, rw in (reweighters or {}).items():
         for expr in rw.exprs:
-            try:
-                _compile_expr(expr)(events)
-            except Exception as e:  # noqa: BLE001
-                bad.append(f"    reweight '{name}' expression '{expr}': {type(e).__name__}: {str(e)[:60]}")
-    if bad:
-        print("WARNING: some config expressions failed to evaluate:")
-        print("\n".join(bad))
+            evaluate(f"reweight '{name}'", expr)
+    return bad
 
 
 def _inputs_mtime(files: list[str], config_dir: Path,
@@ -593,7 +611,7 @@ def run_all(
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Processing {len(sample_defs)} sample(s), {len(hist_defs)} histogram(s)")
 
-    validated = False
+    todo = []
     for name, cfg in sample_defs.items():
         # A caller-supplied list is already resolved: no directory walk here,
         # so a shard processes exactly the files it was submitted with.
@@ -623,12 +641,21 @@ def run_all(
             if newest is not None and out_path.stat().st_mtime >= newest:
                 print(f"  {name}: up to date, skipping (--force to reprocess)")
                 continue
+        todo.append((name, cfg, files, tree, out_path))
 
-        if not validated:
-            _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs,
-                                  derive_fn, reweighters, settings)
-            validated = True
+    # Every expression on the first file of every sample, before any of them
+    # is processed: a failure is fatal in the fill, so better all at once now.
+    problems = []
+    for name, cfg, files, tree, _ in todo:
+        problems += [f"  [{name}] {p}" for p in check_expressions(
+            files, tree, hist_defs, sel_defs, corr_defs, derive_fn, reweighters,
+            settings, sample=name)]
+    if problems:
+        raise SystemExit("ERROR: config expressions that do not work (checked on "
+                         "the first events of each sample's first file):\n"
+                         + "\n".join(problems))
 
+    for name, cfg, files, tree, out_path in todo:
         t0 = time.time()
         out = runner({name: files}, proc, treename=tree)
         elapsed = time.time() - t0
@@ -639,7 +666,7 @@ def run_all(
         payload = {
             "histograms": out["histograms"],
             "samples": {name: cfg},
-            "hist_defs": hist_defs,
+            "hist_defs": _with_layout(hist_defs, out.get("layout", {})),
             "sumw": out.get("sumw", {}),
             "nevents": out.get("nevents", {}),
             "cutflow": out.get("cutflow", {}),
@@ -649,3 +676,17 @@ def run_all(
 
     print(f"Saved sample file(s) to {output_dir}/")
     return output_dir
+
+
+def _with_layout(hist_defs: dict, layout: dict) -> dict:
+    """The definitions with ``per_object`` as the fill found it.
+
+    Stored in the pickle, so tools that read the histograms back
+    (``suep-reweight``) know which ones are per object without re-evaluating
+    anything.  A histogram never filled keeps whatever its config said.
+    """
+    per_object = {n: True for n in layout.get("object", ())}
+    per_object.update({n: False for n in layout.get("event", ())})
+    return {name: ({**cfg, "per_object": per_object[name]} if name in per_object
+                   else cfg)
+            for name, cfg in hist_defs.items()}

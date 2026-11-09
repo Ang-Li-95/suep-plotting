@@ -154,8 +154,19 @@ def merge_results(paths: list[str]) -> dict:
                                   "wtd": cf[s][sel]["wtd"] + counts["wtd"]}
                 else:
                     cf[s][sel] = counts
+        defs = merged.setdefault("hist_defs", {})
         for name, cfg in data.get("hist_defs", {}).items():
-            merged.setdefault("hist_defs", {}).setdefault(name, cfg)
+            if name not in defs:
+                defs[name] = cfg
+                continue
+            # per_object is recorded by the fill; a pickle whose sample never
+            # filled the histogram has none, so take it from any that has.
+            have, new = defs[name].get("per_object"), cfg.get("per_object")
+            if have is None and new is not None:
+                defs[name] = {**defs[name], "per_object": new}
+            elif None not in (have, new) and have != new:
+                print(f"  WARNING: histogram '{name}' is per-object in some "
+                      "pickles and per-event in others")
     return merged
 
 
@@ -990,20 +1001,18 @@ def plot_all(
     hist_defs = data.get("hist_defs", {})
 
     if config_dir:
-        fresh_path = Path(config_dir) / "histograms.yaml"
-        if fresh_path.exists():
-            from .histograms import load_histogram_defs
-            for name, cfg in load_histogram_defs(fresh_path).items():
-                hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
+        # Through the loaders even when the file is absent from the set's own
+        # directory: it may be inherited through set.yaml.
+        from .histograms import load_histogram_defs
+        for name, cfg in load_histogram_defs(Path(config_dir) / "histograms.yaml").items():
+            hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
         # Sample styling too -- label, colour, linestyle, marker.  Without
         # this a legend or marker change means refilling every pickle just to
         # redraw, which is exactly what this override exists to avoid.
-        samples_path = Path(config_dir) / "samples.yaml"
-        if samples_path.exists():
-            from .config import load_config_file
-            for name, cfg in (load_config_file(samples_path) or {}).items():
-                if isinstance(cfg, dict):
-                    sample_defs[name] = {**sample_defs.get(name, {}), **cfg}
+        from .config import load_config_file
+        for name, cfg in (load_config_file(Path(config_dir) / "samples.yaml") or {}).items():
+            if isinstance(cfg, dict):
+                sample_defs[name] = {**sample_defs.get(name, {}), **cfg}
 
     if lumi is not None:
         apply_xs_scaling(histograms, sample_defs, data.get("sumw", {}), lumi)

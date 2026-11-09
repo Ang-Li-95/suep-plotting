@@ -53,20 +53,61 @@ def _is_config_set(path: str) -> bool:
 
     ``configs/`` holds one directory per study (``configs/configs_mds``, ...),
     so the directory name alone doesn't say whether it can be used as ``-c``.
+    A set has a ``histograms.yaml``, or a ``set.yaml`` naming the set it
+    inherits everything it does not write itself from.
     """
-    return os.path.isfile(os.path.join(path, "histograms.yaml"))
+    return any(os.path.isfile(os.path.join(path, f))
+               for f in ("histograms.yaml", "set.yaml"))
 
 
-def _check_config_dir(path: str) -> str:
-    """Fail with the list of available sets instead of a FileNotFoundError."""
+def _set_info(path: str) -> tuple[str, bool]:
+    """(description, abstract) from a set's set.yaml."""
+    from .config import read_set_file
+    try:
+        meta = read_set_file(path)
+    except SystemExit:
+        return "", False
+    return str(meta.get("description") or ""), bool(meta.get("abstract"))
+
+
+def _list_sets(container: str) -> str:
+    """The runnable sets under *container*, one per line with its description."""
+    if not os.path.isdir(container):
+        return ""
+    lines = []
+    for d in sorted(os.listdir(container)):
+        p = os.path.join(container, d)
+        if not _is_config_set(p):
+            continue
+        desc, abstract = _set_info(p)
+        if not abstract:
+            lines.append(f"    {p}" + (f"  -- {desc}" if desc else ""))
+    return ("\n  available sets:\n" + "\n".join(lines)) if lines else ""
+
+
+def _check_config_dir(path: str, runnable: bool = True) -> str:
+    """Fail with the list of available sets instead of a FileNotFoundError.
+
+    With *runnable*, a base set (``abstract: true`` in its set.yaml) is
+    refused too: it only exists to be extended.
+    """
     if _is_config_set(path):
+        if runnable and _set_info(path)[1]:
+            raise SystemExit(
+                f"ERROR: {path} is a base set (abstract: true in its set.yaml), "
+                "only meant to be extended by others."
+                + _list_sets(os.path.dirname(os.path.abspath(path))))
         return path
-    sets = sorted(d for d in os.listdir(path) if _is_config_set(os.path.join(path, d))) \
-        if os.path.isdir(path) else []
-    hint = ("\n  available sets: " + ", ".join(os.path.join(path, s) for s in sets)
-            if sets else "")
-    raise SystemExit(
-        f"ERROR: {path} is not a config set (no histograms.yaml).{hint}")
+    container = path if os.path.isdir(path) else os.path.dirname(path.rstrip("/")) or "."
+    hint = ""
+    if not os.path.isdir(path) and os.path.isdir(container):
+        import difflib
+        close = difflib.get_close_matches(os.path.basename(path.rstrip("/")),
+                                          os.listdir(container), n=1)
+        if close:
+            hint = f"\n  did you mean {os.path.join(container, close[0])}?"
+    raise SystemExit(f"ERROR: {path} is not a config set.{hint}"
+                     + _list_sets(container))
 
 
 def run(argv=None):
@@ -154,10 +195,8 @@ def plot(argv=None):
                         help="Additionally export all histograms to a ROOT file")
     args = parser.parse_args(argv)
 
-    if args.config_dir is None and _is_config_set("configs"):
-        args.config_dir = "configs"
-    elif args.config_dir is not None:
-        _check_config_dir(args.config_dir)
+    if args.config_dir is not None:
+        _check_config_dir(args.config_dir, runnable=False)
 
     os.environ.setdefault("MPLBACKEND", "Agg")
     from .plot import plot_all

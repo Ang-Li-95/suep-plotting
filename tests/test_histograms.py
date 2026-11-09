@@ -4,7 +4,7 @@ import awkward as ak
 import numpy as np
 import pytest
 
-from suep_plot.histograms import (_compile_expr, attach_selection_columns,
+from suep_plot.histograms import (FillError, _compile_expr, attach_selection_columns,
                                   build_histograms, fill_histograms)
 from suep_plot.reweights import Reweighter
 
@@ -153,19 +153,23 @@ def test_an_object_selection_column_stays_jagged():
     assert ak.to_list(ak.sum(events.good_jets, axis=1)) == [1, 0, 1]
 
 
-def test_a_selection_that_does_not_evaluate_is_skipped_not_fatal():
-    """Config sets are shared across samples with different content.
+def test_a_selection_that_does_not_evaluate_is_fatal():
+    """A mask silently missing on one sample is a cut silently not applied."""
+    with pytest.raises(FillError, match="selection 'nope'.*sample 'sig'"):
+        attach_selection_columns(
+            make_events(),
+            {"nope": {"expression": "events.NoSuchCollection.pt > 0"},
+             "fine": {"expression": "events.met > 50"}}, "sig")
 
-    A broken expression is reported by the one-time validation pass; it must not
-    take down every chunk of every sample here.
-    """
-    events = attach_selection_columns(
-        make_events(),
-        {"nope": {"expression": "events.NoSuchCollection.pt > 0"},
-         "fine": {"expression": "events.met > 50"}})
 
-    assert "nope" not in events.fields
-    assert "fine" in events.fields
+def test_selections_may_read_each_other_in_any_order():
+    events = attach_selection_columns(make_events(), {
+        "both": {"expression": "events.hard & events.highmet"},
+        "hard": {"expression": "ak.any(events.Jet.pt > 60, axis=1)"},
+        "highmet": {"expression": "events.met > 50"},
+    })
+
+    assert ak.to_list(events.both) == [False, False, True]
 
 
 def test_a_selection_never_shadows_an_existing_field(capsys):
@@ -255,3 +259,167 @@ def test_the_max_dphi_idiom():
     wide = ak.zip({"cscCluster": ak.Array([[{"phi": -3.14}, {"phi": 3.14}]])},
                   depth_limit=1)
     assert _compile_expr(expr)(wide)[0] == pytest.approx(0.0034, abs=1e-3)
+
+
+# ── per object or per event: read off the expression ──────────────
+
+
+def test_per_object_is_read_off_the_expression():
+    defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400},
+            "njet": {"expression": "ak.num(events.Jet)", "bins": 3, "lo": 0, "hi": 3}}
+    hists = build_histograms(defs, ["s"])
+    layout = {}
+
+    fill_histograms(hists, defs, {}, make_events(), "s", np.ones(3), layout=layout)
+
+    assert layout == {"jet_pt": True, "njet": False}
+    assert totals(hists["jet_pt"]) == 3          # one entry per jet
+    assert totals(hists["njet"]) == 3            # one entry per event
+
+
+def test_an_explicit_per_object_that_contradicts_the_expression_is_fatal():
+    defs = {"met": {"expression": "events.met", "bins": 2, "lo": 0, "hi": 200,
+                    "per_object": True}}
+
+    with pytest.raises(FillError, match="per_object: True"):
+        fill_histograms(build_histograms(defs, ["s"]), defs, {}, make_events(), "s",
+                        np.ones(3))
+
+
+def test_an_object_selection_needs_no_level_key():
+    defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
+                       "selections": ["good"]},
+            "met": {"expression": "events.met", "bins": 4, "lo": 0, "hi": 400,
+                    "selections": ["good"]}}
+    sels = {"good": {"expression": "events.Jet.pt > 60"}}
+    hists = build_histograms(defs, ["s"])
+
+    fill_histograms(hists, defs, sels, make_events(), "s", np.ones(3))
+
+    assert totals(hists["jet_pt"]) == 2      # the 100 and the 200 GeV jets
+    assert totals(hists["met"]) == 2         # events with >= 1 passing jet
+
+
+def test_a_histogram_that_does_not_evaluate_is_fatal_and_named():
+    defs = {"bad": {"expression": "events.NoSuch.pt", "bins": 2, "lo": 0, "hi": 1}}
+
+    with pytest.raises(FillError, match="histogram 'bad'.*sample 's'"):
+        fill_histograms(build_histograms(defs, ["s"]), defs, {}, make_events(), "s",
+                        np.ones(3))
+
+
+def test_a_2d_histogram_mixing_per_object_and_per_event_axes_is_fatal():
+    defs = {"mix": {"expression_x": "events.Jet.pt", "expression_y": "events.met",
+                    "bins_x": 2, "lo_x": 0, "hi_x": 400,
+                    "bins_y": 2, "lo_y": 0, "hi_y": 200}}
+
+    with pytest.raises(FillError, match="both"):
+        fill_histograms(build_histograms(defs, ["s"]), defs, {}, make_events(), "s",
+                        np.ones(3))
+
+
+# ── shorthands and x:/y: axes ─────────────────────────────────────
+
+
+def _yaml(path, obj):
+    import yaml
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(obj, sort_keys=False))
+    return path
+
+
+def test_a_bins_list_is_the_triple(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"met": {"expression": "events.met",
+                                            "bins": [10, 0, 200]}})
+
+    assert load_histogram_defs(p)["met"] == {"expression": "events.met",
+                                             "bins": 10, "lo": 0, "hi": 200}
+
+
+def test_a_child_can_move_one_end_of_an_inherited_bins_list(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    _yaml(tmp_path / "base" / "histograms.yaml",
+          {"met": {"expression": "events.met", "bins": [10, 0, 200]}})
+    child = _yaml(tmp_path / "child" / "histograms.yaml",
+                  {"_extends": "../base", "met": {"hi": 400}})
+
+    met = load_histogram_defs(child)["met"]
+    assert (met["bins"], met["lo"], met["hi"]) == (10, 0, 400)
+
+
+def test_replacing_inherited_edges_with_bins_needs_edges_null(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histograms import load_histogram_defs
+
+    _yaml(tmp_path / "base" / "histograms.yaml",
+          {"met": {"expression": "events.met", "edges": [0, 50, 200]}})
+    child = _yaml(tmp_path / "child" / "histograms.yaml",
+                  {"_extends": "../base", "met": {"bins": [4, 0, 400]}})
+
+    with pytest.raises(ConfigError, match="edges: null"):
+        load_histogram_defs(child)
+
+
+def test_inline_axes_become_the_long_form(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {
+        "met": {"x": {"expression": "events.met", "bins": [10, 0, 200], "label": "MET"}},
+        "rz": {"x": {"expression": "events.a", "bins": [5, 0, 5]},
+               "y": {"expression": "events.b", "edges": [0, 1, 2]}, "log_z": True},
+    })
+    defs = load_histogram_defs(p)
+
+    assert defs["met"] == {"expression": "events.met", "bins": 10, "lo": 0,
+                           "hi": 200, "label": "MET"}
+    assert defs["rz"] == {"expression_x": "events.a", "bins_x": 5, "lo_x": 0,
+                          "hi_x": 5, "expression_y": "events.b",
+                          "edges_y": [0, 1, 2], "log_z": True}
+
+
+def test_a_child_retunes_one_axis_of_an_inherited_2d_histogram(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    _yaml(tmp_path / "base" / "histograms.yaml", {
+        "rz": {"x": {"expression": "events.a", "bins": [5, 0, 5]},
+               "y": {"expression": "events.b", "bins": [2, 0, 2]}}})
+    child = _yaml(tmp_path / "child" / "histograms.yaml",
+                  {"_extends": "../base", "rz": {"y": {"bins": [4, 0, 2]}}})
+
+    rz = load_histogram_defs(child)["rz"]
+    assert (rz["bins_x"], rz["bins_y"], rz["expression_y"]) == (5, 4, "events.b")
+
+
+def test_a_histogram_without_binning_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"met": {"expression": "events.met"}})
+
+    with pytest.raises(ConfigError, match="no binning"):
+        load_histogram_defs(p)
+
+
+def test_an_unknown_axis_key_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml",
+              {"met": {"x": {"expresion": "events.met", "bins": [1, 0, 1]}}})
+
+    with pytest.raises(ConfigError, match="unknown axis key"):
+        load_histogram_defs(p)
+
+
+def test_a_selection_can_be_just_its_expression(tmp_path):
+    from suep_plot.histograms import load_selection_defs
+
+    p = _yaml(tmp_path / "s.yaml", {"highmet": "events.met > 50",
+                                    "good": {"expression": "events.Jet.pt > 60"}})
+
+    assert load_selection_defs(p) == {"highmet": {"expression": "events.met > 50"},
+                                      "good": {"expression": "events.Jet.pt > 60"}}

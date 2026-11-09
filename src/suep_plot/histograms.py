@@ -14,13 +14,198 @@ Examples:  ``events.Jet.pt``,  ``ak.sum(events.Jet.pt, axis=1)``,
 
 from __future__ import annotations
 
+import difflib
 import functools
 
 import awkward as ak
 import hist
 import numpy as np
 
-from .config import load_config_file
+from .config import ConfigError, load_config_file
+
+# What one axis is made of -- the keys an ``x:`` / ``y:`` mapping (or a
+# catalog variable, see variables.yaml) may set.
+AXIS_KEYS = ("expression", "bins", "lo", "hi", "edges", "label")
+_TRIPLE = ("bins", "lo", "hi")
+
+
+class FillError(ValueError):
+    """An expression that does not evaluate on a sample: fatal, with its context."""
+
+
+# ── shorthands, normalized per file before the _extends merge ─────
+
+
+def _bins_list(cfg: dict, suffix: str, where: str) -> dict:
+    """``bins: [n, lo, hi]`` -> ``bins`` / ``lo`` / ``hi`` (with the same suffix)."""
+    key = f"bins{suffix}"
+    value = cfg.get(key)
+    if not isinstance(value, (list, tuple)):
+        return cfg
+    if len(value) != 3:
+        raise ConfigError(f"ERROR in {where}: {key} as a list must be [n, lo, hi]; "
+                          f"explicit bin edges go under 'edges{suffix}'")
+    clash = [f"{k}{suffix}" for k in ("lo", "hi") if f"{k}{suffix}" in cfg]
+    if clash:
+        raise ConfigError(f"ERROR in {where}: {key}: [n, lo, hi] together with "
+                          f"{clash} -- write the range once")
+    n, lo, hi = value
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        raise ConfigError(f"ERROR in {where}: {key}: the number of bins must be a "
+                          f"positive integer, got {n!r}")
+    return {**cfg, key: n, f"lo{suffix}": lo, f"hi{suffix}": hi}
+
+
+def _normalize_axis(spec, where: str) -> dict:
+    """An ``x:`` / ``y:`` value: a variable name, or a mapping of axis keys."""
+    if isinstance(spec, str):
+        return {"var": spec}
+    if not isinstance(spec, dict):
+        raise ConfigError(f"ERROR in {where}: an axis is a variable name or a "
+                          f"mapping of {list(AXIS_KEYS)}")
+    unknown = sorted(set(spec) - set(AXIS_KEYS) - {"var"})
+    if unknown:
+        raise ConfigError(f"ERROR in {where}: unknown axis key(s) {unknown}; "
+                          f"known: var, {', '.join(AXIS_KEYS)}")
+    return _bins_list(spec, "", where)
+
+
+def normalize_hist(cfg, where: str):
+    """One histogram definition (or override) in canonical form."""
+    if not isinstance(cfg, dict):
+        return cfg
+    for suffix in ("", "_x", "_y"):
+        cfg = _bins_list(cfg, suffix, where)
+    for ax in ("x", "y"):
+        if cfg.get(ax) is not None:
+            cfg = {**cfg, ax: _normalize_axis(cfg[ax], f"{where}.{ax}")}
+    variants = cfg.get("variants")
+    if isinstance(variants, dict):
+        cfg = {**cfg, "variants": {v: normalize_hist(o, f"{where}.variants.{v}")
+                                   for v, o in variants.items()}}
+    return cfg
+
+
+def normalize_hist_file(defs: dict, path, axes) -> dict:
+    """The ``normalize`` hook of :func:`load_histogram_defs` (see load_config_file)."""
+    out = {}
+    for name, cfg in defs.items():
+        if name == "_variant_sets" and isinstance(cfg, dict):
+            out[name] = {
+                s: {v: normalize_hist(o, f"{path}: _variant_sets.{s}.{v}")
+                    for v, o in (variants or {}).items()}
+                for s, variants in cfg.items()}
+        elif str(name).startswith("_"):
+            out[name] = cfg
+        else:
+            out[name] = normalize_hist(cfg, f"{path}: histogram '{name}'")
+    return out
+
+
+def normalize_selection_file(defs: dict, path, axes) -> dict:
+    """A selection may be just its expression: ``name: "<expr>"``."""
+    out = {}
+    for name, cfg in defs.items():
+        if isinstance(cfg, str) and not str(name).startswith("_"):
+            cfg = {"expression": cfg}
+        elif cfg is not None and not isinstance(cfg, dict) \
+                and not str(name).startswith("_"):
+            raise ConfigError(f"ERROR in {path}: selection '{name}' must be an "
+                              "expression string or a mapping")
+        out[name] = cfg
+    return out
+
+
+# ── x: / y: axes -> today's long form, after the merge ────────────
+
+
+def _overlay(base: dict, top: dict, suffixes=("",)) -> dict:
+    """*top* over *base*; per axis, ``edges`` and bins/lo/hi replace each other."""
+    out = dict(base)
+    for s in suffixes:
+        if f"edges{s}" in top:
+            for k in _TRIPLE:
+                out.pop(f"{k}{s}", None)
+        if any(f"{k}{s}" in top for k in _TRIPLE):
+            out.pop(f"edges{s}", None)
+    out.update(top)
+    return out
+
+
+def _axis(spec: dict, variables: dict | None, where: str) -> dict:
+    """One normalized axis mapping, with its variable's defaults filled in."""
+    spec = dict(spec)
+    var = spec.pop("var", None)
+    base = {}
+    if var is not None:
+        if not variables or var not in variables:
+            close = difflib.get_close_matches(var, list(variables or {}), n=3)
+            hint = f"; did you mean {', '.join(close)}?" if close else ""
+            raise ConfigError(f"ERROR in {where}: unknown variable '{var}'{hint}")
+        base = {k: v for k, v in variables[var].items() if k in AXIS_KEYS}
+    return _overlay(base, spec)
+
+
+def variable_display(variables: dict | None, var) -> dict:
+    """The 1D display defaults a catalog variable carries (log_y, flow, ...)."""
+    if not variables or var not in variables:
+        return {}
+    return {k: v for k, v in variables[var].items() if k not in AXIS_KEYS}
+
+
+def resolve_axes(name: str, cfg, variables: dict | None = None,
+                 path="histograms.yaml"):
+    """``x:`` / ``y:`` mappings (and catalog variables) -> the long-form keys.
+
+    1D: the x axis becomes ``expression`` / ``bins`` / ``lo`` / ``hi`` (or
+    ``edges``) / ``label``.  2D: the same with ``_x`` / ``_y``.  Keys the
+    histogram writes itself in long form take precedence, so an inherited
+    ``x: csc_cluster_size`` combines with a local ``hi: 800``.
+    """
+    if not isinstance(cfg, dict) or ("x" not in cfg and "y" not in cfg):
+        return cfg
+    where = f"{path}: histogram '{name}'"
+    cfg = dict(cfg)
+    x_spec, y_spec = cfg.pop("x", None), cfg.pop("y", None)
+    if x_spec is None:
+        raise ConfigError(f"ERROR in {where}: 'y:' without 'x:'")
+    x = _axis(x_spec, variables, f"{where}.x")
+    if y_spec is None:
+        return _overlay({**variable_display(variables, x_spec.get("var")), **x}, cfg)
+    stray = [k for k in ("expression", "bins", "lo", "hi", "edges") if k in cfg]
+    if stray:
+        raise ConfigError(f"ERROR in {where}: a 2D histogram takes its axes from "
+                          f"x: and y:, not {stray}")
+    y = _axis(y_spec, variables, f"{where}.y")
+    long = {f"{k}_x": v for k, v in x.items()}
+    long.update({f"{k}_y": v for k, v in y.items()})
+    return _overlay(long, cfg, ("_x", "_y"))
+
+
+def check_axes(defs: dict, path="histograms.yaml") -> None:
+    """Every resolved histogram must say what it fills and how it is binned."""
+    problems = []
+    for name, cfg in defs.items():
+        if not isinstance(cfg, dict):
+            problems.append(f"histogram '{name}': not a mapping")
+            continue
+        suffixes = ("_x", "_y") if is_2d(cfg) else ("",)
+        for s in suffixes:
+            if not cfg.get(f"expression{s}"):
+                problems.append(f"histogram '{name}': no expression{s}")
+            has_edges = f"edges{s}" in cfg
+            triple = [f"{k}{s}" for k in _TRIPLE if f"{k}{s}" in cfg]
+            if has_edges and triple:
+                problems.append(
+                    f"histogram '{name}': both edges{s} and {triple} -- when "
+                    f"replacing inherited edges with bins{s}, add 'edges{s}: null' "
+                    f"(or 'bins{s}: null' etc. the other way round)")
+            elif not has_edges and len(triple) != 3:
+                missing = [f"{k}{s}" for k in _TRIPLE if f"{k}{s}" not in cfg]
+                problems.append(f"histogram '{name}': no binning -- needs "
+                                f"edges{s} or bins{s}/lo{s}/hi{s} (missing {missing})")
+    if problems:
+        raise ConfigError(f"ERROR in {path}:\n  " + "\n  ".join(problems))
 
 
 def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
@@ -103,18 +288,31 @@ def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
     return out
 
 
-def load_histogram_defs(path: str) -> dict:
+def load_histogram_defs(path: str, variables: dict | None = None) -> dict:
+    """A set's histograms.yaml, fully expanded to today's long form.
+
+    Shorthands are normalized per file, ``x:`` / ``y:`` axes resolved after
+    the merge, ``variants`` expanded, and every result checked for an
+    expression and a binning.
+    """
     # with_fragments: expand_variants reads _variant_sets off the result,
     # including ones inherited through _extends.
-    return expand_variants(load_config_file(path, with_fragments=True),
-                           str(path))
+    raw = load_config_file(path, with_fragments=True, normalize=normalize_hist_file)
+    raw = {name: cfg if str(name).startswith("_")
+           else resolve_axes(name, cfg, variables, path)
+           for name, cfg in raw.items()}
+    defs = expand_variants(raw, str(path))
+    # A variant may override an axis too.
+    defs = {name: resolve_axes(name, cfg, variables, path) for name, cfg in defs.items()}
+    check_axes(defs, path)
+    return defs
 
 
 def load_selection_defs(path: str) -> dict:
-    return load_config_file(path)
+    return load_config_file(path, normalize=normalize_selection_file)
 
 
-def attach_selection_columns(events, sel_defs: dict):
+def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
     """Attach every ``selections.yaml`` mask to *events* as a column of its name.
 
     A selection is a named boolean array, which makes it exactly the kind of
@@ -140,34 +338,44 @@ def attach_selection_columns(events, sel_defs: dict):
 
     Called once per chunk, after the derived columns are attached, so masks over
     derived collections (``events.cscCluster.matched``) work like any other.
+    A selection may read another one's column whichever order the two are
+    written in.
 
-    Two things are deliberately quiet rather than fatal:
-
-    * A selection whose expression does not evaluate on *this* sample is
-      skipped. Config sets are shared across samples with different content,
-      and a genuinely broken expression is already reported by the one-time
-      expression validation.
-    * A selection whose name is already a field of ``events`` is skipped, with a
-      warning. Shadowing a real branch (a selection named ``Jet``) would change
-      what every other expression means.
+    A selection that does not evaluate is fatal (:class:`FillError`): a mask
+    silently missing on one sample is a cut silently not applied.  A selection
+    whose name is already a field of ``events`` is skipped, with a message:
+    shadowing a real branch (a selection named ``Jet``) would change what
+    every other expression means.
 
     Returns *events* with the columns added.
     """
+    pending = []
     for name, cfg in sel_defs.items():
-        expr = cfg.get("expression")
-        if not expr:
+        if not cfg or not cfg.get("expression"):
             continue
         if name in events.fields:
             print(f"  (selection '{name}' is already a field of events; "
                   "not attaching it as a column)")
             continue
-        try:
-            mask = _compile_expr(expr)(events)
-        except Exception:  # noqa: BLE001 - typos are reported by the validation pass
-            continue
-        if isinstance(mask, ak.Array):
-            mask = ak.fill_none(mask, False)
-        events = ak.with_field(events, mask, name)
+        pending.append((name, cfg["expression"]))
+    # Selections may read each other's columns: retry what failed until a
+    # pass makes no progress, then the first remaining failure is real.
+    while pending:
+        failed = []
+        for name, expr in pending:
+            try:
+                mask = _compile_expr(expr)(events)
+            except Exception as e:  # noqa: BLE001 - re-raised below if it persists
+                failed.append((name, expr, e))
+                continue
+            if isinstance(mask, ak.Array):
+                mask = ak.fill_none(mask, False)
+            events = ak.with_field(events, mask, name)
+        if len(failed) == len(pending):
+            name, expr, e = failed[0]
+            raise FillError(f"selection '{name}' ({expr!r}) failed on sample "
+                            f"'{sample}': {type(e).__name__}: {e}") from e
+        pending = [(n, x) for n, x, _ in failed]
     return events
 
 
@@ -245,6 +453,32 @@ def _fill_none_safe(arr):
     return ak.fill_none(arr, np.nan)
 
 
+def is_jagged(arr) -> bool:
+    """One entry per object (a jagged array) rather than one per event."""
+    return isinstance(arr, ak.Array) and arr.ndim > 1
+
+
+def _per_object(name: str, cfg: dict, evaluate, sample: str) -> bool:
+    """Whether a histogram fills one entry per object, read off its expression.
+
+    An explicit ``per_object:`` must agree with the expression: if it does
+    not, the old behaviour was an empty histogram or a crash deep in the fill.
+    """
+    keys = ("expression_x", "expression_y") if is_2d(cfg) else ("expression",)
+    jagged = [is_jagged(evaluate("histogram", name, k, cfg[k])) for k in keys]
+    if len(set(jagged)) > 1:
+        raise FillError(f"histogram '{name}': expression_x and expression_y must "
+                        "both give one entry per object, or both one per event "
+                        f"(sample '{sample}')")
+    declared = cfg.get("per_object")
+    if declared is not None and bool(declared) != jagged[0]:
+        kind = "object" if jagged[0] else "event"
+        raise FillError(f"histogram '{name}' is declared 'per_object: {declared}' "
+                        f"but its expression gives one entry per {kind} "
+                        f"(sample '{sample}'); drop the key, it is inferred")
+    return jagged[0]
+
+
 def fill_histograms(
     histograms: dict[str, hist.Hist],
     hist_defs: dict,
@@ -253,17 +487,24 @@ def fill_histograms(
     sample: str,
     weight: np.ndarray | None = None,
     reweighters: dict | None = None,
+    layout: dict | None = None,
 ) -> dict:
     """Fill all histograms from a chunk of NanoEvents.
 
+    Whether a histogram (or a selection) works per object or per event is read
+    off its expression: a jagged result is one entry per object.  An
+    expression that does not evaluate is fatal (:class:`FillError`), naming
+    the histogram, the sample and the expression.
+
     Histogram ``weight`` entries may be NanoEvents expressions or ``"@name"``
     references to a reweight map (*reweighters*).  Either may evaluate to a
-    jagged (per-object) array: for ``per_object`` histograms each object is
-    then weighted individually; for event-level histograms the per-object
-    weights are multiplied into one weight per event.
+    jagged (per-object) array: for per-object histograms each object is then
+    weighted individually; for event-level histograms the per-object weights
+    are multiplied into one weight per event.
 
-    Returns the selection cache (name -> evaluated mask) so callers (e.g. the
-    cutflow) can reuse the results without re-evaluating.
+    *layout*, if given, receives ``{histogram: per_object}`` for every
+    histogram filled.  Returns the selection cache (name -> evaluated mask) so
+    callers (e.g. the cutflow) can reuse the results without re-evaluating.
     """
     n_events = len(events)
     if weight is None:
@@ -285,7 +526,29 @@ def fill_histograms(
                 expr_cache[expr] = _compile_expr(expr)(events)
         return expr_cache[expr]
 
+    def evaluate(kind: str, name: str, key: str, expr: str):
+        try:
+            return eval_expr(expr)
+        except Exception as e:  # noqa: BLE001 - re-raised with its context
+            raise FillError(f"{kind} '{name}' ({key}: {expr!r}) failed on sample "
+                            f"'{sample}': {type(e).__name__}: {e}") from e
+
     sel_cache: dict = {}
+
+    def selection(sel_name: str):
+        if sel_name not in sel_cache:
+            sel_cfg = sel_defs[sel_name]
+            sel = evaluate("selection", sel_name, "expression", sel_cfg["expression"])
+            if isinstance(sel, ak.Array):
+                sel = ak.fill_none(sel, False)
+            level = sel_cfg.get("level")
+            if level is not None and (level == "object") != is_jagged(sel):
+                kind = "object" if is_jagged(sel) else "event"
+                raise FillError(f"selection '{sel_name}' is declared 'level: {level}' "
+                                f"but its mask has one entry per {kind} (sample "
+                                f"'{sample}'); drop the key, it is inferred")
+            sel_cache[sel_name] = sel
+        return sel_cache[sel_name]
 
     for name, cfg in hist_defs.items():
         if name not in histograms:
@@ -293,38 +556,32 @@ def fill_histograms(
 
         event_mask = np.ones(n_events, dtype=bool)
         obj_masks = []
-        is_per_object = cfg.get("per_object", False)
-
         for sel_name in cfg.get("selections", []):
-            sel_cfg = sel_defs[sel_name]
-            level = sel_cfg.get("level", "event")
-
-            if sel_name not in sel_cache:
-                sel = eval_expr(sel_cfg["expression"])
-                if isinstance(sel, ak.Array):
-                    sel = ak.fill_none(sel, False)
-                sel_cache[sel_name] = sel
-
-            if level == "object":
-                obj_masks.append(sel_cache[sel_name])
+            sel = selection(sel_name)
+            if is_jagged(sel):
+                obj_masks.append(sel)
             else:
-                event_mask = event_mask & np.asarray(sel_cache[sel_name])
+                event_mask = event_mask & np.asarray(sel)
+
+        per_object = _per_object(name, cfg, evaluate, sample)
+        if layout is not None:
+            layout[name] = per_object
 
         obj_mask = None
         if obj_masks:
             obj_mask = obj_masks[0]
             for m in obj_masks[1:]:
                 obj_mask = obj_mask & m
-            if not is_per_object:
+            if not per_object:
                 event_mask = event_mask & np.asarray(ak.any(obj_mask, axis=1))
                 obj_mask = None
 
         w = weight
         obj_w = None
         if cfg.get("weight"):
-            extra_w = eval_expr(cfg["weight"])
+            extra_w = evaluate("histogram", name, "weight", cfg["weight"])
             if isinstance(extra_w, ak.Array) and extra_w.ndim > 1:
-                if is_per_object:
+                if per_object:
                     obj_w = extra_w  # combined per object inside the fill
                 else:
                     w = weight * np.asarray(
@@ -332,12 +589,18 @@ def fill_histograms(
             else:
                 w = weight * np.asarray(_fill_none_safe(extra_w), dtype=np.float64)
 
-        if is_2d(cfg):
-            _fill_2d(histograms[name], cfg, eval_expr, sample, event_mask, w,
-                     obj_mask, obj_w)
-        else:
-            _fill_1d(histograms[name], cfg, eval_expr, sample, event_mask, w,
-                     obj_mask, obj_w)
+        try:
+            if is_2d(cfg):
+                _fill_2d(histograms[name], cfg, eval_expr, sample, event_mask, w,
+                         obj_mask, obj_w, per_object)
+            else:
+                _fill_1d(histograms[name], cfg, eval_expr, sample, event_mask, w,
+                         obj_mask, obj_w, per_object)
+        except FillError:
+            raise
+        except Exception as e:  # noqa: BLE001 - re-raised with its context
+            raise FillError(f"histogram '{name}' could not be filled on sample "
+                            f"'{sample}': {type(e).__name__}: {e}") from e
 
     return sel_cache
 
@@ -355,13 +618,13 @@ def _flat_obj_weight(obj_w, obj_mask, mask, counts, wname: str) -> np.ndarray:
     return np.asarray(ak.flatten(ow, axis=None), dtype=np.float64)
 
 
-def _fill_1d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None):
-    try:
-        values = eval_expr(cfg["expression"])
-    except (KeyError, ValueError, AttributeError):
-        return
+def _fill_1d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None,
+             per_object=None):
+    values = eval_expr(cfg["expression"])
+    if per_object is None:
+        per_object = cfg.get("per_object", is_jagged(values))
 
-    if cfg.get("per_object", False):
+    if per_object:
         if obj_mask is not None:
             values = values[obj_mask]
         selected = _fill_none_safe(values[mask])
@@ -382,14 +645,14 @@ def _fill_1d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None):
     h.fill(dataset=sample, x=flat_vals[valid], weight=flat_w[valid])
 
 
-def _fill_2d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None):
-    try:
-        vals_x = eval_expr(cfg["expression_x"])
-        vals_y = eval_expr(cfg["expression_y"])
-    except (KeyError, ValueError, AttributeError):
-        return
+def _fill_2d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None,
+              per_object=None):
+    vals_x = eval_expr(cfg["expression_x"])
+    vals_y = eval_expr(cfg["expression_y"])
+    if per_object is None:
+        per_object = cfg.get("per_object", is_jagged(vals_x))
 
-    if cfg.get("per_object", False):
+    if per_object:
         if obj_mask is not None:
             vals_x = vals_x[obj_mask]
             vals_y = vals_y[obj_mask]

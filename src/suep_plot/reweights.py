@@ -34,6 +34,7 @@ Common fields:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import awkward as ak
@@ -44,8 +45,23 @@ from .config import load_config_file
 from .histograms import _compile_expr
 
 
+def _absolute_map_files(defs: dict, path, axes) -> dict:
+    """Resolve a relative ``file:`` against the reweights.yaml that names it.
+
+    Done per file, before the merge, so a map inherited through ``_extends``
+    or ``set.yaml`` is still found next to the config that defined it rather
+    than looked for in the inheriting set's directory.
+    """
+    out = {}
+    for name, cfg in defs.items():
+        if isinstance(cfg, dict) and "file" in cfg and not Path(cfg["file"]).is_absolute():
+            cfg = {**cfg, "file": os.path.normpath(Path(path).parent / cfg["file"])}
+        out[name] = cfg
+    return out
+
+
 def load_reweight_defs(path: str | Path) -> dict:
-    return load_config_file(path)
+    return load_config_file(path, normalize=_absolute_map_files)
 
 
 def _binned_lookup(vals: np.ndarray, edges: np.ndarray, weights: np.ndarray,

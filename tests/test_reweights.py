@@ -128,3 +128,16 @@ def test_make_reweight_map_roundtrip(tmp_path):
     # shape ratio: (0.75/0.5, 0.25/0.5) = (1.5, 0.5)
     w = rws["m"].event_weight(make_events())  # met = 10, 60, 120 (120 clamps)
     assert w == pytest.approx([1.5, 0.5, 0.5])
+
+
+def test_an_inherited_map_file_is_found_next_to_the_config_naming_it(tmp_path):
+    from suep_plot.reweights import load_reweight_defs
+
+    base, child = tmp_path / "base", tmp_path / "child"
+    base.mkdir()
+    child.mkdir()
+    (base / "reweights.yaml").write_text("w:\n  file: map.yaml\n")
+    (child / "reweights.yaml").write_text("_extends: ../base\n")
+
+    assert load_reweight_defs(child / "reweights.yaml")["w"]["file"] == \
+        str(base / "map.yaml")

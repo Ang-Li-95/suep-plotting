@@ -344,3 +344,63 @@ def test_fragments_are_not_definitions(tmp_path):
 
     assert set(load_config_file(path)) == {"has_csc"}
     assert "_axes" in load_config_file(path, with_fragments=True)
+
+
+# ── mistakes that used to pass silently ───────────────────────────
+
+
+def test_a_misspelled_directive_is_an_error(tmp_path):
+    path = _write(tmp_path / "set" / "h.yaml", {"_extend": "../base", "a": {"bins": 1}})
+
+    with pytest.raises(ConfigError, match="did you mean '_extends'"):
+        load_config_file(path)
+
+
+def test_invalid_yaml_names_the_file(tmp_path):
+    path = tmp_path / "h.yaml"
+    path.write_text("a: [1, 2\n")
+
+    with pytest.raises(ConfigError, match="h.yaml: not valid YAML"):
+        load_config_file(path)
+
+
+def test_a_null_for_something_not_inherited_leaves_nothing_behind(tmp_path):
+    _write(tmp_path / "base" / "h.yaml", {"a": {"bins": 1}})
+    path = _write(tmp_path / "set" / "h.yaml", {"_extends": "../base", "b": None})
+
+    assert load_config_file(path) == {"a": {"bins": 1}}
+
+
+# ── set.yaml ──────────────────────────────────────────────────────
+
+
+def test_set_yaml_supplies_the_files_a_variant_does_not_write(tmp_path):
+    _write(tmp_path / "base" / "histograms.yaml", {"h": {"bins": 1}})
+    _write(tmp_path / "base" / "columns.yaml", {"parameters": {"x": 1, "y": 1}})
+    _write(tmp_path / "variant" / "set.yaml", {"extends": "../base"})
+    _write(tmp_path / "variant" / "columns.yaml",
+           {"_extends": "../base", "parameters": {"x": 2}})
+
+    assert load_config_file(tmp_path / "variant" / "histograms.yaml") == {"h": {"bins": 1}}
+    assert load_config_file(tmp_path / "variant" / "columns.yaml") == \
+        {"parameters": {"x": 2, "y": 1}}
+
+
+def test_set_yaml_counts_as_a_source_of_what_it_supplies(tmp_path):
+    from suep_plot.config import config_sources
+
+    _write(tmp_path / "base" / "histograms.yaml", {"h": {"bins": 1}})
+    _write(tmp_path / "variant" / "set.yaml", {"extends": "../base"})
+
+    sources = config_sources(tmp_path / "variant", ("histograms.yaml",))
+    assert (tmp_path / "variant" / "set.yaml").resolve() in sources
+    assert (tmp_path / "base" / "histograms.yaml").resolve() in sources
+
+
+def test_set_yaml_rejects_unknown_keys(tmp_path):
+    from suep_plot.config import read_set_file
+
+    _write(tmp_path / "variant" / "set.yaml", {"extend": "../base"})
+
+    with pytest.raises(ConfigError, match="unknown key"):
+        read_set_file(tmp_path / "variant")

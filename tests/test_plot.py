@@ -306,3 +306,16 @@ def test_a_truncated_pickle_is_reported_by_name(tmp_path):
 
     with pytest.raises(SystemExit, match="sig.pkl"):
         load_results(str(p))
+
+
+def test_merge_takes_per_object_from_whichever_pickle_filled_it(tmp_path):
+    a = {"histograms": {}, "samples": {}, "hist_defs": {"h": {"expression": "x"}}}
+    b = {"histograms": {}, "samples": {},
+         "hist_defs": {"h": {"expression": "x", "per_object": True}}}
+    paths = []
+    for name, data in (("a.pkl", a), ("b.pkl", b)):
+        with open(tmp_path / name, "wb") as f:
+            pickle.dump(data, f)
+        paths.append(str(tmp_path / name))
+
+    assert merge_results(paths)["hist_defs"]["h"]["per_object"] is True
