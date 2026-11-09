@@ -163,7 +163,12 @@ def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
                 from .slurm import ensure_proxy
                 ensure_proxy(need_seconds=60)
             for name, cfg in chosen.items():
-                files = resolve_sample_files(cfg)[:1]
+                try:
+                    files = resolve_sample_files(cfg)[:1]
+                except Exception as e:  # noqa: BLE001 - reported per sample
+                    errors.append(f"[{name}] cannot list its input files: "
+                                  f"{type(e).__name__}: {e}")
+                    continue
                 if not files:
                     errors.append(f"[{name}] no input files resolved")
                     continue
