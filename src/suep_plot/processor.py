@@ -301,6 +301,61 @@ def validate_config_set(config_dir: str | Path) -> list[str]:
     return errors
 
 
+def load_config_set(config_dir: str | Path) -> dict:
+    """Everything a run reads from one config set, loaded and resolved.
+
+    Keys: ``samples``, ``histograms``, ``selections``, ``corrections``,
+    ``reweighters``, ``derive_fn``, ``settings``.
+    """
+    config_dir = Path(config_dir)
+    try:
+        reweighters = build_reweighters(
+            load_reweight_defs(config_dir / "reweights.yaml"), config_dir)
+    except (ValueError, FileNotFoundError, KeyError) as e:
+        raise SystemExit(f"ERROR in reweights.yaml: {e}")
+    derive_fn, settings = _load_custom_columns(
+        load_columns_config(config_dir / "columns.yaml"), verbose=False)
+    return {
+        "samples": load_samples(config_dir / "samples.yaml"),
+        "histograms": load_histogram_defs(config_dir / "histograms.yaml"),
+        "selections": load_selection_defs(config_dir / "selections.yaml"),
+        "corrections": load_correction_defs(config_dir / "corrections.yaml"),
+        "reweighters": reweighters,
+        "derive_fn": derive_fn,
+        "settings": settings,
+    }
+
+
+def config_warnings(config_dir: str | Path) -> list[str]:
+    """Things that work but are probably not what was meant."""
+    from .config import CONFIG_FILES, _read, read_set_file
+    from .plot import derived_sources, load_derived_plot_defs
+
+    config_dir = Path(config_dir)
+    warnings = []
+    parent = read_set_file(config_dir).get("extends")
+    if parent:
+        for name in CONFIG_FILES:
+            path = config_dir / name
+            if path.exists() and "_extends" not in _read(path):
+                warnings.append(
+                    f"{name} does not '_extends: {parent}', so it replaces the "
+                    f"parent's {name} entirely (set.yaml only supplies files the "
+                    "set does not have)")
+    try:
+        hists = load_histogram_defs(config_dir / "histograms.yaml")
+        for name, cfg in load_derived_plot_defs(
+                str(config_dir / "derived_plots.yaml")).items():
+            needed = derived_sources(name, cfg) or []
+            missing = [n for n in needed if n not in hists]
+            if missing:
+                warnings.append(f"derived plot '{name}' reads {missing}, which this "
+                                "set does not fill: it will not be drawn")
+    except SystemExit as e:
+        warnings.append(str(e))
+    return warnings
+
+
 def _write_pickle_atomic(path: Path, payload) -> None:
     """Write *payload* so that *path* is either the old file or the whole new one.
 

@@ -1,15 +1,48 @@
 """Command-line interface.
 
-Works both as installed console scripts (``suep-run`` / ``suep-plot`` /
-``suep-submit``) and as a module with a subcommand:
-``python -m suep_plot.cli {run,plot,submit} [options]``.
+Installed console scripts: ``suep-run`` / ``suep-plot`` / ``suep-submit`` /
+``suep-status`` / ``suep-reweight`` / ``suep-config``.  Without the install
+the same commands work as
+``python -m suep_plot.cli {run,plot,submit,status,reweight,config} [options]``.
+Every command takes ``-h``.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import socket
+import subprocess
 import sys
+from datetime import datetime
+from pathlib import Path
+
+# Written into a run's output directory by suep-run and suep-submit: which
+# config set, arguments and code produced the pickles there.  suep-plot reads
+# the config set back from it, so `suep-plot <run dir>` needs no -c.
+RUN_INFO = "run_info.json"
+
+
+class _Formatter(argparse.ArgumentDefaultsHelpFormatter,
+                 argparse.RawDescriptionHelpFormatter):
+    """Defaults in the help text, and examples printed as written."""
+
+
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("suep-plot")
+    except Exception:  # noqa: BLE001 - not installed: still usable from the checkout
+        return "unknown (not installed)"
+
+
+def _parser(prog: str, description: str, epilog: str | None = None):
+    parser = argparse.ArgumentParser(prog=prog, description=description,
+                                     epilog=epilog, formatter_class=_Formatter)
+    parser.add_argument("--version", action="version",
+                        version=f"%(prog)s {_version()}")
+    return parser
 
 
 def _auto_jobs(jobs: int | None, cap: int = 8) -> int:
@@ -46,6 +79,9 @@ def _read_file_list(path: str | None, samples: list[str] | None) -> list[str] | 
     if not files:
         raise SystemExit(f"ERROR: file list '{path}' is empty")
     return files
+
+
+# ── config sets ───────────────────────────────────────────────────
 
 
 def _is_config_set(path: str) -> bool:
@@ -110,34 +146,99 @@ def _check_config_dir(path: str, runnable: bool = True) -> str:
                      + _list_sets(container))
 
 
+# ── run_info.json ─────────────────────────────────────────────────
+
+
+def _git_state() -> dict:
+    """Commit and dirty flag of the checkout the package runs from."""
+    repo = str(Path(__file__).resolve().parents[2])
+    try:
+        commit = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
+                                capture_output=True, text=True, timeout=20).stdout.strip()
+        dirty = subprocess.run(["git", "-C", repo, "status", "--porcelain",
+                                "--untracked-files=no"],
+                               capture_output=True, text=True, timeout=20).stdout.strip()
+        return {"commit": commit or None, "dirty": bool(dirty)}
+    except (OSError, subprocess.TimeoutExpired):
+        return {"commit": None, "dirty": None}
+
+
+def write_run_info(output_dir: str, config_dir: str, command: str, args) -> None:
+    """Record what produced a run directory (see RUN_INFO)."""
+    info = {
+        "config_dir": str(Path(config_dir).resolve()),
+        "command": command,
+        "argv": sys.argv,
+        "args": {k: v for k, v in vars(args).items()},
+        "time": datetime.now().isoformat(timespec="seconds"),
+        "host": socket.gethostname(),
+        "user": os.environ.get("USER"),
+        "git": _git_state(),
+    }
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / RUN_INFO).write_text(json.dumps(info, indent=1, default=str) + "\n")
+
+
+def read_run_info(run_dir: str) -> dict | None:
+    path = Path(run_dir) / RUN_INFO
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+# ── the commands ──────────────────────────────────────────────────
+
+
 def run(argv=None):
     """Process samples and fill histograms (one output file per sample)."""
-    parser = argparse.ArgumentParser(prog="suep-run",
-                                     description="Process MDSNano samples and fill histograms.")
-    parser.add_argument("-c", "--config-dir", default="configs", help="Config set: directory with the six YAML files (e.g. configs/configs_mds)")
-    parser.add_argument("-o", "--output-dir", default="output", help="Output directory for per-sample pickle files (default: output)")
-    parser.add_argument("-s", "--samples", nargs="*", default=None, help="Process only these samples (default: all)")
-    parser.add_argument("--chunk-size", type=int, default=100_000, help="Events per chunk")
-    parser.add_argument("--workers", type=int, default=1, help="Local worker processes (coffea FuturesExecutor); 1 = iterative")
+    parser = _parser(
+        "suep-run", "Process MDSNano samples and fill histograms: one pickle per "
+        "sample in the output directory.",
+        epilog="Examples:\n"
+               "  suep-run -c configs/configs_mds -o output_mds -s suep_mDark2_temp1 \\\n"
+               "      --file-range 0:1 --part 0          # one file, a quick check\n"
+               "  suep-run -c configs/configs_mds -o output_mds --plot\n"
+               "\nAnything beyond a few files belongs on Slurm: see suep-submit.")
+    parser.add_argument("-c", "--config-dir", required=True,
+                        help="Config set: a directory under configs/, e.g. "
+                             "configs/configs_mds")
+    parser.add_argument("-o", "--output-dir", default="output",
+                        help="Output directory for the per-sample pickles")
+    parser.add_argument("-s", "--samples", nargs="*", default=None,
+                        help="Process only these samples (space- or comma-separated; "
+                             "default: all)")
+    parser.add_argument("--chunk-size", type=int, default=10_000,
+                        help="Events per chunk (DBSCAN runs per chunk, so keep it small)")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Local worker processes (coffea FuturesExecutor); 1 = iterative")
     parser.add_argument("-f", "--force", action="store_true",
-                        help="Reprocess even when the output pickle is newer than configs and inputs")
+                        help="Reprocess even when the output pickle is newer than "
+                             "configs and (local) inputs")
     parser.add_argument("--file-list", default=None, metavar="PATH",
                         help="Process exactly the files listed in PATH (one per line) "
                              "instead of resolving the sample's 'files:'; needs a "
                              "single --samples")
     parser.add_argument("--file-range", default=None, metavar="START:END",
                         help="Process only files [START, END) of the sample's "
-                             "resolved file list")
+                             "resolved file list (needs --part)")
     parser.add_argument("--part", default=None, metavar="TAG",
                         help="Shard tag: write <sample>.part<TAG>.pkl, which "
                              "suep-plot sums back into one sample")
     parser.add_argument("--plot", action="store_true",
-                        help="Plot after processing (writes to <output-dir>/plots)")
-    parser.add_argument("--lumi", type=float, default=None, help="(with --plot) luminosity [/fb] for label + MC scaling")
+                        help="Plot after processing (into <output-dir>/plots)")
+    parser.add_argument("--lumi", type=float, default=None,
+                        help="(with --plot) luminosity [/fb] for label + MC scaling")
     parser.add_argument("--log", action="store_true", help="(with --plot) logarithmic y-axis")
-    parser.add_argument("--normalize", action="store_true", help="(with --plot) normalize signal to unit area")
-    parser.add_argument("--formats", default="png,pdf", help="(with --plot) comma-separated figure formats")
-    parser.add_argument("-j", "--jobs", type=int, default=0, help="(with --plot) parallel rendering processes (0 = auto)")
+    parser.add_argument("--normalize", action="store_true",
+                        help="(with --plot) normalize signal to unit area")
+    parser.add_argument("--formats", default="png,pdf",
+                        help="(with --plot) comma-separated figure formats")
+    parser.add_argument("-j", "--jobs", type=int, default=0,
+                        help="(with --plot) parallel rendering processes (0 = auto)")
     args = parser.parse_args(argv)
 
     _check_config_dir(args.config_dir)
@@ -147,40 +248,69 @@ def run(argv=None):
             "ERROR: --file-range processes part of a sample, so it needs --part "
             "<tag>: otherwise it writes <sample>.pkl, which reads as the whole "
             "sample and is overwritten (or skipped as up to date) by the next range.")
+    file_list = _read_file_list(args.file_list, args.samples)
+    # A Slurm array task (it gets --file-list) shares its output directory
+    # with thousands of others; suep-submit wrote run_info.json once already.
+    if file_list is None:
+        write_run_info(args.output_dir, args.config_dir, "suep-run", args)
 
     from .processor import run_all
     run_all(args.config_dir, args.output_dir, args.samples, args.chunk_size,
             args.workers, force=args.force, file_range=file_range,
-            part=args.part, file_list=_read_file_list(args.file_list, args.samples))
+            part=args.part, file_list=file_list)
 
     if args.plot:
         os.environ.setdefault("MPLBACKEND", "Agg")
         from .plot import plot_all
-        plot_all(args.output_dir, os.path.join(args.output_dir, "plots"),
-                 normalize=args.normalize, log_y=args.log, lumi=args.lumi,
-                 config_dir=args.config_dir, jobs=_auto_jobs(args.jobs),
-                 formats=_parse_formats(args.formats))
+        failed = plot_all(args.output_dir, os.path.join(args.output_dir, "plots"),
+                          normalize=args.normalize, log_y=args.log, lumi=args.lumi,
+                          config_dir=args.config_dir, jobs=_auto_jobs(args.jobs),
+                          formats=_parse_formats(args.formats))
+        return 1 if failed else 0
+    return 0
+
+
+def _plot_config_dir(inputs: list[str], given: str | None) -> tuple[str | None, dict | None]:
+    """The config set to style a plot with: -c, else the runs' run_info.json."""
+    infos = [read_run_info(p) for p in inputs if os.path.isdir(p)]
+    infos = [i for i in infos if i]
+    if given is not None:
+        return given, infos[0] if len(infos) == 1 else None
+    dirs = {i.get("config_dir") for i in infos}
+    if len(dirs) == 1 and None not in dirs:
+        config_dir = dirs.pop()
+        print(f"Config set from {RUN_INFO}: {config_dir}")
+        return config_dir, infos[0] if len(infos) == 1 else None
+    if len(dirs) > 1:
+        print(f"WARNING: the inputs were made with different config sets "
+              f"({', '.join(sorted(map(str, dirs)))}); pass -c to choose the styling")
+    else:
+        print("WARNING: no -c and no run_info.json: labels, colours and derived "
+              "plots fall back to what the pickles carry")
+    return None, None
 
 
 def plot(argv=None):
     """Plot histograms from processed results."""
-    parser = argparse.ArgumentParser(
-        prog="suep-plot",
-        description="Plot histograms from per-sample pickle files.",
+    parser = _parser(
+        "suep-plot", "Plot histograms from per-sample pickle files.",
         epilog="Examples:\n"
-               "  suep-plot output/                          # load all .pkl in directory\n"
-               "  suep-plot output/sig.pkl output/bkg.pkl    # load specific files\n"
-               "  suep-plot output/ --log --lumi 38.5        # log scale with lumi label\n"
-               "  suep-plot output/ --formats png -j 8       # PNG only, 8 render processes\n"
-               "  suep-plot output/ --save-root merged.root  # also export ROOT file\n",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("input", nargs="+", help="Pickle file(s) or directory containing .pkl files")
-    parser.add_argument("-o", "--output-dir", default="plots", help="Output directory for figures")
+               "  suep-plot output_mds                   # config set and output dir\n"
+               "                                         # come from output_mds/run_info.json\n"
+               "  suep-plot output_mds --formats png -j 4\n"
+               "  suep-plot output_a output_b -o cmp -c configs/configs_mds\n"
+               "  suep-plot output_mds --save-root merged.root\n"
+               "\nExit code: 1 when no pickle was found or any figure failed.")
+    parser.add_argument("input", nargs="+",
+                        help="Pickle file(s) or run directories")
+    parser.add_argument("-o", "--output-dir", default=None,
+                        help="Figure directory (default: <run>/plots for a single "
+                             "run directory with run_info.json, else ./plots)")
     parser.add_argument("-c", "--config-dir", default=None,
-                        help="Config set for derived_plots.yaml and plot-time styling "
-                             "overrides (e.g. configs/configs_mds)")
-    parser.add_argument("--normalize", action="store_true", help="Normalize signal histograms to unit area")
+                        help="Config set for plot-time styling and derived plots "
+                             "(default: from the run's run_info.json)")
+    parser.add_argument("--normalize", action="store_true",
+                        help="Normalize signal histograms to unit area")
     parser.add_argument("--log", action="store_true", help="Logarithmic y-axis")
     parser.add_argument("--lumi", type=float, default=None,
                         help="Integrated luminosity [/fb]: shown in the CMS label and "
@@ -188,7 +318,7 @@ def plot(argv=None):
     parser.add_argument("--no-ratio", action="store_true",
                         help="Disable the Data/MC ratio panel")
     parser.add_argument("--formats", default="png,pdf",
-                        help="Comma-separated figure formats (default: png,pdf)")
+                        help="Comma-separated figure formats")
     parser.add_argument("-j", "--jobs", type=int, default=0,
                         help="Parallel rendering processes (0 = auto, 1 = serial)")
     parser.add_argument("--save-root", default=None, metavar="FILE",
@@ -197,31 +327,34 @@ def plot(argv=None):
 
     if args.config_dir is not None:
         _check_config_dir(args.config_dir, runnable=False)
+    config_dir, info = _plot_config_dir(args.input, args.config_dir)
+    output_dir = args.output_dir
+    if output_dir is None:
+        output_dir = os.path.join(args.input[0], "plots") if info else "plots"
 
     os.environ.setdefault("MPLBACKEND", "Agg")
     from .plot import plot_all
-    plot_all(args.input, args.output_dir, args.normalize, args.log, args.lumi,
-             config_dir=args.config_dir, jobs=_auto_jobs(args.jobs),
-             formats=_parse_formats(args.formats), ratio=not args.no_ratio,
-             save_root=args.save_root)
+    failed = plot_all(args.input, output_dir, args.normalize, args.log, args.lumi,
+                      config_dir=config_dir, jobs=_auto_jobs(args.jobs),
+                      formats=_parse_formats(args.formats), ratio=not args.no_ratio,
+                      save_root=args.save_root)
+    return 1 if failed else 0
 
 
 def reweight(argv=None):
     """Derive a binned reweight map from two processed samples."""
-    parser = argparse.ArgumentParser(
-        prog="suep-reweight",
-        description="Generate a binned reweight map = <num>/<den> of a processed "
-                    "histogram, ready to use via 'file:' in a set's reweights.yaml.",
+    parser = _parser(
+        "suep-reweight",
+        "Generate a binned reweight map = <num>/<den> of a processed histogram, "
+        "ready to use via 'file:' in a set's reweights.yaml.",
         epilog="Example:\n"
                "  suep-reweight output/ --hist ht --num data_2024 --den qcd \\\n"
                "      -o configs/configs_mds/ht_reweight.yaml\n"
                "  # then in configs/configs_mds/reweights.yaml:\n"
                "  #   ht_dataMC:\n"
                "  #     file: ht_reweight.yaml\n"
-               "  #     apply_to: [background]\n",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("input", nargs="+", help="Pickle file(s) or directory containing .pkl files")
+               "  #     apply_to: [background]\n")
+    parser.add_argument("input", nargs="+", help="Pickle file(s) or run directories")
     parser.add_argument("--hist", required=True, help="Histogram name (1D or 2D) to take the ratio of")
     parser.add_argument("--num", required=True, help="Numerator (target) sample name")
     parser.add_argument("--den", required=True, help="Denominator (source) sample name")
@@ -237,22 +370,21 @@ def reweight(argv=None):
                              normalize=not args.no_normalize,
                              clamp=not args.no_clamp)
     print(f"Wrote reweight map to {path}")
+    return 0
 
 
 def status(argv=None):
     """Report which array tasks of a submitted run finished, and redo the rest."""
-    parser = argparse.ArgumentParser(
-        prog="suep-status",
-        description="Check a Slurm run: which tasks wrote their pickle, which "
-                    "are still queued or running, which failed and why -- and "
-                    "optionally resubmit the failed ones.",
+    parser = _parser(
+        "suep-status",
+        "Check a Slurm run: which tasks wrote their pickle, which are still queued "
+        "or running, which failed and why -- and optionally resubmit the failed ones.",
         epilog="Examples:\n"
                "  suep-status -o output_mds_data\n"
                "  suep-status -o output_mds_data --resubmit\n"
                "  suep-status -o output_mds_data --resubmit --time 16:00:00 --mem 16000\n"
-               "\nExit code: 0 when every task is done, running or resubmitted; 1 otherwise.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+               "\nExit code: 0 when every task is done, running or resubmitted; 1 otherwise.\n"
+               "One sacct call per invocation: run it now and then, not in a loop.")
     parser.add_argument("-o", "--output-dir", required=True,
                         help="Output directory of a 'suep-submit' run")
     parser.add_argument("--resubmit", action="store_true",
@@ -277,8 +409,6 @@ def status(argv=None):
                              "reading them back (faster, misses truncated files)")
     args = parser.parse_args(argv)
 
-    from pathlib import Path
-
     from .status import LIVE_STATES, report, resubmit, slurm_states
     verify = not args.no_verify
     if args.resubmit:
@@ -296,31 +426,47 @@ def status(argv=None):
 
 def submit(argv=None):
     """Submit processing jobs to Slurm."""
-    parser = argparse.ArgumentParser(prog="suep-submit",
-                                     description="Submit histogram-filling jobs to Slurm.")
-    parser.add_argument("-c", "--config-dir", default="configs", help="Config set: directory with the six YAML files (e.g. configs/configs_mds)")
-    parser.add_argument("-o", "--output-dir", default="output", help="Output directory for per-job pickles")
+    parser = _parser(
+        "suep-submit", "Submit histogram-filling jobs to Slurm: one array task "
+        "per sample, or per --files-per-job shard of one.",
+        epilog="Examples:\n"
+               "  suep-submit -c configs/configs_mds -o $SUEP_OUT/mds --files-per-job 5 --dry-run\n"
+               "  suep-submit -c configs/configs_mds -o $SUEP_OUT/mds --files-per-job 5\n"
+               "  suep-submit -c configs/configs_mds_cosmics -o $SUEP_OUT/cosmics \\\n"
+               "      --time 24:00:00 --mem 16000         # a QOS for 24 h is picked\n"
+               "\nThen: suep-status -o <output-dir>, and suep-plot <output-dir>.")
+    parser.add_argument("-c", "--config-dir", required=True,
+                        help="Config set: a directory under configs/, e.g. "
+                             "configs/configs_mds")
+    parser.add_argument("-o", "--output-dir", default="output",
+                        help="Output directory for the per-task pickles")
     parser.add_argument("-s", "--samples", nargs="*", default=None,
-                        help="Submit only these samples (default: all)")
-    parser.add_argument("--partition", default=None, help="Slurm partition")
+                        help="Submit only these samples (space- or comma-separated; "
+                             "default: all)")
+    parser.add_argument("--partition", default=None,
+                        help="Slurm partition (default: the cluster's, c on CBE.next)")
     parser.add_argument("--account", default=None, help="Slurm account")
     parser.add_argument("--qos", default=None,
-                        help="Slurm QOS; needed for --time over the default "
-                             "QOS's cap (on CBE.next short caps at 8h, "
-                             "medium at 2 days, long at 14 days)")
-    parser.add_argument("--time", default="04:00:00", help="Wall time per job")
-    parser.add_argument("--mem", default="8000", help="Memory in MB per job")
-    parser.add_argument("--conda-env", default="rootmds", help="Conda environment to activate in jobs")
+                        help="Slurm QOS (default: picked from --time: none up to 8 h, "
+                             "medium up to 2 days, long up to 14 days)")
+    parser.add_argument("--time", default="04:00:00", help="Wall time per task")
+    parser.add_argument("--mem", default="8000", help="Memory per task (MB, or 16G)")
+    parser.add_argument("--conda-env",
+                        default=os.environ.get("CONDA_DEFAULT_ENV") or "rootmds",
+                        help="Conda environment the tasks activate (default: the "
+                             "one active now)")
     parser.add_argument("--proxy", default=None,
                         help="Grid proxy to bake into job.sh "
                              "(default: $X509_USER_PROXY, else ~/private/.proxy)")
-    parser.add_argument("--chunk-size", type=int, default=100_000, help="Events per chunk")
+    parser.add_argument("--chunk-size", type=int, default=10_000, help="Events per chunk")
     parser.add_argument("--workers", type=int, default=1,
-                        help="Worker processes per job (also sets --cpus-per-task)")
+                        help="Worker processes per task (also sets --cpus-per-task)")
     parser.add_argument("--files-per-job", type=int, default=None,
                         help="Split each sample into array tasks of this many files "
-                             "(default: one task per sample); parts are summed by suep-plot")
-    parser.add_argument("--dry-run", action="store_true", help="Generate scripts without submitting")
+                             "(default: a sample's own files_per_job, else one task "
+                             "per sample); suep-plot sums the parts")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Write the scripts without submitting")
     parser.add_argument("--overwrite", action="store_true",
                         help="Submit into an output directory that already holds a "
                              "run: its slurm/ is moved aside to slurm.prev-<time>, "
@@ -331,7 +477,6 @@ def submit(argv=None):
 
     from .slurm import submit_jobs
     submit_jobs(
-        overwrite=args.overwrite,
         config_dir=args.config_dir,
         output_dir=args.output_dir,
         samples_filter=args.samples,
@@ -346,26 +491,38 @@ def submit(argv=None):
         workers=args.workers,
         files_per_job=args.files_per_job,
         dry_run=args.dry_run,
+        overwrite=args.overwrite,
     )
+    write_run_info(args.output_dir, args.config_dir, "suep-submit", args)
+    return 0
+
+
+def config(argv=None):
+    """Inspect and check config sets (``suep-config show|check|fields``)."""
+    from .configtool import main as config_main
+    return config_main(argv, _parser, _check_config_dir)
 
 
 _COMMANDS = {"run": run, "plot": plot, "submit": submit, "status": status,
-             "reweight": reweight}
+             "reweight": reweight, "config": config}
 
 
 def main(argv=None):
     """Subcommand dispatcher for ``python -m suep_plot.cli``."""
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
-        print("usage: python -m suep_plot.cli {run,plot,submit,status,reweight} [options]")
-        print("       (or use the console scripts suep-run / suep-plot / "
-              "suep-submit / suep-status / suep-reweight)")
+        print(f"usage: python -m suep_plot.cli {{{','.join(_COMMANDS)}}} [options]")
+        print("       (or the console scripts suep-run / suep-plot / suep-submit / "
+              "suep-status / suep-reweight / suep-config)")
+        print("each command takes -h")
         return 0 if argv and argv[0] in ("-h", "--help") else 2
+    if argv[0] == "--version":
+        print(f"suep-plot {_version()}")
+        return 0
     cmd, rest = argv[0], argv[1:]
     if cmd not in _COMMANDS:
         print(f"unknown command '{cmd}'. choose from: {', '.join(_COMMANDS)}")
         return 2
-    # subcommands that report a condition (suep-status) return an exit code
     rc = _COMMANDS[cmd](rest)
     return rc if isinstance(rc, int) else 0
 

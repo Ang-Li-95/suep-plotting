@@ -1,13 +1,21 @@
 """Overlay gen-matched signal clusters against all background clusters.
 
 The two populations live in different output directories: the signal's
-``<var>_matched`` histograms come from a configs/configs_mds_signal run (truth needed),
-the background's inclusive ``<var>`` from a configs/configs_mds run (the background has
-no truth branches, so *all* its clusters are the fake/pile-up reference).
-Because both configs define the inclusive histograms identically, the axes
-match and the two can be drawn on one canvas without refilling anything.
+gen-matched histograms come from a truth-level run, the background's inclusive
+ones from a reco run (the background has no truth branches, so *all* its
+clusters are the fake/pile-up reference).  Because both configs fill the same
+variables with the same binning, the two can be drawn on one canvas without
+refilling anything.
 
-    python scripts/compare_sig_bkg.py <sig_out> <bkg_out> <dest> [--suffix _matched]
+    python scripts/compare_sig_bkg.py <sig_out> <bkg_out> [<bkg_out> ...] <dest> \\
+        --sig-cut matched --bkg-cut all
+
+Region histograms (``<region>/<cut>/<variable>``) are paired by cut:
+``csc/matched/csc_cluster_size`` in the signal run with
+``csc/all/csc_cluster_size`` in the background runs.  Older flat names are
+paired by suffix instead (``--suffix _matched``).  Several background
+directories are read as one (each sample is one population, e.g. the
+configs_mds_src_* runs), so there is no need to collect them first.
 
 Each figure is unit-area normalized, so it compares shapes rather than yields,
 and follows the same CMS style, sample labels/colors, and png+pdf output as
@@ -132,33 +140,34 @@ def _clear_legend(fig, ax, legend, y_max: float, tries: int = 6) -> None:
 
 
 def _restyle(sample_defs: dict, hist_defs: dict, config_dirs) -> None:
-    """Refresh plot-only sample and histogram keys from configs.
+    """Refresh plot-time sample and histogram keys from configs.
 
-    The pickles carry both definitions as they were at fill time, so without
-    this an axis-label or legend fix would need the samples reprocessed.  Only
-    keys that cannot change what was filled are taken -- the binning and the
-    expression stay as the pickle recorded them.
+    The same override suep-plot -c applies (suep_plot.plot.restyle), so a
+    label, colour, marker, rebin or log-axis change is picked up here exactly
+    as it is there, without reprocessing.
     """
-    from suep_plot.histograms import load_histogram_defs
-    from suep_plot.processor import load_samples
+    from suep_plot.plot import restyle
 
     for cdir in config_dirs or []:
-        path = os.path.join(cdir, "samples.yaml")
-        if not os.path.exists(path):
-            raise SystemExit(f"--config-dir: no samples.yaml in {cdir}")
-        for name, cfg in load_samples(path).items():
-            if name in sample_defs:
-                sample_defs[name].update(
-                    {k: v for k, v in cfg.items()
-                     if k in ("label", "color", "linestyle", "group", "is_data")})
+        restyle(hist_defs, sample_defs, cdir)
 
-        hpath = os.path.join(cdir, "histograms.yaml")
-        if os.path.exists(hpath):
-            for name, cfg in load_histogram_defs(hpath).items():
-                if name in hist_defs:
-                    hist_defs[name].update(
-                        {k: v for k, v in cfg.items()
-                         if k in ("label", "label_x", "log_x", "log_y")})
+
+def _pairs(sig_keys, args):
+    """(signal histogram, background histogram, figure name) to compare."""
+    if args.sig_cut:
+        out = []
+        for key in sig_keys:
+            parts = key.split("/")
+            if len(parts) == 3 and parts[1] == args.sig_cut:
+                region, _, leaf = parts
+                out.append((key, f"{region}/{args.bkg_cut}/{leaf}", f"{region}/{leaf}"))
+        return out
+    keys = [k for k in sig_keys if k.endswith(args.suffix)] if args.suffix else sig_keys
+    out = []
+    for key in keys:
+        base = key[: len(key) - len(args.suffix)] if args.suffix else key
+        out.append((key, base + args.bkg_suffix, base))
+    return out
 
 
 def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag):
@@ -229,12 +238,20 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("sig_out", help="output dir of the configs/configs_mds_signal run")
-    p.add_argument("bkg_out", help="output dir of the configs/configs_mds run")
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("sig_out", help="output dir of the truth-level (signal) run")
+    p.add_argument("bkg_out", nargs="+",
+                   help="output dir(s) of the background run(s), read as one")
     p.add_argument("dest", help="directory for the comparison figures")
+    p.add_argument("--sig-cut", default=None,
+                   help="region histograms: the signal's cut, e.g. matched -- pairs "
+                        "<region>/<sig-cut>/<var> with <region>/<bkg-cut>/<var>")
+    p.add_argument("--bkg-cut", default="all",
+                   help="region histograms: the background's cut")
     p.add_argument("--suffix", default="_matched",
-                   help="signal histogram suffix to pair with the background one")
+                   help="flat histogram names: signal suffix to pair with the "
+                        "background histogram (ignored with --sig-cut)")
     p.add_argument("--bkg-suffix", default="",
                    help="background histogram suffix (default: the inclusive "
                         "histogram). Set it to put the same cluster selection on "
@@ -258,7 +275,13 @@ def main():
     args = p.parse_args()
 
     sig_all = style.load_samples(args.sig_out, args.sig_samples)
-    bkg_all = style.load_samples(args.bkg_out, args.bkg_samples)
+    bkg_all = {}
+    for bkg_dir in args.bkg_out:
+        for name, data in style.load_samples(bkg_dir, args.bkg_samples).items():
+            if name in bkg_all:
+                raise SystemExit(f"sample '{name}' is in more than one background "
+                                 "directory; it would be counted twice")
+            bkg_all[name] = data
     if not bkg_all:
         raise SystemExit(f"no background pickles found in {args.bkg_out}")
 
@@ -280,24 +303,29 @@ def main():
     sig_keys = sorted(next(iter(sig_all.values()))["histograms"])
     # An empty suffix pairs each signal histogram with the identically named
     # background one (for runs whose config defines no gen-matched histograms).
-    keys = [k for k in sig_keys if k.endswith(args.suffix)] if args.suffix else sig_keys
-    if not keys:
+    pairs = _pairs(sig_keys, args)
+    if not pairs:
+        what = (f"a '{args.sig_cut}' cut" if args.sig_cut
+                else f"histograms ending with '{args.suffix}'")
         raise SystemExit(
-            f"no signal histogram ends with '{args.suffix}' in {args.sig_out} "
+            f"no signal histogram with {what} in {args.sig_out} "
             f"({len(sig_keys)} histograms found).\n"
-            "That run's config defines no gen-matched histograms -- either process it "
-            "with a config that does (e.g. configs/configs_mds_signal), or pass --suffix '' to "
-            "compare the inclusive signal histograms with the background ones.")
+            "Region histograms are paired with --sig-cut <cut> [--bkg-cut <cut>]; "
+            "flat names with --suffix ('' compares identically named histograms).")
 
-    tag = sig_tag(args.suffix) if args.tag is None else args.tag
-    bkg_tag = bkg_label(args.bkg_suffix) if args.bkg_tag is None else args.bkg_tag
+    if args.sig_cut:
+        default_tag = args.sig_cut.replace("_", " ")
+        default_bkg = "" if args.bkg_cut == "all" else args.bkg_cut.replace("_", " ")
+    else:
+        default_tag, default_bkg = sig_tag(args.suffix), bkg_label(args.bkg_suffix)
+    tag = default_tag if args.tag is None else args.tag
+    bkg_tag = default_bkg if args.bkg_tag is None else args.bkg_tag
     seps = {}   # {variable: {background: separation}}
-    for key in keys:
-        base = key[: len(key) - len(args.suffix)] if args.suffix else key
-        # the inclusive config carries the axis label; fall back to the matched one
-        hist_cfg = hist_defs.get(base, hist_defs.get(key, {}))
+    for key, bkg_key, base in pairs:
+        # the background (inclusive) config carries the axis label
+        hist_cfg = hist_defs.get(bkg_key, hist_defs.get(key, {}))
         sig_entries = [(n, d, key) for n, d in sig_all.items()]
-        bkg_entries = [(n, bkg_all[n], base + args.bkg_suffix) for n in bkg_names]
+        bkg_entries = [(n, bkg_all[n], bkg_key) for n in bkg_names]
         sig_slices = collect(sig_entries, base, hist_cfg, dropped)
         bkg_slices = collect(bkg_entries, base, hist_cfg, dropped)
         if not sig_slices or not bkg_slices:

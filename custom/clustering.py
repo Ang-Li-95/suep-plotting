@@ -332,6 +332,26 @@ def _rpc_time(bx):
 _NO_LLP = np.zeros(0, dtype=np.int64)
 
 
+def dbscan_labels(eta, phi, eps, min_samples):
+    """DBSCAN labels of one event's rechits (-1 = noise), in the eta-phi dR metric.
+
+    The one implementation of the per-event clustering: :func:`_cluster_hits`
+    builds its cluster records from these labels, and scripts/event_display.py
+    colours the hits by them, so the display shows exactly the analysis's
+    clusters.  The distance matrix is precomputed to handle the phi
+    wrap-around (see docs/known-issues.md for its memory cost).
+    """
+    from sklearn.cluster import DBSCAN
+
+    if len(eta) < min_samples:
+        return np.full(len(eta), -1, dtype=np.int64)
+    dphi = phi[:, None] - phi[None, :]
+    dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
+    dmat = np.sqrt((eta[:, None] - eta[None, :]) ** 2 + dphi ** 2)
+    return DBSCAN(eps=eps, min_samples=min_samples,
+                  metric="precomputed").fit_predict(dmat)
+
+
 def _cluster_hits(hits, eps, min_samples, settings, merged=False):
     """DBSCAN one (possibly merged) flat hit collection -> cluster records.
 
@@ -347,8 +367,6 @@ def _cluster_hits(hits, eps, min_samples, settings, merged=False):
     every hit at one time, a cluster DBSCAN assembled from unrelated pile-up
     and cavern hits does not.
     """
-    from sklearn.cluster import DBSCAN
-
     match_min_hits = settings["match_min_hits"]
     # Per cluster, every LLP clearing match_min_hits and its hit count.
     all_idx, all_hits = [], []
@@ -386,11 +404,7 @@ def _cluster_hits(hits, eps, min_samples, settings, merged=False):
             continue
         s = slice(offsets[i], offsets[i + 1])
         e, p = eta[s], phi[s]
-        dphi = p[:, None] - p[None, :]
-        dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
-        dmat = np.sqrt((e[:, None] - e[None, :]) ** 2 + dphi ** 2)
-        labels = DBSCAN(eps=eps, min_samples=min_samples,
-                        metric="precomputed").fit_predict(dmat)
+        labels = dbscan_labels(e, p, eps, min_samples)
         for k in range(labels.max() + 1):
             m = labels == k
             cphi = np.arctan2(np.sin(p[m]).sum(), np.cos(p[m]).sum())

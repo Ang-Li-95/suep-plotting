@@ -242,6 +242,13 @@ def apply_xs_scaling(histograms: dict, sample_defs: dict, sumw: dict, lumi: floa
     weight = xs * lumi * 1000 / sumw.  Data samples and MC samples without
     ``xs`` or a recorded ``sumw`` are left untouched (a warning is printed).
     """
+    placeholders = sorted(s for s, cfg in sample_defs.items()
+                          if not cfg.get("is_data", False) and cfg.get("xs") == 1.0)
+    if placeholders:
+        print(f"  WARNING: xs = 1.0 for {', '.join(placeholders)} -- a placeholder, "
+              "not a cross section: --lumi scales these samples by a meaningless "
+              "factor (and distorts efficiency intervals). Drop --lumi, or set the "
+              "real xs in datasets.yaml.")
     factors = {}
     for s, cfg in sample_defs.items():
         if cfg.get("is_data", False):
@@ -385,12 +392,38 @@ def _finish(fig, ax, output_dir: str, name: str, formats, *,
         ax.text(0.03, 0.97, annotation, transform=ax.transAxes, ha="left",
                 va="top", fontsize=16)
     _cms_label(ax, lumi=lumi, has_data=has_data)
+    save_figure(fig, output_dir, name, formats)
+    return 1
+
+
+def save_figure(fig, output_dir: str, name: str, formats=DEFAULT_FORMATS) -> None:
+    """Save *fig* as ``<output_dir>/<name>.<ext>`` per format, then close it.
+
+    A *name* with slashes goes into subfolders.  Shared with scripts/.
+    """
     base = os.path.join(output_dir, name)
     os.makedirs(os.path.dirname(base), exist_ok=True)
     for ext in formats:
         fig.savefig(f"{base}.{ext}", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    return 1
+
+
+def restyle(hist_defs: dict, sample_defs: dict, config_dir) -> None:
+    """Re-read plot-time styling from a config set, in place.
+
+    The pickles carry the histogram and sample definitions as they were at
+    fill time; this lays the config set's current ones over them, so a label,
+    colour, rebin or log-axis change needs no reprocessing.  (What was filled
+    -- the axes, the expression -- is the histogram itself and cannot change.)
+    """
+    from .config import load_config_file
+    from .histograms import load_histogram_defs
+
+    for name, cfg in load_histogram_defs(Path(config_dir) / "histograms.yaml").items():
+        hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
+    for name, cfg in (load_config_file(Path(config_dir) / "samples.yaml") or {}).items():
+        if isinstance(cfg, dict):
+            sample_defs[name] = {**sample_defs.get(name, {}), **cfg}
 
 
 # ── 1D histogram plotting ────────────────────────────────────────
@@ -934,7 +967,9 @@ def export_root(histograms: dict[str, hist.Hist], path: str):
 # ── HTML gallery ─────────────────────────────────────────────────
 
 
-def write_gallery(output_dir: str, formats=None, since: float | None = None) -> str | None:
+def write_gallery(output_dir: str, formats=None, since: float | None = None, *,
+                  ranked=None, title: str | None = None, subtitle: str = "",
+                  score_label: str = "score") -> str | None:
     """Write an index.html thumbnail gallery of the PNGs under *output_dir*.
 
     Figures are grouped by folder (a region histogram ``csc/iso_muon/x`` sits
@@ -943,22 +978,30 @@ def write_gallery(output_dir: str, formats=None, since: float | None = None) -> 
     since then are shown -- a figure left from an earlier run of a histogram
     that no longer exists does not reappear.  A thumbnail links to its PDF
     only when this run wrote PDFs (*formats*), never to a stale one.
+
+    *ranked* -- ``[(name, score)]``, as the comparison scripts produce -- shows
+    exactly those figures, in that order, with their score in the caption.
     """
     import html as _html
 
     out = Path(output_dir)
-    pngs = sorted(p for p in out.rglob("*.png")
-                  if since is None or p.stat().st_mtime >= since - 1)
+    link_pdf = formats is None or "pdf" in formats
+    if ranked is not None:
+        scores = {str(name): score for name, score in ranked}
+        groups = {"": [out / f"{name}.png" for name, _ in ranked
+                       if (out / f"{name}.png").exists()]}
+    else:
+        scores = {}
+        groups = {}
+        for png in sorted(p for p in out.rglob("*.png")
+                          if since is None or p.stat().st_mtime >= since - 1):
+            groups.setdefault(png.parent.relative_to(out).as_posix(), []).append(png)
+    pngs = [p for g in groups.values() for p in g]
     if not pngs:
         return None
-    link_pdf = formats is None or "pdf" in formats
-
-    groups: dict[str, list[Path]] = {}
-    for png in pngs:
-        groups.setdefault(png.parent.relative_to(out).as_posix(), []).append(png)
 
     sections = []
-    for folder in sorted(groups):
+    for folder in (groups if ranked is not None else sorted(groups)):
         cards = []
         for png in groups[folder]:
             rel = png.relative_to(out).as_posix()
@@ -966,18 +1009,26 @@ def write_gallery(output_dir: str, formats=None, since: float | None = None) -> 
             fresh_pdf = link_pdf and pdf.exists() and \
                 (since is None or pdf.stat().st_mtime >= since - 1)
             href = pdf.relative_to(out).as_posix() if fresh_pdf else rel
+            key = rel[:-len(".png")]
+            score = (f'<br><span class="score">{score_label} {scores[key]:.3f}</span>'
+                     if key in scores else "")
             cards.append(
                 f'<figure data-name="{_html.escape(rel.lower())}"><a href="{href}">'
                 f'<img src="{_html.escape(rel)}" loading="lazy" alt="{png.stem}"></a>'
-                f'<figcaption>{_html.escape(png.stem)}</figcaption></figure>')
-        title = "(top level)" if folder == "." else folder
-        sections.append(f'<section><h2>{_html.escape(title)} '
-                        f'<small>({len(cards)})</small></h2>\n<div class="grid">\n'
+                f'<figcaption>{_html.escape(key if ranked is not None else png.stem)}'
+                f'{score}</figcaption></figure>')
+        heading = "" if ranked is not None else (
+            f'<h2>{_html.escape("(top level)" if folder == "." else folder)} '
+            f'<small>({len(cards)})</small></h2>\n')
+        sections.append(f'<section>{heading}<div class="grid">\n'
                         + "\n".join(cards) + "\n</div></section>")
 
     cutflow_link = ('<p><a href="cutflow.txt">cutflow.txt</a> · '
                     '<a href="cutflow.csv">cutflow.csv</a></p>'
                     if (out / "cutflow.txt").exists() else "")
+    if subtitle:
+        cutflow_link += f"<p>{_html.escape(subtitle)}</p>"
+    heading_title = _html.escape(title or out.name)
 
     page = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>suep-plot: {_html.escape(out.name)}</title>
@@ -990,8 +1041,9 @@ def write_gallery(output_dir: str, formats=None, since: float | None = None) -> 
  img {{ width: 100%; height: auto; }}
  figcaption {{ text-align: center; font-size: 0.85em; padding-top: 4px;
                font-family: monospace; word-break: break-all; }}
+ .score {{ color: #666; }}
 </style></head><body>
-<h1>{_html.escape(out.name)} ({len(pngs)} plots)</h1>
+<h1>{heading_title} ({len(pngs)} plots)</h1>
 {cutflow_link}
 <p><input id="filter" placeholder="filter: words that must all appear in the name, e.g. iso_muon size" autofocus>
  <span id="count"></span></p>
@@ -1095,8 +1147,7 @@ def plot_all(
     started = time.time()
     pkl_files = _resolve_inputs(results_path)
     if not pkl_files:
-        print("No .pkl files found.")
-        return
+        raise SystemExit(f"ERROR: no .pkl files found in {results_path}")
     print(f"Loading {len(pkl_files)} sample file(s):")
     for f in pkl_files:
         print(f"  {f}")
@@ -1107,18 +1158,7 @@ def plot_all(
     hist_defs = data.get("hist_defs", {})
 
     if config_dir:
-        # Through the loaders even when the file is absent from the set's own
-        # directory: it may be inherited through set.yaml.
-        from .histograms import load_histogram_defs
-        for name, cfg in load_histogram_defs(Path(config_dir) / "histograms.yaml").items():
-            hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
-        # Sample styling too -- label, colour, linestyle, marker.  Without
-        # this a legend or marker change means refilling every pickle just to
-        # redraw, which is exactly what this override exists to avoid.
-        from .config import load_config_file
-        for name, cfg in (load_config_file(Path(config_dir) / "samples.yaml") or {}).items():
-            if isinstance(cfg, dict):
-                sample_defs[name] = {**sample_defs.get(name, {}), **cfg}
+        restyle(hist_defs, sample_defs, config_dir)
 
     if lumi is not None:
         apply_xs_scaling(histograms, sample_defs, data.get("sumw", {}), lumi)
@@ -1175,3 +1215,16 @@ def plot_all(
         print(f"Done ({failed} plot(s) failed).")
     else:
         print("Done.")
+    return failed
+
+
+# ── Public names for scripts/ ────────────────────────────────────
+# The comparison scripts draw next to suep-plot's own figures, so they reuse
+# its helpers; these names are the stable interface they import (the
+# underscored ones are free to change).
+cms_label = _cms_label
+figure = _figure
+is_2d_hist = _is_2d_hist
+prep_1d = _prep_1d
+sample_of = _sample_of
+resolve_inputs = _resolve_inputs

@@ -34,6 +34,7 @@ suep-plot = "suep_plot.cli:plot"
 suep-submit = "suep_plot.cli:submit"
 suep-status = "suep_plot.cli:status"
 suep-reweight = "suep_plot.cli:reweight"
+suep-config = "suep_plot.cli:config"
 
 [tool.setuptools.packages.find]
 where = ["src"]

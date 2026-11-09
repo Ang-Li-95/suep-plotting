@@ -389,3 +389,21 @@ def test_the_root_export_nests_region_histograms(tmp_path):
 
     with uproot.open(tmp_path / "out.root") as f:
         assert f["csc/all/size/sig"].values().sum() == 1
+
+
+def test_the_comparison_scripts_load_exactly_the_named_sample(tmp_path):
+    """zerobias_2024C must not also pick up zerobias_2024C_ctrl's pickles."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import compare_style
+
+    for name in ("zerobias_2024C.pkl", "zerobias_2024C_ctrl.pkl"):
+        with open(tmp_path / name, "wb") as f:
+            pickle.dump({"histograms": {}, "samples": {name[:-4]: {}}}, f)
+
+    assert compare_style.samples_in(str(tmp_path)) == ["zerobias_2024C",
+                                                       "zerobias_2024C_ctrl"]
+    data = compare_style.load_sample(str(tmp_path), "zerobias_2024C")
+    assert list(data["samples"]) == ["zerobias_2024C"]

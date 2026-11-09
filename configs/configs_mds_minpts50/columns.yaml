@@ -1,0 +1,5 @@
+# _extends, so only the one parameter changes and everything else -- the
+# steps, eps, rpc_mode -- stays configs_mds's.
+_extends: ../configs_mds
+parameters:
+  cluster_min_samples: 50

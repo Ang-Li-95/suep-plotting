@@ -3,14 +3,15 @@
 One figure per event: every CSC/DT rechit is drawn at its global (|z|, r) over
 the chamber layout (:func:`drawRZ`), hits belonging to the same DBSCAN cluster
 share a colour, hits DBSCAN calls noise are light grey.  The clustering is the
-one the analysis uses (``custom/columns.py``: dR metric in eta-phi, same eps /
-min_samples), so the shapes on the display are the objects the cluster
-histograms are filled from -- pass ``-c <config set>`` to pick up that set's
-``columns.yaml`` parameters.  RPC is not drawn.
+analysis's own (``custom.clustering.dbscan_labels``, the function the cluster
+collections are built from), so the shapes on the display are the objects the
+cluster histograms are filled from -- pass ``-c <config set>`` to pick up that
+set's ``columns.yaml`` parameters and samples.  RPC is not drawn, so a set with
+``rpc_mode: merge`` (RPC rechits clustered in with CSC/DT) is refused.
 
     conda activate rootmds
     export X509_USER_PROXY=$HOME/private/.proxy
-    python scripts/event_display.py -d suep_mDark2_temp1 -n 5
+    python scripts/event_display.py -c configs/configs_mds -d suep_mDark2_temp1 -n 5
 
 The chamber layout covers z > 0 only, so the display is folded to |z|; a
 cluster in the -z endcap therefore lands on the same picture as one in +z (the
@@ -34,17 +35,19 @@ import matplotlib.pyplot as plt
 import mplhep as hep
 import numpy as np
 import uproot
-import yaml
 from matplotlib import patches
-from sklearn.cluster import DBSCAN
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "src"))
 
 import custom.columns as columns  # noqa: E402
-from suep_plot.processor import _resolve_files, load_columns_config  # noqa: E402
+from custom.clustering import dbscan_labels  # noqa: E402
+from suep_plot.config import load_config_file  # noqa: E402
+from suep_plot.processor import (load_columns_config, load_samples,  # noqa: E402
+                                 resolve_sample_files)
 
-OUTDIR = Path("/groups/hephy/cms/ang.li/suep_plots/event_display")
+OUTDIR = Path("event_display")
 
 SYSTEMS = {
     "csc": dict(coll="cscRechits", label="CSC"),
@@ -59,17 +62,6 @@ MATCHED_HIT = dict(marker="o", s=16, linewidths=0, alpha=0.85)
 OTHER_HIT = dict(marker="x", s=16, linewidths=0.9, alpha=0.85)
 
 
-def cluster_labels(eta, phi, eps, min_samples):
-    """DBSCAN labels per rechit (-1 = noise), identical to ``_cluster_system``."""
-    if len(eta) < min_samples:
-        return np.full(len(eta), -1, dtype=np.int64)
-    dphi = phi[:, None] - phi[None, :]
-    dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
-    dmat = np.sqrt((eta[:, None] - eta[None, :]) ** 2 + dphi ** 2)
-    return DBSCAN(eps=eps, min_samples=min_samples,
-                  metric="precomputed").fit_predict(dmat)
-
-
 def read_event(arrays, i, systems, settings):
     """Flat per-system numpy arrays for one event, with the DBSCAN labels."""
     out = {}
@@ -82,7 +74,7 @@ def read_event(arrays, i, systems, settings):
             hits.update({b: ak.to_numpy(arrays[f"{coll}_{b}"][i])
                          for b in TRUTH_BRANCHES})
         eps, min_samples = columns._dbscan_params(sys_, settings)
-        hits["label"] = cluster_labels(hits["Eta"], hits["Phi"], eps, min_samples)
+        hits["label"] = dbscan_labels(hits["Eta"], hits["Phi"], eps, min_samples)
         out[sys_] = hits
     return out
 
@@ -260,7 +252,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("-d", "--dataset", default="suep_mDark2_temp1",
-                   help="dataset name in datasets.yaml (default: suep_mDark2_temp1)")
+                   help="sample of the -c config set, else dataset of datasets.yaml "
+                        "(default: suep_mDark2_temp1)")
     p.add_argument("-f", "--files", nargs="+",
                    help="explicit ROOT file(s), overrides --dataset")
     p.add_argument("--nfiles", type=int, default=1,
@@ -291,6 +284,10 @@ def main():
     settings = columns.configure(
         load_columns_config(Path(args.config_dir) / "columns.yaml")
         if args.config_dir else None)
+    if settings["rpc_mode"] == "merge":
+        p.error("this config set uses rpc_mode: merge -- the analysis clusters the "
+                "RPC rechits in with CSC/DT, which this display (CSC/DT only) "
+                "cannot reproduce. Use a set with rpc_mode match or separate.")
     eps, min_samples = columns._dbscan_params("csc", settings)
     print(f"DBSCAN: eps={eps}, min_samples={min_samples} (CSC/DT), "
           f"match_min_hits={settings['match_min_hits']}")
@@ -303,12 +300,14 @@ def main():
     if args.files:
         files, tag, is_data = list(args.files), "files", False
     else:
-        with open(REPO / "datasets.yaml") as f:
-            samples = yaml.safe_load(f)
+        # The set's own samples (overrides, max_files and all) when -c is
+        # given, else the central registry.
+        samples = (load_samples(Path(args.config_dir) / "samples.yaml")
+                   if args.config_dir else load_config_file(REPO / "datasets.yaml"))
         if args.dataset not in samples:
-            p.error(f"unknown dataset '{args.dataset}'. Available: "
+            p.error(f"unknown sample '{args.dataset}'. Available: "
                     f"{', '.join(sorted(samples))}")
-        files = _resolve_files(samples[args.dataset]["files"])[:args.nfiles]
+        files = resolve_sample_files(samples[args.dataset])[:args.nfiles]
         tag = args.dataset
         is_data = bool(samples[args.dataset].get("is_data", False))
     if not files:

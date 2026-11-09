@@ -234,7 +234,7 @@ def _resolve_registry(defs: dict, registry: dict, path: Path) -> dict:
 
 
 def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
-                     normalize=None, _seen=None) -> dict:
+                     normalize=None, origins=None, _seen=None) -> dict:
     """Load one config file with ``_extends`` / ``_include`` / ``_repeat`` applied.
 
     A missing file loads as ``{}`` -- or, when its set has a ``set.yaml`` with
@@ -259,6 +259,10 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
     ``_registry``.  :func:`config_sources` uses it so the up-to-date check can
     see a config a set only inherits -- otherwise editing a shared fragment
     leaves every run that includes it silently "up to date".
+
+    Pass a dict as *origins* to learn which files define each name: it maps
+    every top-level key (and, for mapping values, ``key/subkey``) to the
+    files that set it, base first -- what ``suep-config show`` reports.
     """
     path = Path(path)
     raw = _read(path)
@@ -292,7 +296,7 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
                               f"{base_dir}")
         merged = _merge(merged, load_config_file(
             base_path, with_fragments=True, sources=sources, normalize=normalize,
-            _seen=[*_seen, resolved]))
+            origins=origins, _seen=[*_seen, resolved]))
         axes.update(merged.pop("_axes", {}) or {})
 
     includes = raw.pop("_include", [])
@@ -304,7 +308,7 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
             raise ConfigError(f"ERROR in {path}: _include file not found: {inc_path}")
         merged = _merge(merged, load_config_file(
             inc_path, with_fragments=True, sources=sources, normalize=normalize,
-            _seen=[*_seen, resolved]))
+            origins=origins, _seen=[*_seen, resolved]))
         axes.update(merged.pop("_axes", {}) or {})
 
     registry_spec = raw.pop("_registry", None)
@@ -325,6 +329,14 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
         defs = _resolve_registry(defs, registry, path)
     if normalize is not None:
         defs = normalize(defs, path, axes)
+    if origins is not None:
+        for key, value in defs.items():
+            if str(key).startswith("_"):
+                continue
+            origins.setdefault(str(key), []).append(str(path))
+            if isinstance(value, dict):
+                for sub in value:
+                    origins.setdefault(f"{key}/{sub}", []).append(str(path))
 
     out = _merge(merged, defs)
     if not with_fragments:

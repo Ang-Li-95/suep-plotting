@@ -1,12 +1,14 @@
-"""Overlay the same histogram from two DBSCAN-eps (dR) processings.
+"""Overlay the same histograms from two processings (e.g. two DBSCAN eps).
 
-    python scripts/compare_eps.py <out_dr02> <out_dr04> <compare_dir> [label_a] [label_b]
+    python scripts/compare_eps.py <run_a> <run_b> <compare_dir> [label_a] [label_b]
 
 Writes one figure per 1D histogram per sample: unit-normalized shapes for both
-settings on the main panel, and their ratio (b/a) underneath, so a change in
-shape is separated from a change in yield (quoted in the legend).  Figures use
-the same CMS style, labels, and png+pdf output as ``suep-plot``.
+runs on the main panel, and their ratio (b/a) underneath, so a change in shape
+is separated from a change in yield (quoted in the legend).  Figures use the
+same CMS style, labels, and png+pdf output as ``suep-plot``; ranking.txt and
+the gallery order them by how much the shape changed.
 """
+import argparse
 import os
 import sys
 
@@ -66,10 +68,20 @@ def compare(h_a, h_b, sample, sample_defs, name, hist_cfg, label_a, label_b, des
     return 0.5 * np.abs(va - vb).sum()
 
 
-def main(argv):
-    out_a, out_b, cmp_dir = argv[1], argv[2], argv[3]
-    label_a = argv[4] if len(argv) > 4 else "dR=0.2"
-    label_b = argv[5] if len(argv) > 5 else "dR=0.4"
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("run_a", help="first output directory (the reference)")
+    p.add_argument("run_b", help="second output directory")
+    p.add_argument("compare_dir", help="directory for the comparison figures")
+    p.add_argument("label_a", nargs="?", default=None,
+                   help="legend label of run_a (default: its directory name)")
+    p.add_argument("label_b", nargs="?", default=None,
+                   help="legend label of run_b (default: its directory name)")
+    args = p.parse_args(argv)
+    out_a, out_b, cmp_dir = args.run_a, args.run_b, args.compare_dir
+    label_a = args.label_a or os.path.basename(os.path.normpath(out_a))
+    label_b = args.label_b or os.path.basename(os.path.normpath(out_b))
 
     for sample in style.samples_in(out_a):
         a, b = style.load_sample(out_a, sample), style.load_sample(out_b, sample)
@@ -103,4 +115,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    main()
