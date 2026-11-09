@@ -11,7 +11,9 @@ chunking and accumulation.  Event weights are managed with
 
 from __future__ import annotations
 
+import difflib
 import importlib
+import os
 import pickle
 import sys
 import time
@@ -39,6 +41,7 @@ from .histograms import (
     load_selection_defs,
 )
 from .reweights import apply_reweights, build_reweighters, load_reweight_defs
+from .status import output_name
 
 # MDSNano is a custom NanoAOD flavour; suppress cross-reference warnings for
 # collections without the standard NanoAOD index branches.
@@ -52,6 +55,31 @@ def load_samples(path: str) -> dict:
     see :mod:`suep_plot.config` for that and the other config directives.
     """
     return load_config_file(path)
+
+
+def select_samples(sample_defs: dict, wanted: list[str] | None) -> dict:
+    """The samples to process: all of them, or the ones named in *wanted*.
+
+    Names may also be given comma-separated (``-s a,b``).  An unknown name is
+    fatal -- silently processing fewer samples than asked for looks like a
+    successful run -- and the message lists what the set does define.
+    """
+    if not sample_defs:
+        raise SystemExit("ERROR: samples.yaml defines no samples")
+    if not wanted:
+        return dict(sample_defs)
+    names = [n.strip() for spec in wanted for n in str(spec).split(",") if n.strip()]
+    unknown = [n for n in names if n not in sample_defs]
+    if unknown:
+        hints = []
+        for n in unknown:
+            close = difflib.get_close_matches(n, list(sample_defs), n=1)
+            if close:
+                hints.append(f"'{n}' -> did you mean '{close[0]}'?")
+        hint = ("\n  " + "\n  ".join(hints)) if hints else ""
+        raise SystemExit(f"ERROR: unknown sample(s) {unknown}{hint}\n"
+                         f"  available: {', '.join(sample_defs)}")
+    return {k: v for k, v in sample_defs.items() if k in names}
 
 
 def _split_xrootd_url(url: str) -> tuple[str, str]:
@@ -145,18 +173,19 @@ def load_columns_config(path: str) -> dict:
     return load_config_file(path)
 
 
-def _load_custom_columns(columns_cfg: dict | None = None):
-    """Import custom/columns.py if present -> (derive_fn, settings) or (None, None).
+def _import_custom():
+    """Import the ``custom.columns`` module that ships next to the package.
 
-    The settings are resolved here, once, and handed to the processor -- which
-    passes them to ``derive()`` and pickles them to its workers, so a worker
-    cannot end up running on settings its parent never chose.  A bad
-    columns.yaml is fatal: it changes what the derived columns *mean*, so it
-    must not degrade to a warning and silently different histograms.
+    Fatal when it is missing or does not import: every config set's derived
+    collections (the clusters, the LLPs) come from it, so running without it
+    would only produce empty histograms.
     """
     repo_root = Path(__file__).resolve().parent.parent.parent
     if not (repo_root / "custom" / "columns.py").exists():
-        return None, None
+        raise SystemExit(
+            f"ERROR: custom/columns.py not found next to the suep_plot package "
+            f"(looked in {repo_root}).\n  suep-plotting must be installed "
+            "editable from its checkout:  pip install -e <checkout>")
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     try:
@@ -173,25 +202,125 @@ def _load_custom_columns(columns_cfg: dict | None = None):
             if name in sys.modules:
                 importlib.reload(sys.modules[name])
         importlib.reload(mod)
-    except Exception as e:  # noqa: BLE001
-        print(f"WARNING: could not load custom/columns.py: {e}")
-        return None, None
+    except Exception as e:  # noqa: BLE001 - re-raised as a fatal, explained error
+        raise SystemExit(
+            f"ERROR: custom/columns.py failed to import: {type(e).__name__}: {e}\n"
+            "  It needs scikit-learn, numba and awkward in the active "
+            "environment (conda activate rootmds).") from e
+    return mod
 
+
+def _load_custom_columns(columns_cfg: dict | None = None, verbose: bool = True):
+    """Import custom/columns.py -> (derive_fn, settings).
+
+    The settings are resolved here, once, and handed to the processor -- which
+    passes them to ``derive()`` and pickles them to its workers, so a worker
+    cannot end up running on settings its parent never chose.  A bad
+    columns.yaml is fatal: it changes what the derived columns *mean*, so it
+    must not degrade to a warning and silently different histograms.
+    """
+    mod = _import_custom()
     derive_fn = getattr(mod, "derive", None)
     configure = getattr(mod, "configure", None)
     if configure is None:
         if columns_cfg:
-            print("WARNING: columns.yaml ignored: custom/columns.py has no configure()")
+            raise SystemExit("ERROR: columns.yaml given, but custom/columns.py "
+                             "has no configure() to read it")
         return derive_fn, None
     try:
         settings = configure(columns_cfg)
     except Exception as e:  # noqa: BLE001
         raise SystemExit(f"ERROR in columns.yaml: {e}")
-    if derive_fn is not None:
+    if derive_fn is not None and verbose:
         print("Custom columns: loaded derive()")
         print(f"                steps  {list(settings.steps)}")
         print(f"                params {settings.params}")
     return derive_fn, settings
+
+
+def _custom_config_errors(settings, sel_defs: dict) -> list[str]:
+    """What custom/columns.py's ``validate()`` finds wrong with the set, if anything.
+
+    Problems ``derive()`` would otherwise hit only mid-run -- e.g. the
+    ``cluster_isolation`` step without the prompt-object selections it reads.
+    """
+    validate = getattr(_import_custom(), "validate", None)
+    if validate is None or settings is None:
+        return []
+    return list(validate(settings, sel_defs))
+
+
+def _reference_errors(hist_defs: dict, sel_defs: dict, reweighters: dict) -> list[str]:
+    """Names a histogram uses that the set does not define."""
+    errors = []
+    for hname, hcfg in sorted(hist_defs.items()):
+        wspec = str(hcfg.get("weight", ""))
+        if wspec.startswith("@") and wspec[1:] not in reweighters:
+            errors.append(f"histogram '{hname}': unknown reweight map '{wspec}' "
+                          "(not in reweights.yaml)")
+        for sname in hcfg.get("selections", []):
+            if sname not in sel_defs:
+                close = difflib.get_close_matches(sname, list(sel_defs), n=1)
+                hint = f" (did you mean '{close[0]}'?)" if close else ""
+                errors.append(f"histogram '{hname}': unknown selection "
+                              f"'{sname}'{hint}")
+    return errors
+
+
+def validate_config_set(config_dir: str | Path) -> list[str]:
+    """Static checks of one config set; returns the problems (empty = fine).
+
+    Loads every file the way ``suep-run`` does and checks what can be checked
+    without opening an input file: the YAML itself, that every selection and
+    reweight map a histogram names exists, that ``columns.yaml`` is valid and
+    that the steps it enables find what they need.
+    """
+    config_dir = Path(config_dir)
+    try:
+        sample_defs = load_samples(config_dir / "samples.yaml")
+        hist_defs = load_histogram_defs(config_dir / "histograms.yaml")
+        sel_defs = load_selection_defs(config_dir / "selections.yaml")
+        load_correction_defs(config_dir / "corrections.yaml")
+        rw_defs = load_reweight_defs(config_dir / "reweights.yaml")
+    except SystemExit as e:
+        return [str(e)]
+
+    errors = [] if sample_defs else ["samples.yaml defines no samples"]
+    try:
+        reweighters = build_reweighters(rw_defs, config_dir)
+    except (ValueError, FileNotFoundError, KeyError) as e:
+        errors.append(f"reweights.yaml: {e}")
+        reweighters = {}
+    errors += _reference_errors(hist_defs, sel_defs, reweighters)
+    try:
+        _, settings = _load_custom_columns(
+            load_columns_config(config_dir / "columns.yaml"), verbose=False)
+        errors += _custom_config_errors(settings, sel_defs)
+    except SystemExit as e:
+        errors.append(str(e))
+    return errors
+
+
+def _write_pickle_atomic(path: Path, payload) -> None:
+    """Write *payload* so that *path* is either the old file or the whole new one.
+
+    A task killed mid-write leaves only the temporary file (which ends in
+    ``.tmp.<pid>``, so no ``*.pkl`` glob picks it up), never a truncated pickle
+    under the real name.
+    """
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        with open(tmp, "wb") as f:
+            pickle.dump(payload, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 class SuepProcessor(processor.ProcessorABC):
@@ -393,10 +522,11 @@ def run_all(
 
     *file_list* replaces the sample's own ``files:`` with an already-resolved
     list of files, and *part* tags the output pickle as
-    ``<sample>.part<part>.pkl``; ``suep-slurm`` uses the pair to hand each array
-    task a frozen shard of one sample (``suep-plot`` sums the part pickles back
-    into one sample at load time).  *file_range* is the equivalent for a direct
-    ``suep-run``: a ``[start, end)`` slice of the resolved file list.
+    ``<sample>.part<part>.pkl``; ``suep-submit`` uses the pair to hand each
+    array task a frozen shard of one sample (``suep-plot`` sums the part
+    pickles back into one sample at load time).  *file_range* is the
+    equivalent for a direct ``suep-run``: a ``[start, end)`` slice of the
+    resolved file list.
     """
     config_dir = Path(config_dir)
     output_dir = Path(output_dir)
@@ -414,58 +544,41 @@ def run_all(
     if reweighters:
         print(f"Loaded {len(reweighters)} reweight(s): {list(reweighters)}")
 
-    unknown_maps = sorted(
-        (hname, hcfg["weight"])
-        for hname, hcfg in hist_defs.items()
-        if str(hcfg.get("weight", "")).startswith("@")
-        and hcfg["weight"][1:] not in reweighters
-    )
-    if unknown_maps:
-        lines = "\n".join(f"  histogram '{h}': unknown reweight map '{m}'"
-                          for h, m in unknown_maps)
-        raise SystemExit(
-            f"ERROR: histograms.yaml references reweight maps not defined in reweights.yaml:\n{lines}"
-        )
+    errors = _reference_errors(hist_defs, sel_defs, reweighters)
+    if errors:
+        raise SystemExit("ERROR in " + str(config_dir) + ":\n"
+                         + "\n".join(f"  {e}" for e in errors))
     for hname, hcfg in hist_defs.items():
         wspec = str(hcfg.get("weight", ""))
         if wspec.startswith("@") and not reweighters[wspec[1:]].fill_only:
             print(f"WARNING: histogram '{hname}' uses '{wspec}' which is also applied "
                   f"globally; add 'fill_only: true' to the map to avoid double counting")
 
-    unknown_sels = sorted(
-        (hname, sname)
-        for hname, hcfg in hist_defs.items()
-        for sname in hcfg.get("selections", [])
-        if sname not in sel_defs
-    )
-    if unknown_sels:
-        lines = "\n".join(f"  histogram '{h}': unknown selection '{s}'"
-                          for h, s in unknown_sels)
-        raise SystemExit(
-            f"ERROR: histograms.yaml references selections not defined in selections.yaml:\n{lines}"
-        )
-
-    if samples_filter:
-        unknown = [s for s in samples_filter if s not in sample_defs]
-        if unknown:
-            print(f"WARNING: unknown sample(s) ignored: {unknown}")
-        sample_defs = {k: v for k, v in sample_defs.items() if k in samples_filter}
-
-    if not sample_defs:
-        print("No samples to process.")
-        return output_dir
+    sample_defs = select_samples(sample_defs, samples_filter)
 
     correctors = {}
     if corr_defs:
+        # Fatal, like a bad reweight: carrying on without the scale factors
+        # would fill histograms that only look right.
         try:
             correctors = build_correctors(corr_defs)
-            print(f"Loaded {len(correctors)} correction(s): {list(correctors)}")
         except Exception as e:  # noqa: BLE001
-            print(f"WARNING: could not load corrections: {e}")
-            print("         proceeding without corrections")
+            raise SystemExit(f"ERROR: could not load corrections.yaml: "
+                             f"{type(e).__name__}: {e}")
+        print(f"Loaded {len(correctors)} correction(s): {list(correctors)}")
 
     columns_cfg = load_columns_config(config_dir / "columns.yaml")
     derive_fn, settings = _load_custom_columns(columns_cfg)
+    errors = _custom_config_errors(settings, sel_defs)
+    if errors:
+        raise SystemExit("ERROR in " + str(config_dir) + ":\n"
+                         + "\n".join(f"  {e}" for e in errors))
+
+    remote = (file_list or []) + [str(s) for cfg in sample_defs.values()
+                                  for s in (cfg.get("files") or [])]
+    if any("://" in f for f in remote):
+        from .slurm import ensure_proxy
+        ensure_proxy(need_seconds=60)
 
     proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
                          reweighters, settings)
@@ -504,8 +617,7 @@ def run_all(
                       f"for '{name}', skipping")
                 continue
 
-        suffix = f".part{part}" if part is not None else ""
-        out_path = output_dir / f"{name}{suffix}.pkl"
+        out_path = output_dir / output_name(name, part)
         if not force and out_path.exists():
             newest = _inputs_mtime(files, config_dir, rw_files)
             if newest is not None and out_path.stat().st_mtime >= newest:
@@ -532,8 +644,7 @@ def run_all(
             "nevents": out.get("nevents", {}),
             "cutflow": out.get("cutflow", {}),
         }
-        with open(out_path, "wb") as f:
-            pickle.dump(payload, f)
+        _write_pickle_atomic(out_path, payload)
         print(f"    -> {out_path}")
 
     print(f"Saved sample file(s) to {output_dir}/")

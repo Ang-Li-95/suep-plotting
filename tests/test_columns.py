@@ -8,7 +8,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-columns = pytest.importorskip("custom.columns")
+# A plain import, not importorskip: a missing dependency (numba, sklearn)
+# must fail these tests, not silently skip all of them.
+import custom.columns as columns  # noqa: E402
 
 from suep_plot.processor import load_columns_config  # noqa: E402
 

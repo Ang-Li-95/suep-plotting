@@ -1,0 +1,12 @@
+# ── derive() settings for the trigger study ───────────────────────
+# The trigger plots read the DBSCAN clusters (events.cscCluster / dtCluster)
+# and raw branches only -- HLT bits, PFMET, cscRechits_llpIdx and the
+# dtMDSHLTCluster collection: no jets, no isolation, no gen-level collection.
+# The clustering parameters are the shared ones from ../common, so the
+# cluster sizes here are the ones every other study plots.
+#
+# Without this file the set ran on the module defaults -- all eight steps,
+# including cluster_isolation, whose prompt-object selections this set does
+# not define -- and failed on the first chunk.
+_extends: ../common
+steps: [clusters]

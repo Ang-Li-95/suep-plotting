@@ -17,6 +17,12 @@ dependencies = [
     "scipy",
     "matplotlib",
     "pyyaml",
+    # custom/: DBSCAN clustering and the numba kernels of the LLP collection
+    "scikit-learn>=1.0",
+    "numba>=0.57",
+    # root:// inputs: directory listing (processor.py) and reading (uproot)
+    "xrootd>=5.6",
+    "fsspec-xrootd>=0.2",
 ]
 
 [project.optional-dependencies]
@@ -36,3 +42,8 @@ where = ["src"]
 # not distribute it per era, so jme.py reads it from next to the module.
 [tool.setuptools.package-data]
 suep_plot = ["*.json.gz"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The checkout itself: `custom` lives at the repo root, `suep_plot` under src/.
+pythonpath = [".", "src"]

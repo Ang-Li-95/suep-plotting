@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import pickle
+import re
 from pathlib import Path
 
 import hist
@@ -22,22 +23,101 @@ DEFAULT_FORMATS = ("png", "pdf")
 
 
 def load_results(path: str) -> dict:
-    with open(path, "rb") as f:
-        return pickle.load(f)
+    try:
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    except (EOFError, pickle.UnpicklingError, AttributeError, ValueError) as e:
+        raise SystemExit(
+            f"ERROR: cannot read {path}: {type(e).__name__}: {e}\n"
+            "  A truncated pickle comes from a task killed while writing; "
+            "'suep-status -o <run dir> --resubmit' reruns it.") from None
+
+
+_PART = re.compile(r"^(?P<sample>.+)\.part[^.]+\.pkl$")
+
+
+def _sample_of(pkl: str) -> tuple[str, bool]:
+    """(sample, is_part) for ``<sample>.pkl`` / ``<sample>.part<k>.pkl``."""
+    name = Path(pkl).name
+    m = _PART.match(name)
+    return (m.group("sample"), True) if m else (name[:-len(".pkl")], False)
+
+
+def _run_dir_pickles(run: Path) -> list[str]:
+    """The pickles a ``suep-submit`` run's tasks wrote in *this* submission.
+
+    Other ``*.pkl`` files in the directory -- left over from an earlier run, or
+    belonging to no task -- would be summed in silently, so they are skipped
+    with a warning; tasks that have not written their pickle yet are reported,
+    because their samples come out undercounted.
+    """
+    from .status import classify
+
+    by_state, extra = classify(str(run), verify=False)
+    n_tasks = sum(len(v) for v in by_state.values())
+    unfinished = []
+    if by_state["missing"]:
+        unfinished.append(f"{len(by_state['missing'])} missing")
+    if by_state["stale"]:
+        unfinished.append(f"{len(by_state['stale'])} older than the submission "
+                          "(skipped)")
+    if unfinished:
+        samples = sorted({t.sample for t in by_state["missing"] + by_state["stale"]})
+        print(f"WARNING: {run}: {len(by_state['done'])}/{n_tasks} task pickles "
+              f"usable ({', '.join(unfinished)}); these samples are undercounted: "
+              f"{', '.join(samples)}.  See 'suep-status -o {run}'.")
+    if extra:
+        print(f"WARNING: {run}: skipping {len(extra)} pickle(s) that no task of "
+              f"this run wrote: {', '.join(p.name for p in extra[:5])}"
+              f"{' ...' if len(extra) > 5 else ''}")
+    return [str(run / t.pkl_name) for t in sorted(by_state["done"],
+                                                  key=lambda t: t.index)]
 
 
 def _resolve_inputs(inputs: str | list[str]) -> list[str]:
-    """Turn a mix of files and directories into a flat list of .pkl paths."""
+    """Turn a mix of pickle files and run directories into the pickles to merge.
+
+    A directory written by ``suep-submit`` contributes exactly its tasks'
+    pickles (see :func:`_run_dir_pickles`); any other directory contributes
+    every ``*.pkl`` in it.  A path that does not exist is an error, a pickle
+    named twice is read once, and a directory holding both ``X.pkl`` and
+    ``X.part<k>.pkl`` is refused -- the whole sample and a shard of it would
+    be summed, counting the shard's events twice.
+    """
     if isinstance(inputs, str):
         inputs = [inputs]
     out = []
     for entry in inputs:
         p = Path(entry)
         if p.is_dir():
-            out.extend(sorted(str(f) for f in p.glob("*.pkl")))
+            if (p / "slurm" / "task_list.txt").exists():
+                out.extend(_run_dir_pickles(p))
+            else:
+                out.extend(sorted(str(f) for f in p.glob("*.pkl")))
         elif p.is_file():
             out.append(str(p))
-    return out
+        else:
+            raise SystemExit(f"ERROR: input not found: {entry}")
+
+    seen, unique = set(), []
+    for f in out:
+        key = str(Path(f).resolve())
+        if key not in seen:
+            seen.add(key)
+            unique.append(f)
+
+    kinds: dict[tuple[str, str], set] = {}
+    for f in unique:
+        sample, is_part = _sample_of(f)
+        kinds.setdefault((str(Path(f).resolve().parent), sample), set()).add(is_part)
+    both = sorted(f"{d}/{s}" for (d, s), k in kinds.items() if k == {True, False})
+    if both:
+        raise SystemExit(
+            "ERROR: both a whole-sample pickle and part pickles of the same "
+            f"sample would be merged (double counting): {', '.join(both)}.\n"
+            "  Move the one that does not belong to this run out of the "
+            "directory.")
+    return unique
 
 
 def merge_results(paths: list[str]) -> dict:

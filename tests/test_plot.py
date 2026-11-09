@@ -176,3 +176,133 @@ def test_status_array_ranges_are_contiguous():
     assert _format_ranges([0, 1, 2, 5, 7, 8]) == "0-2,5,7-8"
     assert _format_ranges([3]) == "3"
     assert _format_ranges([]) == ""
+
+
+def _age(path, seconds):
+    import os
+    import time
+
+    t = time.time() - seconds
+    os.utime(path, (t, t))
+
+
+def test_status_does_not_count_a_pickle_from_an_earlier_submission(tmp_path):
+    """Same name, but written before this run was submitted: not this run's output."""
+    from suep_plot.status import check, classify
+
+    out = _fake_run(tmp_path, [("sig", 0)], written=["sig.part0.pkl"])
+    _age(out / "sig.part0.pkl", 3600)
+
+    by_state, _ = classify(str(out))
+    assert [t.index for t in by_state["stale"]] == [0]
+    assert [t.index for t in check(str(out))[1]] == [0]      # to redo
+
+
+def test_status_lists_pickles_that_no_task_writes(tmp_path):
+    from suep_plot.status import classify
+
+    out = _fake_run(tmp_path, [("sig", "")], written=["sig.pkl", "other.pkl"])
+
+    _, extra = classify(str(out))
+    assert [p.name for p in extra] == ["other.pkl"]
+
+
+def test_sacct_states_are_read_per_array_index():
+    from suep_plot.status import parse_sacct
+
+    text = ("100_0|COMPLETED|0:0|00:01:00\n"
+            "100_1|FAILED|1:0|00:00:10\n"
+            "101_1|RUNNING|0:0|00:00:05\n"          # the resubmission of index 1
+            "100_[3-4]|PENDING|0:0|00:00:00\n"      # condensed range: not per index
+            "100_5|CANCELLED by 1234|0:0|00:00:00\n")
+    states = parse_sacct(text, ["100", "101"])
+
+    assert states[0] == ("COMPLETED", "100")
+    assert states[1] == ("RUNNING", "101")       # the latest submission wins
+    assert states[5][0] == "CANCELLED"
+    assert 3 not in states
+
+
+def test_resubmit_refuses_a_job_script_that_calls_cli_worker(tmp_path):
+    from suep_plot.status import resubmit
+
+    out = _fake_run(tmp_path, [("sig", "")], written=[])
+    (out / "slurm" / "job.sh").write_text(
+        '#!/bin/bash\npython -m suep_plot.cli_worker --config-dir "/x"\n')
+
+    with pytest.raises(SystemExit, match="cli_worker"):
+        resubmit(str(out), dry_run=True)
+
+
+def test_resubmit_puts_resource_overrides_on_the_sbatch_line(tmp_path, capsys):
+    from suep_plot.status import resubmit
+
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    out = _fake_run(tmp_path / "run", [("sig", "")], written=[])
+    (out / "slurm" / "job.sh").write_text(
+        f'#!/bin/bash\npython -m suep_plot.cli run --config-dir "{cfg}"\n')
+
+    unhandled = resubmit(str(out), dry_run=True,
+                         overrides={"time": "20:00:00", "mem": "16000"})
+
+    line = capsys.readouterr().out
+    assert "--time=20:00:00" in line and "--qos=medium" in line
+    assert "--mem=16000" in line
+    assert unhandled == 1                     # dry run: nothing was submitted
+
+
+# ── which pickles suep-plot merges ───────────────────────────────
+
+
+def test_plot_merges_only_the_pickles_of_this_run(tmp_path, capsys):
+    from pathlib import Path
+
+    from suep_plot.plot import _resolve_inputs
+
+    out = _fake_run(tmp_path, [("sig", 0), ("sig", 1)],
+                    written=["sig.part0.pkl", "leftover.pkl"])
+
+    files = _resolve_inputs(str(out))
+
+    assert [Path(f).name for f in files] == ["sig.part0.pkl"]
+    printed = capsys.readouterr().out
+    assert "undercounted" in printed and "leftover.pkl" in printed
+
+
+def test_plot_refuses_a_whole_sample_next_to_its_parts(tmp_path):
+    from suep_plot.plot import _resolve_inputs
+
+    for name in ("sig.pkl", "sig.part0.pkl"):
+        with open(tmp_path / name, "wb") as f:
+            pickle.dump({"histograms": {}}, f)
+
+    with pytest.raises(SystemExit, match="double counting"):
+        _resolve_inputs(str(tmp_path))
+
+
+def test_plot_reports_an_input_that_does_not_exist(tmp_path):
+    from suep_plot.plot import _resolve_inputs
+
+    with pytest.raises(SystemExit, match="input not found"):
+        _resolve_inputs(str(tmp_path / "nope"))
+
+
+def test_a_pickle_given_twice_is_merged_once(tmp_path):
+    from suep_plot.plot import _resolve_inputs
+
+    p = tmp_path / "sig.pkl"
+    with open(p, "wb") as f:
+        pickle.dump({"histograms": {}}, f)
+
+    assert _resolve_inputs([str(p), str(tmp_path)]) == [str(p)]
+
+
+def test_a_truncated_pickle_is_reported_by_name(tmp_path):
+    from suep_plot.plot import load_results
+
+    p = tmp_path / "sig.pkl"
+    p.write_bytes(pickle.dumps({"histograms": {"a": 1}})[:5])
+
+    with pytest.raises(SystemExit, match="sig.pkl"):
+        load_results(str(p))

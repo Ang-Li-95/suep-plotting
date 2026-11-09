@@ -100,11 +100,16 @@ def run(argv=None):
     args = parser.parse_args(argv)
 
     _check_config_dir(args.config_dir)
+    file_range = _parse_file_range(args.file_range)
+    if file_range and args.part is None:
+        raise SystemExit(
+            "ERROR: --file-range processes part of a sample, so it needs --part "
+            "<tag>: otherwise it writes <sample>.pkl, which reads as the whole "
+            "sample and is overwritten (or skipped as up to date) by the next range.")
 
     from .processor import run_all
     run_all(args.config_dir, args.output_dir, args.samples, args.chunk_size,
-            args.workers, force=args.force,
-            file_range=_parse_file_range(args.file_range),
+            args.workers, force=args.force, file_range=file_range,
             part=args.part, file_list=_read_file_list(args.file_list, args.samples))
 
     if args.plot:
@@ -199,30 +204,55 @@ def status(argv=None):
     """Report which array tasks of a submitted run finished, and redo the rest."""
     parser = argparse.ArgumentParser(
         prog="suep-status",
-        description="Check a Slurm run for missing or unreadable output pickles, "
-                    "and optionally resubmit exactly those array tasks.",
+        description="Check a Slurm run: which tasks wrote their pickle, which "
+                    "are still queued or running, which failed and why -- and "
+                    "optionally resubmit the failed ones.",
         epilog="Examples:\n"
                "  suep-status -o output_mds_data\n"
-               "  suep-status -o output_mds_data --resubmit\n",
+               "  suep-status -o output_mds_data --resubmit\n"
+               "  suep-status -o output_mds_data --resubmit --time 16:00:00 --mem 16000\n"
+               "\nExit code: 0 when every task is done, running or resubmitted; 1 otherwise.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-o", "--output-dir", required=True,
                         help="Output directory of a 'suep-submit' run")
     parser.add_argument("--resubmit", action="store_true",
-                        help="Resubmit the incomplete tasks over the run's job.sh")
+                        help="Resubmit the failed tasks over the run's job.sh "
+                             "(tasks still queued or running are left alone)")
     parser.add_argument("--dry-run", action="store_true",
                         help="(with --resubmit) print the sbatch command, don't run it")
+    parser.add_argument("--time", default=None,
+                        help="(with --resubmit) new wall time for the redone tasks; "
+                             "a QOS that allows it is picked automatically")
+    parser.add_argument("--mem", default=None,
+                        help="(with --resubmit) new memory per task, e.g. 16000 or 16G")
+    parser.add_argument("--qos", default=None, help="(with --resubmit) Slurm QOS")
+    parser.add_argument("--partition", default=None,
+                        help="(with --resubmit) Slurm partition")
+    parser.add_argument("--allow-config-change", action="store_true",
+                        help="(with --resubmit) resubmit although config files "
+                             "changed since submission (only for edits that cannot "
+                             "change the fills, e.g. labels)")
     parser.add_argument("--no-verify", action="store_true",
                         help="Only check that pickles exist and are non-empty; skip "
                              "reading them back (faster, misses truncated files)")
     args = parser.parse_args(argv)
 
-    from .status import report, resubmit
+    from pathlib import Path
+
+    from .status import LIVE_STATES, report, resubmit, slurm_states
     verify = not args.no_verify
     if args.resubmit:
-        n = resubmit(args.output_dir, verify=verify, dry_run=args.dry_run)
-        return 0 if n == 0 else 1
-    return 0 if not report(args.output_dir, verify) else 1
+        overrides = {"time": args.time, "mem": args.mem, "qos": args.qos,
+                     "partition": args.partition}
+        unhandled = resubmit(args.output_dir, verify=verify, dry_run=args.dry_run,
+                             overrides=overrides,
+                             allow_config_change=args.allow_config_change)
+        return 0 if unhandled == 0 else 1
+    states = slurm_states(Path(args.output_dir).resolve() / "slurm")
+    redo = report(args.output_dir, verify, states)
+    waiting = [t for t in redo if states.get(t.index, ("",))[0] in LIVE_STATES]
+    return 0 if len(waiting) == len(redo) else 1
 
 
 def submit(argv=None):
@@ -252,12 +282,17 @@ def submit(argv=None):
                         help="Split each sample into array tasks of this many files "
                              "(default: one task per sample); parts are summed by suep-plot")
     parser.add_argument("--dry-run", action="store_true", help="Generate scripts without submitting")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Submit into an output directory that already holds a "
+                             "run: its slurm/ is moved aside to slurm.prev-<time>, "
+                             "and its pickles are ignored as stale")
     args = parser.parse_args(argv)
 
     _check_config_dir(args.config_dir)
 
     from .slurm import submit_jobs
     submit_jobs(
+        overwrite=args.overwrite,
         config_dir=args.config_dir,
         output_dir=args.output_dir,
         samples_filter=args.samples,

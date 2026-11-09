@@ -1,8 +1,13 @@
 """Config-dir resolution: ``-c`` names one config set, never their container."""
 
+from pathlib import Path
+
 import pytest
 
 from suep_plot.cli import _check_config_dir, _is_config_set
+
+# Absolute, so the tests pass from any working directory.
+CONFIGS_MDS = str(Path(__file__).resolve().parents[1] / "configs" / "configs_mds")
 
 
 def _make_set(path):
@@ -64,7 +69,7 @@ def test_file_list_and_part_reach_run_all(monkeypatch, tmp_path):
     listing = tmp_path / "files.txt"
     listing.write_text("/data/a.root\n\n/data/b.root\n")
 
-    seen = _run_args(monkeypatch, ["-c", "configs/configs_mds", "-o", str(tmp_path),
+    seen = _run_args(monkeypatch, ["-c", CONFIGS_MDS, "-o", str(tmp_path),
                                    "-s", "sig", "--file-list", str(listing),
                                    "--part", "3"])
 
@@ -74,15 +79,23 @@ def test_file_list_and_part_reach_run_all(monkeypatch, tmp_path):
 
 
 def test_file_range_is_parsed(monkeypatch, tmp_path):
-    seen = _run_args(monkeypatch, ["-c", "configs/configs_mds", "-o", str(tmp_path),
-                                   "--file-range", "0:1"])
+    seen = _run_args(monkeypatch, ["-c", CONFIGS_MDS, "-o", str(tmp_path),
+                                   "--file-range", "0:1", "--part", "0"])
 
     assert seen["file_range"] == (0, 1)
+    assert seen["part"] == "0"
+
+
+def test_file_range_needs_a_part_tag(monkeypatch, tmp_path):
+    """Without one it would write <sample>.pkl, which reads as the whole sample."""
+    with pytest.raises(SystemExit, match="needs --part"):
+        _run_args(monkeypatch, ["-c", CONFIGS_MDS, "-o", str(tmp_path),
+                                "--file-range", "0:1"])
 
 
 def test_a_malformed_file_range_is_rejected(monkeypatch, tmp_path):
     with pytest.raises(SystemExit, match="START:END"):
-        _run_args(monkeypatch, ["-c", "configs/configs_mds", "-o", str(tmp_path),
+        _run_args(monkeypatch, ["-c", CONFIGS_MDS, "-o", str(tmp_path),
                                 "--file-range", "nope"])
 
 
@@ -92,7 +105,7 @@ def test_file_list_needs_exactly_one_sample(monkeypatch, tmp_path):
     listing.write_text("/data/a.root\n")
 
     with pytest.raises(SystemExit, match="exactly one"):
-        _run_args(monkeypatch, ["-c", "configs/configs_mds", "-o", str(tmp_path),
+        _run_args(monkeypatch, ["-c", CONFIGS_MDS, "-o", str(tmp_path),
                                 "--file-list", str(listing)])
 
 
@@ -102,5 +115,5 @@ def test_an_empty_file_list_is_rejected(monkeypatch, tmp_path):
     listing.write_text("\n \n")
 
     with pytest.raises(SystemExit, match="empty"):
-        _run_args(monkeypatch, ["-c", "configs/configs_mds", "-o", str(tmp_path),
+        _run_args(monkeypatch, ["-c", CONFIGS_MDS, "-o", str(tmp_path),
                                 "-s", "sig", "--file-list", str(listing)])

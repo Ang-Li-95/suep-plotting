@@ -50,7 +50,7 @@ from .helpers import _jet_id_evaluator  # noqa: F401
 from .llp import _dr_field_names, _dr_kernel, _llpidx_is_genpart_index  # noqa: F401
 
 
-__all__ = ["derive", "configure", "Settings", "DEFAULTS", "DEFAULT_PARAMS",
+__all__ = ["derive", "configure", "validate", "Settings", "DEFAULTS", "DEFAULT_PARAMS",
            "PARAM_SPEC", "STEP_DEPS", "NO_OBJECT_DR", "LLP_PDGID"]
 
 
@@ -99,6 +99,25 @@ class _Context:
         # Per-event LLP identifiers the rechit ``llpIdx`` branches are compared
         # against; set by the ``llp`` step (see _step_llp).
         self.match_key = None
+
+
+def validate(settings, selections) -> list[str]:
+    """Problems with a config set that :func:`derive` would only hit mid-run.
+
+    Called by the framework before any input file is opened (``suep-run``,
+    ``suep-config check``, the shipped-configs test), so a set that cannot work
+    fails in a second with a message instead of on the first chunk.
+    """
+    errors = []
+    if "cluster_isolation" in settings.steps:
+        missing = [n for n in ISO_SELECTIONS.values() if n not in (selections or {})]
+        if missing:
+            errors.append(
+                f"selections.yaml: the 'cluster_isolation' step needs {missing}, "
+                "which this config set does not define.  Define them (object-level "
+                "selections with a 'collection:'), or drop the step from "
+                "columns.yaml if the set needs no cluster isolation.")
+    return errors
 
 
 def derive(events, settings=None, selections=None):

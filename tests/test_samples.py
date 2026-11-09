@@ -172,3 +172,26 @@ def test_submit_rejects_unknown_sample(tmp_path):
         submit_jobs(str(cfg_dir), str(tmp_path / "out"), None, None, "01:00:00",
                     "4G", "mds", chunk_size=1000, dry_run=True,
                     samples_filter=["typo"])
+
+
+# ── choosing samples with -s ──────────────────────────────────────
+
+
+def test_an_unknown_sample_is_fatal_and_suggests_the_closest():
+    from suep_plot.processor import select_samples
+
+    with pytest.raises(SystemExit, match="did you mean 'suep_mDark2_temp1'"):
+        select_samples({"suep_mDark2_temp1": {}, "dy": {}}, ["suep_mDark2_tmp1"])
+
+
+def test_samples_can_be_given_comma_separated():
+    from suep_plot.processor import select_samples
+
+    assert list(select_samples({"a": {}, "b": {}, "c": {}}, ["c,a"])) == ["a", "c"]
+
+
+def test_a_set_without_samples_is_an_error():
+    from suep_plot.processor import select_samples
+
+    with pytest.raises(SystemExit, match="no samples"):
+        select_samples({}, None)

@@ -951,58 +951,6 @@ _variant_sets:
       label_prefix: 'unmatched '
       selections:
       - dt_cluster_unmatched
-  rpc_iso:
-    iso_both:
-      label_prefix: 'muon+jet-isolated '
-      selections:
-      - rpc_cluster_iso_muon
-      - rpc_cluster_iso_jet
-    iso_jet:
-      label_prefix: 'jet-isolated '
-      selections:
-      - rpc_cluster_iso_jet
-    iso_muon:
-      label_prefix: 'muon-isolated '
-      selections:
-      - rpc_cluster_iso_muon
-  rpc_variants:
-    iso_both:
-      label_prefix: 'muon+jet-isolated '
-      selections:
-      - rpc_cluster_iso_muon
-      - rpc_cluster_iso_jet
-    iso_jet:
-      label_prefix: 'jet-isolated '
-      selections:
-      - rpc_cluster_iso_jet
-    iso_muon:
-      label_prefix: 'muon-isolated '
-      selections:
-      - rpc_cluster_iso_muon
-    matched:
-      label_prefix: 'matched '
-      selections:
-      - rpc_cluster_matched
-    matched_iso_both:
-      label_prefix: 'matched muon+jet-isolated '
-      selections:
-      - rpc_cluster_matched
-      - rpc_cluster_iso_muon
-      - rpc_cluster_iso_jet
-    matched_iso_jet:
-      label_prefix: 'matched jet-isolated '
-      selections:
-      - rpc_cluster_matched
-      - rpc_cluster_iso_jet
-    matched_iso_muon:
-      label_prefix: 'matched muon-isolated '
-      selections:
-      - rpc_cluster_matched
-      - rpc_cluster_iso_muon
-    unmatched:
-      label_prefix: 'unmatched '
-      selections:
-      - rpc_cluster_unmatched
 
 # ── The inherited reco variables, split by the sets above ─────────
 # Each line overrides one key of a histogram defined in ../common; the
