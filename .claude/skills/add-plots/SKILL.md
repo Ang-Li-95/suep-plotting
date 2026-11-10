@@ -356,13 +356,14 @@ dropped, instead of a spurious 0.
   set without that sample, or the step must be enabled. **Don't work around
   it.**
 
-## Older forms (still accepted, not used by the shipped configs)
+## Removed forms (an error since 2026-11-10)
 
-- Flat histograms outside `regions:`, either with `x:` / `y:` naming
-  variables, or in the long form `expression`, `bins`, `lo`, `hi`, `label`
-  (2D: `expression_x/_y`, `bins_x/_y`, ...).
-- `variants:` and `_variant_sets`.
-- An explicit `per_object`, which must agree with the expression.
+- Histograms outside `regions:` and the long form (`expression`, `bins`,
+  `lo`, `hi` written on a histogram). Every histogram is a region entry that
+  names catalog variables; a new expression goes into `variables.yaml`.
+- An inline axis in an entry (`x: {expression: ...}`).
+- `variants:` and `_variant_sets`: write an object cut in the region instead.
+- An explicit `per_object`.
 
 The shipped configs were converted to regions on 2026-11-09.
 `docs/histogram-renames.tsv` maps every old histogram name to its

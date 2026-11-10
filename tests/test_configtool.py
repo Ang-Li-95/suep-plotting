@@ -19,12 +19,13 @@ def _small_set(root):
     s = root / "configs_small"
     _yaml(s / "samples.yaml", {"sig": {"files": ["/data/sig.root"]}})
     _yaml(s / "selections.yaml", {"highmet": "events.met > 50"})
-    _yaml(s / "histograms.yaml", {
-        "met": {"x": {"expression": "events.met", "bins": [10, 0, 200]},
-                "selections": ["highmet"]},
-        "regions": {"jets": {"objects": {"all": {"vars": [
-            {"name": "pt", "x": {"expression": "events.Jet.pt", "bins": [4, 0, 400]}}]}}}},
-    })
+    _yaml(s / "variables.yaml", {
+        "small_met": {"expression": "events.met", "bins": [10, 0, 200]},
+        "small_jet_pt": {"expression": "events.Jet.pt", "bins": [4, 0, 400]}})
+    _yaml(s / "histograms.yaml", {"regions": {
+        "evt": {"evt_sel": ["highmet"], "evt_vars": [{"var": "small_met", "name": "met"}]},
+        "jets": {"objects": {"all": {"vars": [{"var": "small_jet_pt", "name": "pt"}]}}},
+    }})
     _yaml(s / "columns.yaml", {"steps": []})
     return s
 
@@ -45,7 +46,7 @@ def test_show_grep_narrows_the_listing(tmp_path, capsys):
     show(str(s), grep="jets/")
     out = capsys.readouterr().out
     assert "jets/all/pt" in out
-    assert "\n  met " not in out
+    assert "evt/met" not in out
 
 
 def test_static_check_passes_a_good_set(tmp_path, capsys):
@@ -55,9 +56,8 @@ def test_static_check_passes_a_good_set(tmp_path, capsys):
 
 def test_static_check_fails_on_an_unknown_selection(tmp_path, capsys):
     s = _small_set(tmp_path)
-    _yaml(s / "histograms.yaml", {"met": {
-        "x": {"expression": "events.met", "bins": [10, 0, 200]},
-        "selections": ["higmet"]}})
+    _yaml(s / "histograms.yaml", {"regions": {
+        "evt": {"evt_sel": ["higmet"], "evt_vars": ["small_met"]}}})
 
     assert check([str(s)], static=True) == 1
     out = capsys.readouterr().out

@@ -1,7 +1,7 @@
 """``suep-config``: read and check a config set without running it.
 
-``show``   what a set really fills, after _extends / _repeat / regions /
-           variants are applied, and which file each definition comes from;
+``show``   what a set really fills, after _extends / _repeat / regions are
+           applied, and which file each definition comes from;
 ``check``  everything that can go wrong before a run: references, columns.yaml,
            and every expression evaluated on one file of each sample;
 ``fields`` what an expression can use: the collections and fields of a
@@ -101,8 +101,7 @@ def show(config_dir: str, grep: str | None = None, sections=None) -> int:
                 binning = f"{_binning(cfg, '_x')} x {_binning(cfg, '_y')}"
             else:
                 expr, binning = cfg.get("expression", ""), _binning(cfg)
-            region = name.split("/")[0] if "/" in name else None
-            files = h_origins.get(f"regions/{region}" if region else name.split("/")[0], [])
+            files = h_origins.get(f"regions/{name.split('/')[0]}", [])
             rows.append((name, "2D" if is_2d(cfg) else "1D", expr, binning,
                          ",".join(cfg.get("selections", [])) or "-",
                          " < ".join(_rel(f, base) for f in files) or "?"))

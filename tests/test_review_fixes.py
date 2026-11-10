@@ -16,76 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from suep_plot import plot as plot_mod  # noqa: E402
 from suep_plot import processor  # noqa: E402
 from suep_plot.histograms import (FillError, build_histograms,  # noqa: E402
-                                  expand_variants, fill_histograms,
-                                  load_histogram_defs, load_selection_defs)
+                                  fill_histograms, load_selection_defs)
 from suep_plot.reweights import Reweighter  # noqa: E402
-
-VARIABLES = {
-    "va": {"expression": "events.a", "bins": 10, "lo": 0, "hi": 10, "label": "A"},
-    "vb": {"expression": "events.b", "bins": 20, "lo": 0, "hi": 100, "label": "B"},
-}
-
-
-def _hist_defs(tmp_path, defs):
-    path = tmp_path / "histograms.yaml"
-    path.write_text(yaml.safe_dump(defs, sort_keys=False))
-    return load_histogram_defs(path, variables=VARIABLES)
-
 
 def totals(h):
     return float(h.values(flow=True).sum())
-
-
-# ── variants ──────────────────────────────────────────────────────
-
-
-def test_a_variant_can_change_the_range_of_a_catalog_axis(tmp_path):
-    defs = _hist_defs(tmp_path, {"h": {"x": "va", "variants": {"wide": {"x": {"hi": 50}}}}})
-
-    assert (defs["h"]["hi"], defs["h_wide"]["hi"]) == (10, 50)
-    assert defs["h_wide"]["expression"] == "events.a"      # the rest is kept
-
-
-def test_a_variant_can_replace_the_axis_with_another_variable(tmp_path):
-    defs = _hist_defs(tmp_path, {"h": {"x": "va", "variants": {"other": {"x": "vb"}}}})
-
-    other = defs["h_other"]
-    assert (other["expression"], other["bins"], other["hi"], other["label"]) == \
-        ("events.b", 20, 100, "B")
-
-
-def test_a_variant_axis_override_reaches_a_long_form_base(tmp_path):
-    defs = _hist_defs(tmp_path, {"h": {
-        "expression": "events.a", "bins": 10, "lo": 0, "hi": 10,
-        "variants": {"wide": {"x": {"hi": 50}}}}})
-
-    assert defs["h_wide"]["hi"] == 50 and "x" not in defs["h_wide"]
-
-
-def test_a_variant_cannot_put_a_catalog_variable_on_a_long_form_base(tmp_path):
-    with pytest.raises(SystemExit, match="long form"):
-        _hist_defs(tmp_path, {"h": {
-            "expression": "events.a", "bins": 10, "lo": 0, "hi": 10,
-            "variants": {"other": {"x": "vb"}}}})
-
-
-def test_a_variant_label_prefix_decorates_the_catalog_label(tmp_path):
-    defs = _hist_defs(tmp_path, {"h": {
-        "x": "va", "variants": {"m": {"label_prefix": "matched "}}}})
-
-    assert defs["h"]["label"] == "A"
-    assert defs["h_m"]["label"] == "matched A"
-    assert "_label_decor" not in defs["h_m"]
-
-
-def test_a_selection_given_as_a_string_is_one_selection(tmp_path):
-    out = expand_variants({"h": {"expression": "events.a", "bins": 1, "lo": 0, "hi": 1,
-                                 "selections": "base_cut",
-                                 "variants": {"m": {"selections": "x_hard"}}}})
-    assert out["h_m"]["selections"] == ["base_cut", "x_hard"]
-
-    defs = _hist_defs(tmp_path, {"h": {"x": "va", "selections": "base_cut"}})
-    assert defs["h"]["selections"] == ["base_cut"]
 
 
 # ── selections ────────────────────────────────────────────────────
@@ -207,17 +142,18 @@ def test_an_llp_without_stored_daughters_gets_nan_not_an_index_error():
 
 
 def test_restyle_drops_a_key_removed_from_the_config(tmp_path):
-    (tmp_path / "histograms.yaml").write_text(
+    (tmp_path / "variables.yaml").write_text(
         "h: {expression: events.a, bins: [3, 0, 3]}\n")
+    (tmp_path / "histograms.yaml").write_text("regions: {r: {evt_vars: [h]}}\n")
     (tmp_path / "samples.yaml").write_text("s: {files: [x.root], label: S}\n")
-    hist_defs = {"h": {"expression": "events.a", "bins": 3, "lo": 0, "hi": 3,
-                       "rebin": 2, "log_y": True, "per_object": False}}
+    hist_defs = {"r/h": {"expression": "events.a", "bins": 3, "lo": 0, "hi": 3,
+                         "rebin": 2, "log_y": True, "per_object": False}}
     sample_defs = {"s": {"files": ["x.root"], "label": "old", "scale": 10}}
 
     plot_mod.restyle(hist_defs, sample_defs, tmp_path)
 
-    assert "rebin" not in hist_defs["h"] and "log_y" not in hist_defs["h"]
-    assert hist_defs["h"]["per_object"] is False        # recorded by the fill
+    assert "rebin" not in hist_defs["r/h"] and "log_y" not in hist_defs["r/h"]
+    assert hist_defs["r/h"]["per_object"] is False        # recorded by the fill
     assert sample_defs["s"] == {"files": ["x.root"], "label": "S"}
 
 
@@ -303,4 +239,4 @@ def test_a_former_region_keyword_is_refused_with_its_new_name(old, new):
     from suep_plot.histograms import expand_regions
 
     with pytest.raises(SystemExit, match=f"'{old}' is now '{new}'"):
-        expand_regions({"r": {old: ["x"]}})
+        expand_regions({"r": {old: ["x"]}}, {})

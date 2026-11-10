@@ -9,7 +9,7 @@ so the three directives below mean the same thing wherever they appear —
     Inherit the same-named file from another config set.  This file's keys are
     merged over the inherited ones (deeply, for nested mappings), and
     ``some_name: null`` *deletes* an inherited definition -- or, nested,
-    removes one key of it (``some_hist: {variants: null}``).  With a list the
+    removes one key of it (``some_sample: {max_files: null}``).  With a list the
     bases are merged left to right and this file merges over the result, so a
     study can compose ``common`` with ``common_gen`` instead of chaining.
     Chains are followed too, and a cycle is an error.
@@ -52,7 +52,7 @@ so the three directives below mean the same thing wherever they appear —
     string.  A loop that covers only some systems just lists those; there are
     no conditionals.
 
-Keys starting with ``_`` are directives or reusable fragments, never
+Keys starting with ``_`` are directives, never
 definitions — the convention the configs already used.  An unknown one is an
 error: a misspelled directive (``_extend:``) would otherwise be dropped and
 take everything it should have inherited with it.
@@ -75,8 +75,6 @@ from pathlib import Path
 import yaml
 
 DIRECTIVES = ("_extends", "_include", "_registry", "_axes", "_repeat")
-# Underscore keys that carry reusable definitions rather than directives.
-FRAGMENTS = ("_variant_sets",)
 
 SET_FILE = "set.yaml"
 SET_KEYS = ("extends", "description", "abstract")
@@ -152,7 +150,7 @@ def read_set_file(config_dir: str | Path) -> dict:
 
 
 def _check_directives(raw: dict, path: Path) -> None:
-    known = DIRECTIVES + FRAGMENTS
+    known = DIRECTIVES
     unknown = [k for k in raw if isinstance(k, str) and k.startswith("_")
                and k not in known]
     if unknown:
@@ -260,10 +258,10 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
     (``columns.yaml``, ``reweights.yaml``) needs no special case at the call
     site.
 
-    What comes back is definitions only: ``_``-prefixed keys are directives or
-    reusable fragments, never definitions, so they are stripped.  Pass
-    *with_fragments* to keep them -- ``load_histogram_defs`` does, because
-    ``expand_variants`` reads ``_variant_sets`` off the merged result.
+    What comes back is definitions only: ``_``-prefixed keys are directives,
+    never definitions, so they are stripped.  *with_fragments* keeps them; the
+    loader uses it on the files a file inherits from, to carry their ``_axes``
+    down.
 
     *normalize* ``(defs, path, axes) -> defs`` rewrites each file's own
     definitions into canonical form *before* they are merged over what the file

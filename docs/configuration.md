@@ -231,8 +231,17 @@ An **entry** is one of:
 | `{name: llp_decay_rz, x: llp_decay_absz, y: {var: llp_decay_r, bins: [60, 0, 900]}}` | 2D with a name and a per-axis override |
 | `{var: x, selections: [...], weight: ...}` | extra cuts or a weight for this histogram only |
 
-Overrides are any histogram key (binning, `label`, `weight`, display keys);
-the same variable listed twice under one cut needs a `name:` for one of them.
+An entry always names catalog variables: a new expression goes into
+`variables.yaml` (the global catalog, or the set's own), never onto the entry.
+What an entry may override is the binning (`bins: [n, lo, hi]`, `lo`, `hi`,
+`edges`) and `label` of its axis, plus `selections`, `weight` and the
+plot-time keys below. In a 2D entry the binning and label go inside `x:` /
+`y:`. Giving `edges` replaces the variable's `bins`, and the other way round.
+The same variable listed twice under one cut needs a `name:` for one of them.
+
+Regions are the only way to define a histogram: a top-level entry outside
+`regions:` is an error, and so is `variants:` -- what used to be a variant is
+an object cut of the region.
 
 **Inheritance.** Regions merge deeply, so a child set adds a cut to an
 inherited region with one entry, or deletes one with `<cut>: null`. A `vars`
@@ -242,38 +251,10 @@ restate its list. `evt_vars: []` clears an inherited list.
 A per-system family of regions can be written once with a `_repeat` inside
 `regions:` (using the file's `_axes`).
 
-### Histograms written out on their own
+### Histogram keys
 
-Outside `regions:` a histogram is defined directly; this is also the form the
-regions expand to, and what `suep-config show` displays:
-
-```yaml
-leading_jet_pt:
-  x: jet_pt                       # a catalog variable ...
-  expression: "ak.firsts(events.Jet.pt)"     # ... with its expression replaced
-  bins: [50, 0, 500]
-
-met_vs_ht:                        # 2D: an x and a y axis
-  x: {expression: "events.PuppiMET.pt", bins: [40, 0, 400], label: 'MET [GeV]'}
-  y: {var: ht}
-  log_z: true
-
-old_style:                        # the long form still works
-  expression: "events.Muon.dxy"
-  bins: 100
-  lo: -0.05
-  hi: 0.05
-  label: '$d_{xy}^{\mu}$ [cm]'
-```
-
-Shorthands: `bins: [n, lo, hi]` for a regular axis (and `bins_x`, `bins_y`).
-An `x:` / `y:` value is a variable name, `{var: name, <overrides>}`, or an
-inline `{expression, bins | edges, label}`. In 1D, keys written at the top
-level override the x axis. Replacing inherited `edges` with `bins` (or the other
-way round) needs `edges: null` (`bins: null`) for the old one.
-
-Fill-time keys (changing them needs `suep-run` again): `expression` /
-`expression_x` / `expression_y`, the binning, `selections`, `weight`.
+Fill-time keys (changing them needs `suep-run` again): the variable's
+`expression`, the binning, `selections`, `weight`.
 
 Plot-time keys (take effect on the next `suep-plot`, **no reprocessing**):
 
@@ -286,15 +267,8 @@ Plot-time keys (take effect on the next `suep-plot`, **no reprocessing**):
 | `flow` | `sum` | fold under/overflow into the edge bins; `none` drops it |
 | `log_x` / `log_y` / `log_z` | `false` | log axes / colour scale |
 
-`per_object` is no longer written: it is read off the expression (jagged =
-per object). An explicit value must agree with the expression, or the run
-stops naming the histogram.
-
-#### `variants` (older form)
-
-`variants:` and `_variant_sets` still work -- a histogram repeated under extra
-selections as `<name>_<suffix>` -- but the shipped configs use regions instead,
-where the same split is a cut under a region.
+Whether a histogram fills once per object or once per event is read off the
+variable's expression (jagged = per object); there is no key for it.
 
 ---
 

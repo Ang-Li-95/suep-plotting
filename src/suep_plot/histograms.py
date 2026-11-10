@@ -1,5 +1,10 @@
 """Build hist.Hist objects from YAML and fill them from coffea NanoEvents.
 
+Histograms are defined in one way: ``histograms.yaml`` lists **regions**, and
+each region lists catalog variables (``variables.yaml``) to fill after its
+cuts.  :func:`load_histogram_defs` turns that into one definition per
+histogram, named ``<region>/<cut>/<variable>``.
+
 Expressions are written in NanoEvents object syntax and evaluated with these
 names in scope:
 
@@ -25,9 +30,10 @@ from pathlib import Path
 
 from .config import GLOBAL_VARIABLES, ConfigError, _merge, load_config_file
 
-# What one axis is made of -- the keys an ``x:`` / ``y:`` mapping (or a
-# catalog variable, see variables.yaml) may set.
-AXIS_KEYS = ("expression", "bins", "lo", "hi", "edges", "label")
+# What a region entry may override of its variable's axis.
+AXIS_OVERRIDES = ("bins", "lo", "hi", "edges", "label")
+# What a catalog variable is made of: the expression plus the axis.
+AXIS_KEYS = ("expression",) + AXIS_OVERRIDES
 _TRIPLE = ("bins", "lo", "hi")
 # Display defaults a catalog variable may carry for its 1D histograms.
 DISPLAY_KEYS = ("log_x", "log_y", "flow", "rebin", "blind")
@@ -36,89 +42,51 @@ REGION_KEYS = ("label", "evt_sel", "evt_vars", "objects")
 # Former names of region keys: refused, with the new name in the message.
 RENAMED_REGION_KEYS = {"events": "evt_sel", "per_event": "evt_vars"}
 CUT_KEYS = ("cut", "label", "vars")
+# Keys of the removed ways to define a histogram (written out on its own, or
+# as a variant of another): refused in a region entry, with where they went.
+REMOVED_ENTRY_KEYS = ("expression", "expression_x", "expression_y",
+                      "variants", "keep_base")
 
 
 class FillError(ValueError):
     """An expression that does not evaluate on a sample: fatal, with its context."""
 
 
-# ── shorthands, normalized per file before the _extends merge ─────
-
-
-def _bins_list(cfg: dict, suffix: str, where: str) -> dict:
-    """``bins: [n, lo, hi]`` -> ``bins`` / ``lo`` / ``hi`` (with the same suffix)."""
-    key = f"bins{suffix}"
-    value = cfg.get(key)
+def _bins_list(cfg: dict, where: str) -> dict:
+    """``bins: [n, lo, hi]`` -> ``bins`` / ``lo`` / ``hi``."""
+    value = cfg.get("bins")
     if not isinstance(value, (list, tuple)):
         return cfg
     if len(value) != 3:
-        raise ConfigError(f"ERROR in {where}: {key} as a list must be [n, lo, hi]; "
-                          f"explicit bin edges go under 'edges{suffix}'")
-    clash = [f"{k}{suffix}" for k in ("lo", "hi") if f"{k}{suffix}" in cfg]
+        raise ConfigError(f"ERROR in {where}: bins as a list must be [n, lo, hi]; "
+                          "explicit bin edges go under 'edges'")
+    clash = [k for k in ("lo", "hi") if k in cfg]
     if clash:
-        raise ConfigError(f"ERROR in {where}: {key}: [n, lo, hi] together with "
+        raise ConfigError(f"ERROR in {where}: bins: [n, lo, hi] together with "
                           f"{clash} -- write the range once")
     n, lo, hi = value
     if not isinstance(n, int) or isinstance(n, bool) or n < 1:
-        raise ConfigError(f"ERROR in {where}: {key}: the number of bins must be a "
+        raise ConfigError(f"ERROR in {where}: bins: the number of bins must be a "
                           f"positive integer, got {n!r}")
-    return {**cfg, key: n, f"lo{suffix}": lo, f"hi{suffix}": hi}
+    return {**cfg, "bins": n, "lo": lo, "hi": hi}
 
 
-def _normalize_axis(spec, where: str) -> dict:
-    """An ``x:`` / ``y:`` value: a variable name, or a mapping of axis keys."""
-    if isinstance(spec, str):
-        return {"var": spec}
-    if not isinstance(spec, dict):
-        raise ConfigError(f"ERROR in {where}: an axis is a variable name or a "
-                          f"mapping of {list(AXIS_KEYS)}")
-    unknown = sorted(set(spec) - set(AXIS_KEYS) - {"var"})
-    if unknown:
-        raise ConfigError(f"ERROR in {where}: unknown axis key(s) {unknown}; "
-                          f"known: var, {', '.join(AXIS_KEYS)}")
-    return _bins_list(spec, "", where)
-
-
-def normalize_hist(cfg, where: str):
-    """One histogram definition (or override) in canonical form."""
-    if not isinstance(cfg, dict):
-        return cfg
-    for suffix in ("", "_x", "_y"):
-        cfg = _bins_list(cfg, suffix, where)
-    for ax in ("x", "y"):
-        if cfg.get(ax) is not None:
-            cfg = {**cfg, ax: _normalize_axis(cfg[ax], f"{where}.{ax}")}
-    # 'selections: name' means the one selection, not its letters.
-    if isinstance(cfg.get("selections"), str):
-        cfg = {**cfg, "selections": [cfg["selections"]]}
-    variants = cfg.get("variants")
-    if isinstance(variants, dict):
-        cfg = {**cfg, "variants": {v: normalize_hist(o, f"{where}.variants.{v}")
-                                   for v, o in variants.items()}}
-    return cfg
-
-
-def normalize_hist_file(defs: dict, path, axes) -> dict:
-    """The ``normalize`` hook of :func:`load_histogram_defs` (see load_config_file)."""
-    out = {}
-    for name, cfg in defs.items():
-        if name == "_variant_sets" and isinstance(cfg, dict):
-            out[name] = {
-                s: {v: normalize_hist(o, f"{path}: _variant_sets.{s}.{v}")
-                    for v, o in (variants or {}).items()}
-                for s, variants in cfg.items()}
-        elif name == "regions" and isinstance(cfg, dict):
-            # A per-system family of regions is written once, with the same
-            # _repeat and _axes as everything else in the file.
-            from .config import _expand_repeats
-            regions, _ = _expand_repeats(cfg, path, axes)
-            regions.pop("_axes", None)
-            out[name] = regions
-        elif str(name).startswith("_"):
-            out[name] = cfg
-        else:
-            out[name] = normalize_hist(cfg, f"{path}: histogram '{name}'")
+def _overlay(base: dict, top: dict) -> dict:
+    """*top* over *base*; ``edges`` and bins/lo/hi replace each other."""
+    out = dict(base)
+    if "edges" in top:
+        for k in _TRIPLE:
+            out.pop(k, None)
+    if any(k in top for k in _TRIPLE):
+        out.pop("edges", None)
+    out.update(top)
     return out
+
+
+def _as_list(value) -> list:
+    if value is None:
+        return []
+    return [value] if isinstance(value, str) else list(value)
 
 
 # ── the variable catalog ──────────────────────────────────────────
@@ -139,7 +107,7 @@ def normalize_variable_file(defs: dict, path, axes) -> dict:
         if unknown:
             raise ConfigError(f"ERROR in {where}: unknown key(s) {unknown}; known: "
                               f"{', '.join(AXIS_KEYS + DISPLAY_KEYS)}")
-        out[name] = _bins_list(cfg, "", where)
+        out[name] = _bins_list(cfg, where)
     return out
 
 
@@ -169,55 +137,109 @@ def load_variables(set_dir=None) -> dict:
     return catalog
 
 
+def variable_display(variables: dict | None, var) -> dict:
+    """The 1D display defaults a catalog variable carries (log_y, flow, ...)."""
+    if not variables or var not in variables:
+        return {}
+    return {k: v for k, v in variables[var].items() if k not in AXIS_KEYS}
+
+
 # ── regions: event cuts -> object cuts -> variables ───────────────
 
 
-def _as_list(value) -> list:
-    if value is None:
-        return []
-    return [value] if isinstance(value, str) else list(value)
+def normalize_hist_file(defs: dict, path, axes) -> dict:
+    """The ``normalize`` hook of :func:`load_histogram_defs` (see load_config_file).
+
+    A per-system family of regions is written once, with a ``_repeat`` inside
+    ``regions:`` that uses the file's ``_axes``; it is expanded here, per
+    file, so a child set can then override one generated region.
+    """
+    from .config import _expand_repeats
+
+    out = dict(defs)
+    if isinstance(defs.get("regions"), dict):
+        regions, _ = _expand_repeats(defs["regions"], path, axes)
+        regions.pop("_axes", None)
+        out["regions"] = regions
+    return out
 
 
-def _region_entry(spec, where: str) -> tuple[str, dict]:
-    """One entry of a ``vars`` / ``evt_vars`` list -> (leaf name, definition).
+def _axis_variable(spec, where: str) -> tuple[str, dict]:
+    """One axis of an entry -> (catalog variable, overrides of its axis).
 
-    ``name`` (a catalog variable, 1D), ``[x, y]`` (2D), or a mapping
-    ``{var: name, <overrides>}`` / ``{x: ..., y: ..., <overrides>}`` with an
-    optional ``name:`` for the histogram.
+    ``name``, or ``{var: name, <overrides>}`` with any of
+    :data:`AXIS_OVERRIDES`.
     """
     if isinstance(spec, str):
-        return spec, {"x": {"var": spec}}
+        return spec, {}
+    if not isinstance(spec, dict) or not isinstance(spec.get("var"), str):
+        raise ConfigError(f"ERROR in {where}: an axis is a catalog variable name, "
+                          "or a mapping {var: <name>, <overrides>}; a new "
+                          "expression belongs in variables.yaml")
+    unknown = sorted(set(spec) - set(AXIS_OVERRIDES) - {"var"})
+    if unknown:
+        raise ConfigError(f"ERROR in {where}: unknown axis key(s) {unknown}; "
+                          f"known: var, {', '.join(AXIS_OVERRIDES)}")
+    return spec["var"], {k: v for k, v in spec.items() if k != "var"}
+
+
+def _region_entry(spec, where: str) -> tuple[str, list, dict]:
+    """One entry of a ``vars`` / ``evt_vars`` list -> (leaf name, axes, rest).
+
+    The forms an entry takes:
+
+    ``name``                              1D, a catalog variable
+    ``[x, y]``                            2D, two catalog variables
+    ``{var: name, <keys>}``               1D with overrides: binning or label
+                                          of the axis, ``selections``,
+                                          ``weight``, display keys, ``name``
+    ``{x: ..., y: ..., <keys>}``          2D; each axis a variable name or
+                                          ``{var: name, <axis overrides>}``
+
+    *axes* is one ``(variable, overrides)`` per axis and *rest* the other
+    keys.  The leaf name defaults to the variable (``x_vs_y`` in 2D).
+    """
+    if isinstance(spec, str):
+        return spec, [(spec, {})], {}
     if isinstance(spec, list):
         if len(spec) != 2:
             raise ConfigError(f"ERROR in {where}: a 2D entry is [x, y], got {spec}")
-        x, y = (_normalize_axis(a, where) for a in spec)
-        if "var" not in x or "var" not in y:
-            raise ConfigError(f"ERROR in {where}: write an inline 2D axis as a "
-                              "mapping with a name:  {name: ..., x: ..., y: ...}")
-        return f"{x['var']}_vs_{y['var']}", {"x": x, "y": y}
+        spec = {"x": spec[0], "y": spec[1]}
     if not isinstance(spec, dict):
         raise ConfigError(f"ERROR in {where}: an entry is a variable name, an "
                           f"[x, y] pair or a mapping, got {spec!r}")
-    spec = dict(spec)
-    leaf = spec.pop("name", None)
-    var = spec.pop("var", None)
-    if var is not None:
-        if "x" in spec:
-            raise ConfigError(f"ERROR in {where}: give either 'var' or 'x', not both")
-        spec["x"] = var
-    spec = normalize_hist(spec, where)
-    x, y = spec.get("x") or {}, spec.get("y")
-    if leaf is None and "var" in x:
-        leaf = x["var"] if y is None else (
-            f"{x['var']}_vs_{y['var']}" if "var" in y else None)
+    rest = dict(spec)
+    removed = sorted(set(rest) & set(REMOVED_ENTRY_KEYS))
+    if removed:
+        raise ConfigError(
+            f"ERROR in {where}: {removed} cannot be written on a histogram any "
+            "more.  An expression and its binning go in variables.yaml (the "
+            "entry then names the variable); a variant is an object cut of "
+            "the region")
+    if "per_object" in rest:
+        raise ConfigError(f"ERROR in {where}: 'per_object' is not a key; whether "
+                          "a histogram fills per object is read off the "
+                          "variable's expression")
+    leaf = rest.pop("name", None)
+
+    if "var" in rest:
+        if "x" in rest or "y" in rest:
+            raise ConfigError(f"ERROR in {where}: give 'var' (1D) or 'x' and 'y' "
+                              "(2D), not both")
+        overrides = {k: rest.pop(k) for k in AXIS_OVERRIDES if k in rest}
+        axes = [_axis_variable({"var": rest.pop("var"), **overrides}, where)]
+    elif "x" in rest and "y" in rest:
+        stray = sorted(set(rest) & set(AXIS_OVERRIDES))
+        if stray:
+            raise ConfigError(f"ERROR in {where}: in a 2D entry {stray} go inside "
+                              "x: or y:, e.g. x: {var: <name>, bins: [...]}")
+        axes = [_axis_variable(rest.pop(ax), f"{where}.{ax}") for ax in ("x", "y")]
+    else:
+        raise ConfigError(f"ERROR in {where}: an entry needs 'var' (1D) or both "
+                          f"'x' and 'y' (2D), got {sorted(spec)}")
     if leaf is None:
-        raise ConfigError(f"ERROR in {where}: this entry needs a 'name:'")
-    return leaf, spec
-
-
-def region_hist_name(region: str, cut: str | None, leaf: str) -> str:
-    """``<region>/<cut>/<variable>`` (or ``<region>/<variable>`` per event)."""
-    return f"{region}/{cut}/{leaf}" if cut else f"{region}/{leaf}"
+        leaf = "_vs_".join(var for var, _ in axes)
+    return leaf, axes, rest
 
 
 def entry_leaf(spec) -> str:
@@ -225,7 +247,38 @@ def entry_leaf(spec) -> str:
     return _region_entry(spec, "derived_plots.yaml")[0]
 
 
-def expand_regions(regions: dict, path="histograms.yaml") -> dict:
+def region_hist_name(region: str, cut: str | None, leaf: str) -> str:
+    """``<region>/<cut>/<variable>`` (or ``<region>/<variable>`` per event)."""
+    return f"{region}/{cut}/{leaf}" if cut else f"{region}/{leaf}"
+
+
+def _resolved_axis(var: str, overrides: dict, variables: dict, where: str) -> dict:
+    """The catalog variable's axis with an entry's overrides laid over it."""
+    if var not in variables:
+        close = difflib.get_close_matches(var, list(variables), n=3)
+        hint = f"; did you mean {', '.join(close)}?" if close else ""
+        raise ConfigError(f"ERROR in {where}: unknown variable '{var}'{hint}")
+    base = {k: v for k, v in variables[var].items() if k in AXIS_KEYS}
+    return _overlay(base, _bins_list(overrides, where))
+
+
+def _entry_hist(spec, variables: dict, where: str) -> tuple[str, dict]:
+    """One region entry -> (leaf name, histogram definition).
+
+    The definition is the flat form the fill and the plots read: 1D has
+    ``expression`` / ``bins`` / ``lo`` / ``hi`` (or ``edges``) / ``label``,
+    2D the same keys with ``_x`` and ``_y``.
+    """
+    leaf, axes, rest = _region_entry(spec, where)
+    resolved = [_resolved_axis(var, over, variables, where) for var, over in axes]
+    if len(axes) == 1:
+        return leaf, {**variable_display(variables, axes[0][0]), **resolved[0], **rest}
+    cfg = {f"{k}_x": v for k, v in resolved[0].items()}
+    cfg.update({f"{k}_y": v for k, v in resolved[1].items()})
+    return leaf, {**cfg, **rest}
+
+
+def expand_regions(regions: dict, variables: dict, path="histograms.yaml") -> dict:
     """``regions:`` -> one histogram definition per (region, cut, variable).
 
     A region names its event-level cuts (``evt_sel``, AND-ed), the variables to
@@ -236,6 +289,16 @@ def expand_regions(regions: dict, path="histograms.yaml") -> dict:
     the plots.  The region and cut labels go on the figure.
     """
     out: dict = {}
+
+    def add(name, cfg, selections, annotation, where):
+        if name in out:
+            raise ConfigError(f"ERROR in {where}: '{name}' is listed twice; "
+                              "give one of them a 'name:'")
+        cfg["selections"] = list(selections) + _as_list(cfg.get("selections"))
+        if annotation:
+            cfg.setdefault("annotation", annotation)
+        out[name] = cfg
+
     for rname, region in (regions or {}).items():
         if region is None:
             continue
@@ -250,23 +313,13 @@ def expand_regions(regions: dict, path="histograms.yaml") -> dict:
             hint = f" ({'; '.join(renamed)})" if renamed else ""
             raise ConfigError(f"ERROR in {where}: unknown key(s) {unknown}{hint}; "
                               f"known: {', '.join(REGION_KEYS)}")
-        events = _as_list(region.get("evt_sel"))
+        evt_sel = _as_list(region.get("evt_sel"))
         rlabel = region.get("label", rname)
-
-        def add(name, cfg, selections, annotation, entry_where):
-            if name in out:
-                raise ConfigError(f"ERROR in {entry_where}: '{name}' is listed "
-                                  "twice; give one of them a 'name:'")
-            cfg = dict(cfg)
-            cfg["selections"] = list(selections) + _as_list(cfg.get("selections"))
-            if annotation:
-                cfg.setdefault("annotation", annotation)
-            out[name] = cfg
 
         for spec in region.get("evt_vars") or []:
             ewhere = f"{where}.evt_vars"
-            leaf, cfg = _region_entry(spec, ewhere)
-            add(region_hist_name(rname, None, leaf), cfg, events, rlabel, ewhere)
+            leaf, cfg = _entry_hist(spec, variables, ewhere)
+            add(region_hist_name(rname, None, leaf), cfg, evt_sel, rlabel, ewhere)
 
         for alias, cut in (region.get("objects") or {}).items():
             if cut is None:
@@ -282,10 +335,50 @@ def expand_regions(regions: dict, path="histograms.yaml") -> dict:
             clabel = cut.get("label", None if alias == "all" else alias.replace("_", " "))
             annotation = " · ".join(str(t) for t in (rlabel, clabel) if t)
             for spec in cut.get("vars") or []:
-                leaf, cfg = _region_entry(spec, f"{cwhere}.vars")
+                leaf, cfg = _entry_hist(spec, variables, f"{cwhere}.vars")
                 add(region_hist_name(rname, alias, leaf), cfg,
-                    events + _as_list(cut.get("cut")), annotation, cwhere)
+                    evt_sel + _as_list(cut.get("cut")), annotation, cwhere)
     return out
+
+
+def check_axes(defs: dict, path="histograms.yaml") -> None:
+    """Every histogram must say what it fills and how it is binned."""
+    problems = []
+    for name, cfg in defs.items():
+        for s in ("_x", "_y") if is_2d(cfg) else ("",):
+            if not cfg.get(f"expression{s}"):
+                problems.append(f"histogram '{name}': no expression{s}")
+            triple = [f"{k}{s}" for k in _TRIPLE if f"{k}{s}" in cfg]
+            if f"edges{s}" not in cfg and len(triple) != 3:
+                missing = [f"{k}{s}" for k in _TRIPLE if f"{k}{s}" not in cfg]
+                problems.append(f"histogram '{name}': no binning -- needs "
+                                f"edges{s} or bins{s}/lo{s}/hi{s} (missing {missing})")
+    if problems:
+        raise ConfigError(f"ERROR in {path}:\n  " + "\n  ".join(problems))
+
+
+def load_histogram_defs(path: str, variables: dict | None = None) -> dict:
+    """A set's histograms.yaml -> ``{name: definition}``, one per histogram.
+
+    The file holds ``regions`` and nothing else (see :func:`expand_regions`);
+    the variables they list come from the set's catalog (*variables*, by
+    default :func:`load_variables` of the set).
+    """
+    if variables is None:
+        variables = load_variables(Path(path).parent)
+    raw = load_config_file(path, normalize=normalize_hist_file)
+    stray = [k for k in raw if k != "regions"]
+    if stray:
+        shown = ", ".join(map(str, stray[:5])) + (" ..." if len(stray) > 5 else "")
+        raise ConfigError(
+            f"ERROR in {path}: histograms are defined inside 'regions' only, "
+            f"but the file also has top-level entries: {shown}.\n  Move each "
+            "into a region -- 'evt_vars' for a per-event variable, "
+            "'objects.<cut>.vars' for a per-object one -- with its expression "
+            "and binning in variables.yaml (see docs/configuration.md)")
+    defs = expand_regions(raw.get("regions"), variables, path)
+    check_axes(defs, path)
+    return defs
 
 
 def normalize_selection_file(defs: dict, path, axes) -> dict:
@@ -300,265 +393,6 @@ def normalize_selection_file(defs: dict, path, axes) -> dict:
                               "expression string or a mapping")
         out[name] = cfg
     return out
-
-
-# ── x: / y: axes -> today's long form, after the merge ────────────
-
-
-def _overlay(base: dict, top: dict, suffixes=("",)) -> dict:
-    """*top* over *base*; per axis, ``edges`` and bins/lo/hi replace each other."""
-    out = dict(base)
-    for s in suffixes:
-        if f"edges{s}" in top:
-            for k in _TRIPLE:
-                out.pop(f"{k}{s}", None)
-        if any(f"{k}{s}" in top for k in _TRIPLE):
-            out.pop(f"edges{s}", None)
-    out.update(top)
-    return out
-
-
-def _axis(spec: dict, variables: dict | None, where: str) -> dict:
-    """One normalized axis mapping, with its variable's defaults filled in."""
-    spec = dict(spec)
-    var = spec.pop("var", None)
-    base = {}
-    if var is not None:
-        if not variables or var not in variables:
-            close = difflib.get_close_matches(var, list(variables or {}), n=3)
-            hint = f"; did you mean {', '.join(close)}?" if close else ""
-            raise ConfigError(f"ERROR in {where}: unknown variable '{var}'{hint}")
-        base = {k: v for k, v in variables[var].items() if k in AXIS_KEYS}
-    return _overlay(base, spec)
-
-
-def variable_display(variables: dict | None, var) -> dict:
-    """The 1D display defaults a catalog variable carries (log_y, flow, ...)."""
-    if not variables or var not in variables:
-        return {}
-    return {k: v for k, v in variables[var].items() if k not in AXIS_KEYS}
-
-
-def resolve_axes(name: str, cfg, variables: dict | None = None,
-                 path="histograms.yaml"):
-    """``x:`` / ``y:`` mappings (and catalog variables) -> the long-form keys.
-
-    1D: the x axis becomes ``expression`` / ``bins`` / ``lo`` / ``hi`` (or
-    ``edges``) / ``label``.  2D: the same with ``_x`` / ``_y``.  Keys the
-    histogram writes itself in long form take precedence, so an inherited
-    ``x: csc_cluster_size`` combines with a local ``hi: 800``.
-    """
-    if not isinstance(cfg, dict) or ("x" not in cfg and "y" not in cfg):
-        return cfg
-    where = f"{path}: histogram '{name}'"
-    cfg = dict(cfg)
-    x_spec, y_spec = cfg.pop("x", None), cfg.pop("y", None)
-    if x_spec is None:
-        raise ConfigError(f"ERROR in {where}: 'y:' without 'x:'")
-    x = _axis(x_spec, variables, f"{where}.x")
-    if y_spec is None:
-        return _overlay({**variable_display(variables, x_spec.get("var")), **x}, cfg)
-    stray = [k for k in ("expression", "bins", "lo", "hi", "edges") if k in cfg]
-    if stray:
-        raise ConfigError(f"ERROR in {where}: a 2D histogram takes its axes from "
-                          f"x: and y:, not {stray}")
-    y = _axis(y_spec, variables, f"{where}.y")
-    long = {f"{k}_x": v for k, v in x.items()}
-    long.update({f"{k}_y": v for k, v in y.items()})
-    return _overlay(long, cfg, ("_x", "_y"))
-
-
-def check_axes(defs: dict, path="histograms.yaml") -> None:
-    """Every resolved histogram must say what it fills and how it is binned."""
-    problems = []
-    for name, cfg in defs.items():
-        if not isinstance(cfg, dict):
-            problems.append(f"histogram '{name}': not a mapping")
-            continue
-        suffixes = ("_x", "_y") if is_2d(cfg) else ("",)
-        for s in suffixes:
-            if not cfg.get(f"expression{s}"):
-                problems.append(f"histogram '{name}': no expression{s}")
-            has_edges = f"edges{s}" in cfg
-            triple = [f"{k}{s}" for k in _TRIPLE if f"{k}{s}" in cfg]
-            if has_edges and triple:
-                problems.append(
-                    f"histogram '{name}': both edges{s} and {triple} -- when "
-                    f"replacing inherited edges with bins{s}, add 'edges{s}: null' "
-                    f"(or 'bins{s}: null' etc. the other way round)")
-            elif not has_edges and len(triple) != 3:
-                missing = [f"{k}{s}" for k in _TRIPLE if f"{k}{s}" not in cfg]
-                problems.append(f"histogram '{name}': no binning -- needs "
-                                f"edges{s} or bins{s}/lo{s}/hi{s} (missing {missing})")
-    if problems:
-        raise ConfigError(f"ERROR in {path}:\n  " + "\n  ".join(problems))
-
-
-def _override_axis(variant: dict, ax: str, spec, fail) -> dict:
-    """*variant* with its ``x`` / ``y`` axis overridden by a variant's *spec*.
-
-    The base may carry the axis as an ``x:`` / ``y:`` mapping (not resolved
-    yet) or in long form.  A spec naming a catalog variable replaces the axis;
-    one giving only some keys (``{hi: 800}``) changes those and keeps the rest.
-    """
-    if isinstance(spec, str):
-        spec = {"var": spec}
-    if not isinstance(spec, dict):
-        fail(f"'{ax}:' must be a variable name or a mapping of axis keys")
-    base_axis = variant.get(ax)
-    if isinstance(base_axis, dict):
-        merged = dict(spec) if "var" in spec else _overlay(base_axis, spec)
-        return {**variant, ax: merged}
-    two_d = is_2d(variant)
-    if "var" in spec or (ax == "y" and not two_d):
-        fail(f"'{ax}:' cannot be overridden here because the base histogram is "
-             "written in long form (expression / bins / ...); write the base "
-             "with 'x:' (and 'y:'), or override the long-form keys directly")
-    s = f"_{ax}" if two_d else ""
-    return _overlay(variant, {f"{k}{s}": v for k, v in spec.items()}, (s,))
-
-
-def _decorate_label(cfg):
-    """Apply a variant's deferred ``label_prefix`` / ``label_suffix``.
-
-    Deferred when the base label was not known at expansion time -- it comes
-    from the catalog variable, filled in by :func:`resolve_axes`.
-    """
-    if not isinstance(cfg, dict) or "_label_decor" not in cfg:
-        return cfg
-    cfg = dict(cfg)
-    prefix, suffix = cfg.pop("_label_decor")
-    if cfg.get("label") is not None:
-        cfg["label"] = f"{prefix}{cfg['label']}{suffix}"
-    return cfg
-
-
-def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
-    """Expand ``variants:`` into one histogram definition per variant.
-
-    A variant is the same fill under extra selections, so the whole matrix of
-    (variable x selection) is written once per variable::
-
-        _variant_sets:                    # reusable; '_' keys are not histograms
-          csc_match:
-            matched:   {selections: [csc_cluster_matched],   label_prefix: "matched "}
-            unmatched: {selections: [csc_cluster_unmatched], label_prefix: "unmatched "}
-
-        csc_cluster_size:
-          expression: "events.cscCluster.size"
-          per_object: true
-          bins: 50
-          lo: 0
-          hi: 500
-          label: 'CSC cluster $N_{\\mathrm{hits}}$'
-          variants: csc_match             # or an inline mapping of the same shape
-
-    yields ``csc_cluster_size``, ``csc_cluster_size_matched`` and
-    ``csc_cluster_size_unmatched``.  A variant's ``selections`` are *appended*
-    to the base ones (base cuts keep applying), ``label_prefix`` /
-    ``label_suffix`` decorate the base label, an ``x:`` / ``y:`` is merged
-    into the base axis (``x: {hi: 800}`` changes the range, ``x: other_var``
-    replaces the axis), and any other key overrides the base outright.
-    ``keep_base: false`` drops the unselected histogram.
-
-    Runs on the definitions as written, before :func:`resolve_axes`.
-    """
-    variant_sets = raw.get("_variant_sets") or {}
-    out: dict = {}
-
-    def _fail(msg):
-        raise SystemExit(f"ERROR in {path}: {msg}")
-
-    for name, cfg in raw.items():
-        if name.startswith("_"):
-            continue
-        if not isinstance(cfg, dict) or "variants" not in cfg:
-            out[name] = cfg
-            continue
-
-        base = {k: v for k, v in cfg.items() if k not in ("variants", "keep_base")}
-        spec = cfg["variants"]
-        if isinstance(spec, str):
-            if spec not in variant_sets:
-                known = ", ".join(sorted(variant_sets)) or "(none defined)"
-                _fail(f"histogram '{name}': unknown variant set '{spec}'."
-                      f" Defined under _variant_sets: {known}")
-            spec = variant_sets[spec]
-        if not isinstance(spec, dict) or not spec:
-            _fail(f"histogram '{name}': 'variants' must name a variant set or be"
-                  " a non-empty mapping of suffix -> overrides")
-
-        if cfg.get("keep_base", True):
-            out[name] = base
-
-        for suffix, overrides in spec.items():
-            overrides = dict(overrides or {})
-            variant = dict(base)
-
-            selections = _as_list(base.get("selections")) + \
-                _as_list(overrides.pop("selections", None))
-            if selections:
-                variant["selections"] = selections
-
-            # An axis override is merged into the base axis, never left next
-            # to it: the base's own keys would otherwise win when the axes
-            # are resolved and the override would be silently ignored.
-            for ax in ("x", "y"):
-                if overrides.get(ax) is not None:
-                    variant = _override_axis(
-                        variant, ax, overrides.pop(ax),
-                        lambda msg: _fail(f"histogram '{name}' variant "
-                                          f"'{suffix}': {msg}"))
-
-            label = overrides.pop("label", variant.get("label"))
-            prefix = overrides.pop("label_prefix", "")
-            suffix_label = overrides.pop("label_suffix", "")
-            if label is not None:
-                variant["label"] = f"{prefix}{label}{suffix_label}"
-            elif prefix or suffix_label:
-                # The label comes from the catalog variable: decorate it once
-                # the axes are resolved (see _decorate_label).
-                variant["_label_decor"] = (prefix, suffix_label)
-
-            variant.update(overrides)
-
-            key = f"{name}_{suffix}"
-            if key in out or key in raw:
-                _fail(f"histogram '{name}': variant '{suffix}' would overwrite"
-                      f" the existing histogram '{key}'")
-            out[key] = variant
-
-    return out
-
-
-def load_histogram_defs(path: str, variables: dict | None = None) -> dict:
-    """A set's histograms.yaml, fully expanded to today's long form.
-
-    Shorthands are normalized per file; ``regions`` expanded into one
-    histogram per (region, cut, variable); ``x:`` / ``y:`` axes and catalog
-    variables resolved after the merge, against the set's own catalog
-    (*variables*, by default :func:`load_variables` of the set);
-    ``variants`` expanded; every result checked for an expression and a
-    binning.
-    """
-    if variables is None:
-        variables = load_variables(Path(path).parent)
-    # with_fragments: expand_variants reads _variant_sets off the result,
-    # including ones inherited through _extends.
-    raw = load_config_file(path, with_fragments=True, normalize=normalize_hist_file)
-    generated = expand_regions(raw.pop("regions", None), path)
-    clash = sorted(set(generated) & set(raw))
-    if clash:
-        raise ConfigError(f"ERROR in {path}: region histogram(s) {clash} are also "
-                          "defined on their own")
-    raw.update(generated)
-    # Variants first, on the axes as written: a variant may override an axis,
-    # and that has to be merged into the base axis before it is resolved.
-    defs = expand_variants(raw, str(path))
-    defs = {name: _decorate_label(resolve_axes(name, cfg, variables, path))
-            for name, cfg in defs.items()}
-    check_axes(defs, path)
-    return defs
 
 
 def load_selection_defs(path: str) -> dict:

@@ -339,7 +339,7 @@ def test_a_2d_histogram_mixing_per_object_and_per_event_axes_is_fatal():
                         np.ones(3))
 
 
-# ── shorthands and x:/y: axes ─────────────────────────────────────
+# ── config files ──────────────────────────────────────────────────
 
 
 def _yaml(path, obj):
@@ -348,92 +348,6 @@ def _yaml(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(obj, sort_keys=False))
     return path
-
-
-def test_a_bins_list_is_the_triple(tmp_path):
-    from suep_plot.histograms import load_histogram_defs
-
-    p = _yaml(tmp_path / "h.yaml", {"met": {"expression": "events.met",
-                                            "bins": [10, 0, 200]}})
-
-    assert load_histogram_defs(p)["met"] == {"expression": "events.met",
-                                             "bins": 10, "lo": 0, "hi": 200}
-
-
-def test_a_child_can_move_one_end_of_an_inherited_bins_list(tmp_path):
-    from suep_plot.histograms import load_histogram_defs
-
-    _yaml(tmp_path / "base" / "histograms.yaml",
-          {"met": {"expression": "events.met", "bins": [10, 0, 200]}})
-    child = _yaml(tmp_path / "child" / "histograms.yaml",
-                  {"_extends": "../base", "met": {"hi": 400}})
-
-    met = load_histogram_defs(child)["met"]
-    assert (met["bins"], met["lo"], met["hi"]) == (10, 0, 400)
-
-
-def test_replacing_inherited_edges_with_bins_needs_edges_null(tmp_path):
-    from suep_plot.config import ConfigError
-    from suep_plot.histograms import load_histogram_defs
-
-    _yaml(tmp_path / "base" / "histograms.yaml",
-          {"met": {"expression": "events.met", "edges": [0, 50, 200]}})
-    child = _yaml(tmp_path / "child" / "histograms.yaml",
-                  {"_extends": "../base", "met": {"bins": [4, 0, 400]}})
-
-    with pytest.raises(ConfigError, match="edges: null"):
-        load_histogram_defs(child)
-
-
-def test_inline_axes_become_the_long_form(tmp_path):
-    from suep_plot.histograms import load_histogram_defs
-
-    p = _yaml(tmp_path / "h.yaml", {
-        "met": {"x": {"expression": "events.met", "bins": [10, 0, 200], "label": "MET"}},
-        "rz": {"x": {"expression": "events.a", "bins": [5, 0, 5]},
-               "y": {"expression": "events.b", "edges": [0, 1, 2]}, "log_z": True},
-    })
-    defs = load_histogram_defs(p)
-
-    assert defs["met"] == {"expression": "events.met", "bins": 10, "lo": 0,
-                           "hi": 200, "label": "MET"}
-    assert defs["rz"] == {"expression_x": "events.a", "bins_x": 5, "lo_x": 0,
-                          "hi_x": 5, "expression_y": "events.b",
-                          "edges_y": [0, 1, 2], "log_z": True}
-
-
-def test_a_child_retunes_one_axis_of_an_inherited_2d_histogram(tmp_path):
-    from suep_plot.histograms import load_histogram_defs
-
-    _yaml(tmp_path / "base" / "histograms.yaml", {
-        "rz": {"x": {"expression": "events.a", "bins": [5, 0, 5]},
-               "y": {"expression": "events.b", "bins": [2, 0, 2]}}})
-    child = _yaml(tmp_path / "child" / "histograms.yaml",
-                  {"_extends": "../base", "rz": {"y": {"bins": [4, 0, 2]}}})
-
-    rz = load_histogram_defs(child)["rz"]
-    assert (rz["bins_x"], rz["bins_y"], rz["expression_y"]) == (5, 4, "events.b")
-
-
-def test_a_histogram_without_binning_is_reported(tmp_path):
-    from suep_plot.config import ConfigError
-    from suep_plot.histograms import load_histogram_defs
-
-    p = _yaml(tmp_path / "h.yaml", {"met": {"expression": "events.met"}})
-
-    with pytest.raises(ConfigError, match="no binning"):
-        load_histogram_defs(p)
-
-
-def test_an_unknown_axis_key_is_reported(tmp_path):
-    from suep_plot.config import ConfigError
-    from suep_plot.histograms import load_histogram_defs
-
-    p = _yaml(tmp_path / "h.yaml",
-              {"met": {"x": {"expresion": "events.met", "bins": [1, 0, 1]}}})
-
-    with pytest.raises(ConfigError, match="unknown axis key"):
-        load_histogram_defs(p)
 
 
 def test_a_selection_can_be_just_its_expression(tmp_path):
@@ -458,29 +372,124 @@ CATALOG = {
 }
 
 
-def test_a_histogram_takes_a_variable_from_the_catalog(tmp_path):
+def _region(tmp_path, *entries, variables=None):
+    """The histograms of one region whose per-event list is *entries*."""
     from suep_plot.histograms import load_histogram_defs
 
-    p = _yaml(tmp_path / "h.yaml", {"met": {"x": "met"},
-                                    "met_wide": {"x": "met", "bins": [20, 0, 400],
-                                                 "log_y": False}})
-    defs = load_histogram_defs(p, variables=CATALOG)
+    p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {"evt_vars": list(entries)}}})
+    return load_histogram_defs(p, variables=CATALOG if variables is None else variables)
 
-    assert defs["met"] == {"expression": "events.met", "bins": 10, "lo": 0,
-                           "hi": 200, "label": "MET", "log_y": True}
-    # What the histogram writes wins, key by key.
-    assert (defs["met_wide"]["bins"], defs["met_wide"]["hi"],
-            defs["met_wide"]["log_y"]) == (20, 400, False)
+
+def test_an_entry_takes_its_variable_from_the_catalog(tmp_path):
+    defs = _region(tmp_path, "met", {"var": "met", "name": "met_wide",
+                                     "bins": [20, 0, 400], "log_y": False})
+
+    assert defs["r/met"] == {"expression": "events.met", "bins": 10, "lo": 0,
+                             "hi": 200, "label": "MET", "log_y": True,
+                             "selections": [], "annotation": "r"}
+    # What the entry writes wins, key by key.
+    wide = defs["r/met_wide"]
+    assert (wide["bins"], wide["hi"], wide["log_y"]) == (20, 400, False)
+
+
+def test_an_entry_can_move_one_end_of_the_range(tmp_path):
+    met = _region(tmp_path, {"var": "met", "hi": 400})["r/met"]
+
+    assert (met["bins"], met["lo"], met["hi"]) == (10, 0, 400)
+
+
+def test_edges_and_bins_replace_each_other(tmp_path):
+    defs = _region(tmp_path,
+                   {"var": "met", "name": "met_edges", "edges": [0, 50, 200]},
+                   {"var": "jet_eta", "name": "eta_bins", "bins": [6, -3, 3]})
+
+    assert defs["r/met_edges"]["edges"] == [0, 50, 200]
+    assert not {"bins", "lo", "hi"} & set(defs["r/met_edges"])
+    assert defs["r/eta_bins"]["bins"] == 6 and "edges" not in defs["r/eta_bins"]
+
+
+def test_a_2d_entry_retunes_one_axis(tmp_path):
+    defs = _region(tmp_path, {"name": "rz", "x": "met",
+                              "y": {"var": "jet_pt", "bins": [8, 0, 400]},
+                              "log_z": True})
+
+    rz = defs["r/rz"]
+    assert (rz["expression_x"], rz["bins_x"]) == ("events.met", 10)
+    assert (rz["expression_y"], rz["bins_y"], rz["log_z"]) == ("events.Jet.pt", 8, True)
+    assert "log_y" not in rz             # 1D display defaults stay on 1D
 
 
 def test_an_unknown_variable_names_the_closest(tmp_path):
     from suep_plot.config import ConfigError
-    from suep_plot.histograms import load_histogram_defs
-
-    p = _yaml(tmp_path / "h.yaml", {"pt": {"x": "jet_ptt"}})
 
     with pytest.raises(ConfigError, match="did you mean jet_pt"):
+        _region(tmp_path, "jet_ptt")
+
+
+def test_an_unknown_axis_key_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="unknown axis key"):
+        _region(tmp_path, {"name": "rz", "x": {"var": "met", "binz": 3}, "y": "jet_pt"})
+
+
+def test_a_variable_without_binning_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="no binning"):
+        _region(tmp_path, "met", variables={"met": {"expression": "events.met"}})
+
+
+@pytest.mark.parametrize("entry", [
+    {"name": "h", "expression": "events.met", "bins": [10, 0, 200]},
+    {"name": "h", "x": {"expression": "events.met", "bins": [10, 0, 200]}, "y": "met"},
+    {"var": "met", "variants": {"m": {"selections": ["good"]}}},
+])
+def test_an_entry_cannot_define_an_expression_or_variants(tmp_path, entry):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="variables.yaml"):
+        _region(tmp_path, entry)
+
+
+def test_per_object_is_not_a_key_of_an_entry(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="'per_object' is not a key"):
+        _region(tmp_path, {"var": "jet_pt", "per_object": True})
+
+
+def test_a_histogram_outside_regions_is_refused(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"met": {"expression": "events.met",
+                                            "bins": [10, 0, 200]}})
+
+    with pytest.raises(ConfigError, match="inside 'regions' only.*met"):
         load_histogram_defs(p, variables=CATALOG)
+
+
+def test_variant_sets_are_no_longer_a_directive(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"_variant_sets": {"m": {}}})
+
+    with pytest.raises(ConfigError, match="unknown directive"):
+        load_histogram_defs(p, variables=CATALOG)
+
+
+def test_a_selection_given_as_a_string_is_one_selection(tmp_path):
+    from suep_plot.histograms import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {
+        "evt_sel": "highmet",
+        "objects": {"hard": {"cut": "good", "vars": [
+            {"var": "jet_pt", "selections": "central"}]}}}}})
+
+    assert load_histogram_defs(p, variables=CATALOG)["r/hard/jet_pt"]["selections"] \
+        == ["highmet", "good", "central"]
 
 
 def test_a_set_retunes_one_key_of_a_global_variable(tmp_path, monkeypatch):
@@ -588,11 +597,10 @@ def test_a_misspelled_region_key_is_reported(tmp_path):
 
 
 def test_region_histograms_fill_after_both_cuts():
-    from suep_plot.histograms import expand_regions, resolve_axes
+    from suep_plot.histograms import expand_regions
 
     defs = expand_regions({"jets": {"evt_sel": ["highmet"], "objects": {
-        "hard": {"cut": ["good"], "vars": ["jet_pt"]}}}})
-    defs = {n: resolve_axes(n, c, CATALOG) for n, c in defs.items()}
+        "hard": {"cut": ["good"], "vars": ["jet_pt"]}}}}, CATALOG)
     sels = {"good": {"expression": "events.Jet.pt > 60"},
             "highmet": {"expression": "events.met > 50"}}
     hists = build_histograms(defs, ["s"])
