@@ -75,8 +75,8 @@ def test_check_warns_when_a_variant_file_replaces_its_parent(tmp_path, capsys):
 
 
 def test_the_shipped_variant_set_inherits_everything_but_columns():
-    from suep_plot.histograms import load_histogram_defs
-    from suep_plot.processor import load_columns_config
+    from suep_plot.histdefs import load_histogram_defs
+    from suep_plot.configset import load_columns_config
 
     variant = REPO / "configs" / "configs_mds_minpts50"
     base = REPO / "configs" / "configs_mds"

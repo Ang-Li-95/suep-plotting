@@ -142,11 +142,11 @@ def _clear_legend(fig, ax, legend, y_max: float, tries: int = 6) -> None:
 def _restyle(sample_defs: dict, hist_defs: dict, config_dirs) -> None:
     """Refresh plot-time sample and histogram keys from configs.
 
-    The same override suep-plot -c applies (suep_plot.plot.restyle), so a
+    The same override suep-plot -c applies (suep_plot.results.restyle), so a
     label, colour, marker, rebin or log-axis change is picked up here exactly
     as it is there, without reprocessing.
     """
-    from suep_plot.plot import restyle
+    from suep_plot.results import restyle
 
     for cdir in config_dirs or []:
         restyle(hist_defs, sample_defs, cdir)

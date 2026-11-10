@@ -44,8 +44,8 @@ sys.path.insert(0, str(REPO / "src"))
 import custom.columns as columns  # noqa: E402
 from custom.clustering import dbscan_labels  # noqa: E402
 from suep_plot.config import load_config_file  # noqa: E402
-from suep_plot.processor import (load_columns_config, load_samples,  # noqa: E402
-                                 resolve_sample_files)
+from suep_plot.configset import load_columns_config  # noqa: E402
+from suep_plot.inputs import load_samples, resolve_sample_files  # noqa: E402
 
 OUTDIR = Path("event_display")
 

@@ -40,7 +40,7 @@ def _resolved_columns(config_dir: Path) -> dict:
     sys.path.insert(0, str(REPO))
     from custom import columns
 
-    from suep_plot.processor import load_columns_config
+    from suep_plot.configset import load_columns_config
 
     settings = columns.configure(load_columns_config(config_dir / "columns.yaml"))
     return {"parameters": dict(settings.params), "steps": list(settings.steps)}
@@ -48,10 +48,11 @@ def _resolved_columns(config_dir: Path) -> dict:
 
 def dump(config_dir: Path) -> dict:
     from suep_plot.corrections import load_correction_defs
-    from suep_plot.histograms import (load_histogram_defs, load_selection_defs,
-                                      load_variables)
-    from suep_plot.plot import load_derived_plot_defs
-    from suep_plot.processor import load_columns_config, load_samples
+    from suep_plot.histdefs import (load_histogram_defs, load_selection_defs,
+                                    load_variables)
+    from suep_plot.derived import load_derived_plot_defs
+    from suep_plot.configset import load_columns_config
+    from suep_plot.inputs import load_samples
     from suep_plot.reweights import load_reweight_defs
 
     loaders = {

@@ -45,10 +45,9 @@ def _table(rows: list[tuple], widths: tuple) -> None:
 
 def show(config_dir: str, grep: str | None = None, sections=None) -> int:
     from .config import load_config_file, read_set_file
-    from .histograms import (load_histogram_defs, load_selection_defs,
-                             load_variables, normalize_hist_file,
-                             normalize_selection_file)
-    from .plot import load_derived_plot_defs
+    from .histdefs import (load_histogram_defs, load_selection_defs, load_variables,
+                           normalize_hist_file, normalize_selection_file)
+    from .derived import load_derived_plot_defs
 
     cdir = Path(config_dir)
     base = cdir.resolve().parent
@@ -122,7 +121,7 @@ def show(config_dir: str, grep: str | None = None, sections=None) -> int:
         _table([("name", "expression", "binning", "label")] + rows, (36, 50, 22, 40))
 
     if "derived" in sections:
-        from .plot import DERIVED_TYPES
+        from .derived import DERIVED_TYPES
         rows = []
         for name, cfg in derived.items():
             if not keep(name):
@@ -140,8 +139,9 @@ def show(config_dir: str, grep: str | None = None, sections=None) -> int:
 
 def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
     """Static checks, then (unless *static*) every expression on one file per sample."""
-    from .processor import (check_expressions, config_warnings, load_config_set,
-                            resolve_sample_files, select_samples, validate_config_set)
+    from .checks import check_expressions, config_warnings, validate_config_set
+    from .configset import load_config_set
+    from .inputs import resolve_sample_files, select_samples
 
     rc = 0
     for cdir in config_dirs:
@@ -216,8 +216,9 @@ def _describe(arr, ranges: bool) -> str:
 def fields(config_dir: str, sample: str, n: int = 1000, grep: str | None = None,
            ranges: bool = False) -> int:
     """The collections and fields an expression can use, after derive()."""
-    from .processor import (load_config_set, open_events, prepare_events,
-                            resolve_sample_files, select_samples)
+    from .configset import load_config_set
+    from .fill import prepare_events
+    from .inputs import open_events, resolve_sample_files, select_samples
 
     cs = load_config_set(config_dir)
     cfg = select_samples(cs["samples"], [sample])[sample]

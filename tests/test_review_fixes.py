@@ -9,15 +9,13 @@ import awkward as ak
 import hist
 import numpy as np
 import pytest
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from suep_plot import checks, derived, inputs, results  # noqa: E402
 from suep_plot import plot as plot_mod  # noqa: E402
-from suep_plot import processor  # noqa: E402
-from suep_plot.histograms import (FillError, as_histograms,  # noqa: E402
-                                  as_selections, build_histograms,
-                                  fill_histograms, load_selection_defs)
+from suep_plot.fill import FillError, build_histograms, fill_histograms  # noqa: E402
+from suep_plot.histdefs import as_histograms, as_selections, load_selection_defs  # noqa: E402
 from suep_plot.reweights import Reweighter  # noqa: E402
 
 def totals(h):
@@ -50,7 +48,7 @@ def test_an_object_selection_over_another_collection_is_fatal():
 def test_check_expressions_reports_a_mask_over_another_collection(monkeypatch):
     events = ak.Array({"X": ak.zip({"pt": [[1.0, 5.0], [9.0]]}),
                        "Y": ak.zip({"pt": [[9.0], [3.0, 4.0]]})})
-    monkeypatch.setattr(processor, "open_events", lambda *a, **k: events)
+    monkeypatch.setattr(checks, "open_events", lambda *a, **k: events)
     defs = {"x_bad": {"expression": "events.X.pt", "bins": 2, "lo": 0, "hi": 10,
                       "selections": ["y_hard"]},
             "x_ok": {"expression": "events.X.pt", "bins": 2, "lo": 0, "hi": 10,
@@ -58,7 +56,7 @@ def test_check_expressions_reports_a_mask_over_another_collection(monkeypatch):
     sels = {"y_hard": {"expression": "events.Y.pt > 5"},
             "x_hard": {"expression": "events.X.pt > 4"}}
 
-    problems = processor.check_expressions(
+    problems = checks.check_expressions(
         ["f.root"], "Events", as_histograms(defs), as_selections(sels), {})
 
     assert len(problems) == 1 and "'x_bad'" in problems[0]
@@ -153,7 +151,7 @@ def test_restyle_drops_a_key_removed_from_the_config(tmp_path):
                          "rebin": 2, "log_y": True, "per_object": False}}
     sample_defs = {"s": {"files": ["x.root"], "label": "old", "scale": 10}}
 
-    plot_mod.restyle(hist_defs, sample_defs, tmp_path)
+    results.restyle(hist_defs, sample_defs, tmp_path)
 
     assert "rebin" not in hist_defs["r/h"] and "log_y" not in hist_defs["r/h"]
     assert hist_defs["r/h"]["per_object"] is False        # recorded by the fill
@@ -163,7 +161,7 @@ def test_restyle_drops_a_key_removed_from_the_config(tmp_path):
 def test_the_ratio_error_includes_the_denominator():
     num, den = np.array([50.0, 0.0, 4.0]), np.array([100.0, 100.0, 0.0])
 
-    ratio, err = plot_mod._ratio_with_error(num, num, den, den)
+    ratio, err = derived._ratio_with_error(num, num, den, den)
 
     assert ratio[0] == 0.5
     assert err[0] == pytest.approx(0.5 * np.sqrt(1 / 50 + 1 / 100))
@@ -176,10 +174,10 @@ def test_a_projection_follows_normalize_and_no_ratio(monkeypatch, tmp_path):
                   hist.axis.Regular(2, 0, 2, name="x"),
                   hist.axis.Regular(2, 0, 2, name="y"), storage=hist.storage.Weight())
     seen = {}
-    monkeypatch.setattr(plot_mod, "plot_histogram",
+    monkeypatch.setattr(derived, "plot_histogram",
                         lambda *a, **k: seen.update(k))
 
-    plot_mod._plot_derived_one("p", {"type": "projection_x", "source": "h2"},
+    derived.plot_derived("p", {"type": "projection_x", "source": "h2"},
                                {"h2": h}, {}, str(tmp_path),
                                normalize=True, ratio=False)
 
@@ -226,10 +224,10 @@ def test_an_xrootd_wildcard_matches_its_own_directory_only(monkeypatch):
 
     monkeypatch.setattr(client, "FileSystem", FakeFS)
 
-    assert processor._resolve_xrootd("root://host//eos/d/a_*.root") == \
+    assert inputs._resolve_xrootd("root://host//eos/d/a_*.root") == \
         ["root://host//eos/d/a_1.root"]
     # A directory is still walked all the way down.
-    assert processor._resolve_xrootd("root://host//eos/d") == [
+    assert inputs._resolve_xrootd("root://host//eos/d") == [
         "root://host//eos/d/a_1.root", "root://host//eos/d/b_1.root",
         "root://host//eos/d/failed/a_2.root"]
 
@@ -239,7 +237,7 @@ def test_an_xrootd_wildcard_matches_its_own_directory_only(monkeypatch):
 
 @pytest.mark.parametrize("old, new", [("events", "evt_sel"), ("per_event", "evt_vars")])
 def test_a_former_region_keyword_is_refused_with_its_new_name(old, new):
-    from suep_plot.histograms import expand_regions
+    from suep_plot.histdefs import expand_regions
 
     with pytest.raises(SystemExit, match=f"'{old}' is now '{new}'"):
         expand_regions({"r": {old: ["x"]}}, {})

@@ -6,14 +6,9 @@ import hist
 import numpy as np
 import pytest
 
-from suep_plot.plot import (
-    _fold_flow,
-    _prep_1d,
-    _plot_efficiency,
-    apply_xs_scaling,
-    merge_results,
-    write_cutflow,
-)
+from suep_plot.derived import _plot_efficiency
+from suep_plot.figures import _fold_flow, prep_1d
+from suep_plot.results import apply_xs_scaling, merge_results, write_cutflow
 
 
 def make_hist(sample, vals, weights=None):
@@ -47,9 +42,9 @@ def test_fold_flow():
 def test_prep_1d_folds_flow_by_default():
     """Every entry lands on the canvas unless the config opts out."""
     sh = make_hist("s", [-10, 25, 75, 150, 200])[{"dataset": "s"}]
-    assert list(_prep_1d(sh, {}).view().value) == [2.0, 3.0]
-    assert list(_prep_1d(sh, {"flow": "sum"}).view().value) == [2.0, 3.0]
-    assert list(_prep_1d(sh, {"flow": "none"}).view().value) == [1.0, 1.0]
+    assert list(prep_1d(sh, {}).view().value) == [2.0, 3.0]
+    assert list(prep_1d(sh, {"flow": "sum"}).view().value) == [2.0, 3.0]
+    assert list(prep_1d(sh, {"flow": "none"}).view().value) == [1.0, 1.0]
 
 
 def test_apply_xs_scaling():
@@ -258,12 +253,12 @@ def test_resubmit_puts_resource_overrides_on_the_sbatch_line(tmp_path, capsys):
 def test_plot_merges_only_the_pickles_of_this_run(tmp_path, capsys):
     from pathlib import Path
 
-    from suep_plot.plot import _resolve_inputs
+    from suep_plot.results import resolve_inputs
 
     out = _fake_run(tmp_path, [("sig", 0), ("sig", 1)],
                     written=["sig.part0.pkl", "leftover.pkl"])
 
-    files = _resolve_inputs(str(out))
+    files = resolve_inputs(str(out))
 
     assert [Path(f).name for f in files] == ["sig.part0.pkl"]
     printed = capsys.readouterr().out
@@ -271,35 +266,35 @@ def test_plot_merges_only_the_pickles_of_this_run(tmp_path, capsys):
 
 
 def test_plot_refuses_a_whole_sample_next_to_its_parts(tmp_path):
-    from suep_plot.plot import _resolve_inputs
+    from suep_plot.results import resolve_inputs
 
     for name in ("sig.pkl", "sig.part0.pkl"):
         with open(tmp_path / name, "wb") as f:
             pickle.dump({"histograms": {}}, f)
 
     with pytest.raises(SystemExit, match="double counting"):
-        _resolve_inputs(str(tmp_path))
+        resolve_inputs(str(tmp_path))
 
 
 def test_plot_reports_an_input_that_does_not_exist(tmp_path):
-    from suep_plot.plot import _resolve_inputs
+    from suep_plot.results import resolve_inputs
 
     with pytest.raises(SystemExit, match="input not found"):
-        _resolve_inputs(str(tmp_path / "nope"))
+        resolve_inputs(str(tmp_path / "nope"))
 
 
 def test_a_pickle_given_twice_is_merged_once(tmp_path):
-    from suep_plot.plot import _resolve_inputs
+    from suep_plot.results import resolve_inputs
 
     p = tmp_path / "sig.pkl"
     with open(p, "wb") as f:
         pickle.dump({"histograms": {}}, f)
 
-    assert _resolve_inputs([str(p), str(tmp_path)]) == [str(p)]
+    assert resolve_inputs([str(p), str(tmp_path)]) == [str(p)]
 
 
 def test_a_truncated_pickle_is_reported_by_name(tmp_path):
-    from suep_plot.plot import load_results
+    from suep_plot.results import load_results
 
     p = tmp_path / "sig.pkl"
     p.write_bytes(pickle.dumps({"histograms": {"a": 1}})[:5])
@@ -325,7 +320,7 @@ def test_merge_takes_per_object_from_whichever_pickle_filled_it(tmp_path):
 
 
 def test_a_region_derived_plot_expands_per_variable():
-    from suep_plot.plot import expand_region_derived
+    from suep_plot.derived import expand_region_derived
 
     defs = expand_region_derived({
         "matchfrac": {"type": "efficiency", "region": "csc", "numerator": "matched",
@@ -345,7 +340,7 @@ def test_a_region_derived_plot_expands_per_variable():
 
 
 def test_figures_of_region_histograms_go_into_folders(tmp_path):
-    from suep_plot.plot import plot_histogram
+    from suep_plot.figures import plot_histogram
 
     h = make_hist("sig", [10.0, 60.0])
     plot_histogram(h, {"label": "x", "annotation": "CSC · iso"}, {}, str(tmp_path),
@@ -358,7 +353,7 @@ def test_the_gallery_groups_by_folder_and_skips_old_figures(tmp_path):
     import os
     import time
 
-    from suep_plot.plot import write_gallery
+    from suep_plot.gallery import write_gallery
 
     (tmp_path / "csc" / "all").mkdir(parents=True)
     (tmp_path / "csc" / "all" / "size.png").write_bytes(b"png")
@@ -383,7 +378,7 @@ def test_the_gallery_groups_by_folder_and_skips_old_figures(tmp_path):
 def test_the_root_export_nests_region_histograms(tmp_path):
     import uproot
 
-    from suep_plot.plot import export_root
+    from suep_plot.results import export_root
 
     export_root({"csc/all/size": make_hist("sig", [10.0])}, str(tmp_path / "out.root"))
 

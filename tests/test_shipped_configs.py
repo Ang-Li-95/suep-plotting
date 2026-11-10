@@ -11,7 +11,7 @@ import pytest
 
 from suep_plot.cli import _is_config_set
 from suep_plot.config import read_set_file
-from suep_plot.processor import validate_config_set
+from suep_plot.checks import validate_config_set
 
 REPO = Path(__file__).resolve().parents[1]
 

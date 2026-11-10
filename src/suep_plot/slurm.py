@@ -234,7 +234,7 @@ def submit_jobs(
     config_dir = Path(config_dir).resolve()
     output_dir = Path(output_dir).resolve()
 
-    from .processor import load_samples, resolve_sample_files, select_samples
+    from .inputs import load_samples, resolve_sample_files, select_samples
 
     samples = select_samples(load_samples(config_dir / "samples.yaml"),
                              samples_filter)

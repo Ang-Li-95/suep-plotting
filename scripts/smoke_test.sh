@@ -51,7 +51,7 @@ fi
 # --file-list path each Slurm array task takes.
 python - "$OUT/one.txt" <<'PY'
 import sys
-from suep_plot.processor import load_samples, resolve_sample_files
+from suep_plot.inputs import load_samples, resolve_sample_files
 cfg = load_samples("configs/configs_smoke/samples.yaml")["suep_mDark2_temp1"]
 files = resolve_sample_files(cfg)
 if not files:

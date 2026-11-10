@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from suep_plot.config import ConfigError
-from suep_plot.processor import _resolve_files, load_samples
+from suep_plot.inputs import _resolve_files, load_samples
 
 
 def _write(path, obj):
@@ -178,20 +178,20 @@ def test_submit_rejects_unknown_sample(tmp_path):
 
 
 def test_an_unknown_sample_is_fatal_and_suggests_the_closest():
-    from suep_plot.processor import select_samples
+    from suep_plot.inputs import select_samples
 
     with pytest.raises(SystemExit, match="did you mean 'suep_mDark2_temp1'"):
         select_samples({"suep_mDark2_temp1": {}, "dy": {}}, ["suep_mDark2_tmp1"])
 
 
 def test_samples_can_be_given_comma_separated():
-    from suep_plot.processor import select_samples
+    from suep_plot.inputs import select_samples
 
     assert list(select_samples({"a": {}, "b": {}, "c": {}}, ["c,a"])) == ["a", "c"]
 
 
 def test_a_set_without_samples_is_an_error():
-    from suep_plot.processor import select_samples
+    from suep_plot.inputs import select_samples
 
     with pytest.raises(SystemExit, match="no samples"):
         select_samples({}, None)

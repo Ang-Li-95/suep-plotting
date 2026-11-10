@@ -7,7 +7,7 @@ def test_isolation_cuts_are_identical_in_the_grid_and_data_configs():
     """The two studies are meant to be overlaid, so the cuts must not drift."""
     from pathlib import Path
 
-    from suep_plot.histograms import load_selection_defs
+    from suep_plot.histdefs import load_selection_defs
 
     repo = Path(__file__).resolve().parent.parent
     sels = {}
@@ -30,11 +30,10 @@ def test_isolation_selections_keep_clusters_with_no_muon_or_jet():
     import numpy as np
     from pathlib import Path
 
-    from suep_plot.histograms import (as_histograms, as_selections,
-                                      build_histograms, fill_histograms,
-                                      load_histogram_defs)
+    from suep_plot.fill import build_histograms, fill_histograms
+    from suep_plot.histdefs import as_histograms, as_selections, load_histogram_defs
 
-    from suep_plot.histograms import load_selection_defs
+    from suep_plot.histdefs import load_selection_defs
 
     repo = Path(__file__).resolve().parent.parent / "configs" / "configs_mds_data"
     # Through the loader: the study inherits these from ../common.

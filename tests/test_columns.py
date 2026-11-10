@@ -12,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # must fail these tests, not silently skip all of them.
 import custom.columns as columns  # noqa: E402
 
-from suep_plot.histograms import Selection  # noqa: E402
-from suep_plot.processor import load_columns_config  # noqa: E402
+from suep_plot.histdefs import Selection  # noqa: E402
+from suep_plot.configset import load_columns_config  # noqa: E402
 
 # The settings most tests run on; configure() returns them, nothing installs
 # them, so a test that wants different ones just makes its own.
@@ -508,7 +508,7 @@ def test_the_overlaid_sets_share_one_prompt_object_definition():
     Retuning the isolation?  Change all three."""
     from pathlib import Path
 
-    from suep_plot.histograms import load_selection_defs
+    from suep_plot.histdefs import load_selection_defs
     from custom.helpers import ISO_SELECTIONS
 
     repo = Path(__file__).resolve().parent.parent

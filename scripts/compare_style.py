@@ -1,8 +1,8 @@
 """Shared suep-plot styling for the standalone comparison scripts.
 
 The comparison scripts read the same pickles ``suep-plot`` reads, so they reuse
-its helpers directly -- through the public names at the end of
-``suep_plot.plot`` -- for the mplhep CMS style, the plot-time transforms
+its helpers directly -- ``suep_plot.figures``, ``suep_plot.results`` and
+``suep_plot.gallery`` -- for the mplhep CMS style, the plot-time transforms
 declared in ``histograms.yaml`` (rebin / flow folding / log axes), the
 per-sample labels and colors from ``samples.yaml``, png+pdf output (into
 subfolders for region histograms) and the HTML thumbnail gallery.
@@ -20,21 +20,17 @@ import mplhep as hep  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from suep_plot import plot as _plot  # noqa: E402
-from suep_plot.plot import (  # noqa: E402
-    DEFAULT_FORMATS,
-    merge_results,
-    palette,
-    save_figure,
-)
+from suep_plot.figures import (  # noqa: E402,F401  (re-exported to the scripts)
+    DEFAULT_FORMATS, cms_label, figure, is_2d_hist, palette, prep_1d, save_figure)
+from suep_plot.gallery import write_gallery  # noqa: E402
+from suep_plot.results import merge_results, resolve_inputs, sample_of  # noqa: E402
 
 hep.style.use("CMS")
 
-# Figure geometry comes from suep_plot.plot itself -- these scripts are meant to
+# Figure geometry comes from suep_plot.figures itself -- these scripts are meant to
 # sit next to suep-plot's own output in the same talk, so a divergence here is a
 # bug rather than a style choice.  figure(), or figure(ratio=True) for a main
 # panel with a ratio panel under it.
-figure = _plot.figure
 LEGEND_FONTSIZE = 18
 
 
@@ -44,7 +40,7 @@ def cms_label(ax, lumi=None, has_data=False):
     Pass ``has_data`` when one of the overlaid samples is real data, so the
     header drops "Simulation".
     """
-    _plot.cms_label(ax, lumi=lumi, has_data=has_data)
+    cms_label(ax, lumi=lumi, has_data=has_data)
 
 
 # ── loading ───────────────────────────────────────────────────────
@@ -52,17 +48,17 @@ def cms_label(ax, lumi=None, has_data=False):
 
 def _pickles(outdir: str) -> list[str]:
     """The pickles suep-plot would merge from *outdir* (a run's own tasks only)."""
-    return _plot.resolve_inputs(outdir)
+    return resolve_inputs(outdir)
 
 
 def samples_in(outdir: str) -> list[str]:
     """Sample names in an output directory (``<sample>[.part<k>].pkl``)."""
-    return sorted({_plot.sample_of(p)[0] for p in _pickles(outdir)})
+    return sorted({sample_of(p)[0] for p in _pickles(outdir)})
 
 
 def load_sample(outdir: str, sample: str) -> dict | None:
     """Merge every part pickle of exactly this sample into one result dict."""
-    paths = [p for p in _pickles(outdir) if _plot.sample_of(p)[0] == sample]
+    paths = [p for p in _pickles(outdir) if sample_of(p)[0] == sample]
     return merge_results(paths) if paths else None
 
 
@@ -83,9 +79,9 @@ def load_samples(outdir: str, only: list[str] | None = None) -> dict:
 
 def slice_1d(h, sample: str, hist_cfg: dict):
     """One sample's 1D slice with the config's rebin/flow applied, or None."""
-    if _plot.is_2d_hist(h) or sample not in list(h.axes["dataset"]):
+    if is_2d_hist(h) or sample not in list(h.axes["dataset"]):
         return None
-    return _plot.prep_1d(h[{"dataset": sample}], hist_cfg)
+    return prep_1d(h[{"dataset": sample}], hist_cfg)
 
 
 def normalized(sh):
@@ -112,5 +108,5 @@ def save(fig, dest: str, name: str, formats=DEFAULT_FORMATS):
 def write_gallery(dest: str, title: str, subtitle: str, ranked, score_label: str):
     """Thumbnail gallery of the ranked plots, in rank order with their scores."""
     os.makedirs(dest, exist_ok=True)
-    return _plot.write_gallery(dest, ranked=ranked, title=title, subtitle=subtitle,
+    return write_gallery(dest, ranked=ranked, title=title, subtitle=subtitle,
                                score_label=score_label)

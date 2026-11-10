@@ -4,9 +4,9 @@ import awkward as ak
 import numpy as np
 import pytest
 
-from suep_plot.histograms import (FillError, _compile_expr, as_histograms,
-                                  as_selections, attach_selection_columns,
-                                  build_histograms, fill_histograms)
+from suep_plot.fill import (FillError, _compile_expr, attach_selection_columns,
+                            build_histograms, fill_histograms)
+from suep_plot.histdefs import as_histograms, as_selections
 from suep_plot.reweights import Reweighter
 
 
@@ -345,7 +345,7 @@ def _yaml(path, obj):
 
 
 def test_a_selection_can_be_just_its_expression(tmp_path):
-    from suep_plot.histograms import load_selection_defs
+    from suep_plot.histdefs import load_selection_defs
 
     p = _yaml(tmp_path / "s.yaml", {"highmet": "events.met > 50",
                                     "good": {"expression": "events.Jet.pt > 60"}})
@@ -374,7 +374,7 @@ def _flat(defs):
 
 def _region(tmp_path, *entries, variables=None):
     """The histograms of one region whose per-event list is *entries*."""
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {"evt_vars": list(entries)}}})
     return _flat(load_histogram_defs(
@@ -462,7 +462,7 @@ def test_per_object_is_not_a_key_of_an_entry(tmp_path):
 
 def test_a_histogram_outside_regions_is_refused(tmp_path):
     from suep_plot.config import ConfigError
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {"met": {"expression": "events.met",
                                             "bins": [10, 0, 200]}})
@@ -473,7 +473,7 @@ def test_a_histogram_outside_regions_is_refused(tmp_path):
 
 def test_variant_sets_are_no_longer_a_directive(tmp_path):
     from suep_plot.config import ConfigError
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {"_variant_sets": {"m": {}}})
 
@@ -482,7 +482,7 @@ def test_variant_sets_are_no_longer_a_directive(tmp_path):
 
 
 def test_a_selection_given_as_a_string_is_one_selection(tmp_path):
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {
         "evt_sel": "highmet",
@@ -494,36 +494,36 @@ def test_a_selection_given_as_a_string_is_one_selection(tmp_path):
 
 
 def test_a_set_retunes_one_key_of_a_global_variable(tmp_path, monkeypatch):
-    from suep_plot import histograms
+    from suep_plot import histdefs
 
     glob = _yaml(tmp_path / "variables.yaml",
                  {"met": {"expression": "events.met", "bins": [10, 0, 200],
                           "label": "MET"}})
-    monkeypatch.setattr(histograms, "GLOBAL_VARIABLES", glob)
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
     _yaml(tmp_path / "set" / "variables.yaml", {"met": {"bins": [20, 0, 200]}})
 
-    met = histograms.load_variables(tmp_path / "set")["met"]
+    met = histdefs.load_variables(tmp_path / "set")["met"]
     assert (met["bins"], met["hi"], met["label"]) == (20, 200, "MET")
 
 
 def test_a_variable_with_an_unknown_key_is_reported(tmp_path, monkeypatch):
-    from suep_plot import histograms
+    from suep_plot import histdefs
     from suep_plot.config import ConfigError
 
     glob = _yaml(tmp_path / "variables.yaml",
                  {"met": {"expression": "events.met", "bins": [10, 0, 200],
                           "titel": "MET"}})
-    monkeypatch.setattr(histograms, "GLOBAL_VARIABLES", glob)
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
 
     with pytest.raises(ConfigError, match="unknown key"):
-        histograms.load_variables()
+        histdefs.load_variables()
 
 
 # ── regions ───────────────────────────────────────────────────────
 
 
 def test_regions_expand_to_one_histogram_per_cut_and_variable(tmp_path):
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {"regions": {
         "jets": {
@@ -550,7 +550,7 @@ def test_regions_expand_to_one_histogram_per_cut_and_variable(tmp_path):
 
 
 def test_a_region_family_is_written_once_with_repeat(tmp_path):
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {
         "_axes": {"systems": [{"SYS": "a"}, {"SYS": "b"}]},
@@ -563,7 +563,7 @@ def test_a_region_family_is_written_once_with_repeat(tmp_path):
 
 
 def test_a_child_set_adds_a_cut_to_an_inherited_region(tmp_path):
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     _yaml(tmp_path / "base" / "histograms.yaml", {"regions": {
         "jets": {"objects": {"all": {"vars": ["jet_pt"]}}}}})
@@ -578,7 +578,7 @@ def test_a_child_set_adds_a_cut_to_an_inherited_region(tmp_path):
 
 def test_a_variable_listed_twice_under_one_cut_is_reported(tmp_path):
     from suep_plot.config import ConfigError
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {"regions": {
         "jets": {"objects": {"all": {"vars": ["jet_pt", "jet_pt"]}}}}})
@@ -589,7 +589,7 @@ def test_a_variable_listed_twice_under_one_cut_is_reported(tmp_path):
 
 def test_a_misspelled_region_key_is_reported(tmp_path):
     from suep_plot.config import ConfigError
-    from suep_plot.histograms import load_histogram_defs
+    from suep_plot.histdefs import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {"regions": {"jets": {"event": ["x"]}}})
 
@@ -598,7 +598,7 @@ def test_a_misspelled_region_key_is_reported(tmp_path):
 
 
 def test_region_histograms_fill_after_both_cuts():
-    from suep_plot.histograms import expand_regions
+    from suep_plot.histdefs import expand_regions
 
     defs = expand_regions({"jets": {"evt_sel": ["highmet"], "objects": {
         "hard": {"cut": ["good"], "vars": ["jet_pt"]}}}}, CATALOG)

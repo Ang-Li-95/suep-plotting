@@ -42,7 +42,7 @@ import numpy as np
 import yaml
 
 from .config import load_config_file, name_list
-from .histograms import _compile_expr
+from .fill import _compile_expr
 
 
 def _absolute_map_files(defs: dict, path, axes) -> dict:
@@ -224,9 +224,9 @@ def make_reweight_map(
     the histogram's fill expression — ready to reference from reweights.yaml
     via ``file:``.  Bins where the denominator is empty get weight 1.
     """
-    from .plot import _resolve_inputs, merge_results
+    from .results import merge_results, resolve_inputs
 
-    data = merge_results(_resolve_inputs(inputs))
+    data = merge_results(resolve_inputs(inputs))
     if not data or hist_name not in data.get("histograms", {}):
         raise SystemExit(f"histogram '{hist_name}' not found in {inputs}")
     h = data["histograms"][hist_name]

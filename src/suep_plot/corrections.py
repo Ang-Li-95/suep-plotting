@@ -23,7 +23,7 @@ import numpy as np
 # Ensure the scipy/_lazywhere shim is applied before coffea.lookup_tools loads.
 from . import _compat  # noqa: F401
 from .config import load_config_file, name_list
-from .histograms import _compile_expr
+from .fill import _compile_expr
 
 
 def load_correction_defs(path: str) -> dict:
