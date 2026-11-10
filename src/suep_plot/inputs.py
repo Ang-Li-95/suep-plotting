@@ -138,11 +138,8 @@ def _resolve_files(file_specs: list[str]) -> list[str]:
 def resolve_sample_files(cfg: dict) -> list[str]:
     """The files of one sample, honouring an optional ``max_files:`` cap.
 
-    A background sample can be far larger than the comparison needs -- DY is
-    5,575 files against a signal's 25 -- and a normalized shape overlay gains
-    nothing from the tail of it.  ``max_files`` takes the first N of the
-    resolved list, deterministically (the list is sorted), so a capped run is
-    reproducible and can be widened later without redoing what exists.
+    ``max_files`` takes the first N of the resolved list.  The list is sorted,
+    so a capped run is reproducible and can be widened later.
     """
     files = _resolve_files(cfg.get("files") or [])
     cap = cfg.get("max_files")

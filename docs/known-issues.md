@@ -2,8 +2,8 @@
 
 ## Clustering memory scales as N² per event
 
-`custom/clustering.py:_cluster_hits` clusters each event with a **precomputed
-N×N distance matrix** (`DBSCAN(metric="precomputed")`, around line 386). The
+`custom/clustering.py:dbscan_labels` clusters each event with a **precomputed
+N×N distance matrix** (`DBSCAN(metric="precomputed")`). The
 precomputed metric is there to handle phi wrap-around, but it makes memory grow
 as the square of the rechit count *in a single event*.
 

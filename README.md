@@ -22,6 +22,7 @@ built by `custom/` -- see [docs/derived-columns.md](docs/derived-columns.md).
 | [docs/derived-columns.md](docs/derived-columns.md) | `custom/`: the LLP and cluster collections, `columns.yaml` |
 | [docs/mds-study.md](docs/mds-study.md) | the MDS cluster study: RPC modes, timing, the six cluster populations, event display |
 | [docs/known-issues.md](docs/known-issues.md) | clustering memory on dense Cosmics events |
+| [docs/design-notes.md](docs/design-notes.md) | for readers of the code: which module does what, and why it is built this way |
 | [docs/histogram-renames.tsv](docs/histogram-renames.tsv) | old histogram name → new `region/cut/variable` name, per set |
 
 ---
@@ -186,7 +187,7 @@ suep-plotting/
 ├── datasets.yaml         # the dataset registry (files, labels, colours)
 ├── configs/<set>/        # one directory per config set (see above)
 ├── custom/               # derive(): LLPs, DBSCAN clustering, isolation, jet ID
-├── src/suep_plot/        # the framework: config loading, processing, plotting, Slurm
+├── src/suep_plot/        # the framework, one module per job (docs/design-notes.md)
 ├── scripts/              # comparison plots, event display, dump_config, smoke test
 ├── studies/              # written-up one-off studies (own READMEs)
 ├── docs/                 # the reference documentation

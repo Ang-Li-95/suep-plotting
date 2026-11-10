@@ -37,12 +37,8 @@ NO_OBJECT_DR = 999.0
 def _dr_to_nearest(clusters, objects):
     """dR from each cluster centroid to the closest object in the event.
 
-    :data:`NO_OBJECT_DR` in events with no such object (``ak.min`` over an empty
-    list): a cluster with no muon in the event is maximally isolated, so the
-    sentinel is deliberately larger than any real dR and passes every isolation
-    cut.  It overflows the dR axis, and those histograms keep the default
-    ``flow: sum``, so it shows up in their last bin.  Written out by hand
-    because the cluster collection is a plain record array with no vector
+    :data:`NO_OBJECT_DR` in events with no such object.  Written out by hand
+    because the cluster collection is a plain record array without vector
     behaviour, so ``.nearest()`` is unavailable.
     """
     deta = clusters.eta[:, :, None] - objects.eta[:, None, :]

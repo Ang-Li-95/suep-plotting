@@ -1,69 +1,22 @@
-"""The one YAML reader: ``_extends``, ``_include`` and ``_repeat``.
+"""The one YAML reader: ``_extends``, ``_include``, ``_registry``, ``_repeat``.
 
-Every config file in a config set is loaded through :func:`load_config_file`,
-so the three directives below mean the same thing wherever they appear —
-``histograms.yaml``, ``selections.yaml``, ``samples.yaml``, ``columns.yaml``,
-``corrections.yaml``, ``reweights.yaml`` and ``derived_plots.yaml`` alike.
+Every config file of a set is loaded through :func:`load_config_file`, so the
+directives mean the same thing in every file:
 
-``_extends: ../common`` (or a list, ``[../common, ../common_gen]``)
-    Inherit the same-named file from another config set.  This file's keys are
-    merged over the inherited ones (deeply, for nested mappings), and
-    ``some_name: null`` *deletes* an inherited definition -- or, nested,
-    removes one key of it (``some_sample: {max_files: null}``).  With a list the
-    bases are merged left to right and this file merges over the result, so a
-    study can compose ``common`` with ``common_gen`` instead of chaining.
-    Chains are followed too, and a cycle is an error.
+``_extends: ../common``    inherit the same-named file of another set (or of a
+                           list of sets, merged left to right); this file's
+                           keys merge over it, and ``name: null`` deletes one
+``_include: [a.yaml]``     merge in the definitions of the named files
+``_registry: ../x.yaml``   a pool to select from: a name with no value takes
+                           the pool entry, ``{_from: other}`` another's
+``_axes`` / ``_repeat``    expand one template over a list of substitutions
+                           (``<NAME>`` in keys and string values)
+``set.yaml``               ``extends:`` supplies every file the set does not
+                           have; also ``description:`` and ``abstract:``
 
-``_include: [../../datasets.yaml, more.yaml]``
-    Merge in definitions from shared fragment files.  Unlike ``_extends``,
-    which follows the config set, an include names one file directly.
-
-``_registry: ../../datasets.yaml``
-    A *pool to select from* rather than definitions to merge — what
-    ``samples.yaml`` does with the central dataset registry.  A name listed in
-    the file with no value takes the pool entry verbatim, ``name: {...}``
-    takes it with those keys overridden, and ``name: {_from: other, ...}``
-    bases it on pool entry ``other`` so one dataset can appear under several
-    config names.  A file with no ``_registry`` needs every definition spelled
-    out, as before.  (Kept distinct from ``_include`` on purpose: selecting
-    from a pool and merging definitions want opposite meanings for an empty
-    value.)
-
-``_repeat:``
-    Expand one template over a list of substitutions — the per-system
-    (csc/dt/rpc) loop that most of these files are made of::
-
-        _axes:
-          systems: [{SYS: csc, SYSU: CSC}, {SYS: dt, SYSU: DT}]
-
-        _repeat:
-          - over: systems              # or an inline list of mappings
-            defs:
-              llp_in_<SYS>:
-                level: object
-                expression: "events.llp.in<SYSU>"
-
-    ``<NAME>`` is substituted into keys and into every string leaf.  The sigil
-    is angle brackets, not braces, because the labels are full of LaTeX
-    (``$N_{\\mathrm{hits}}$``).  A value that is *exactly* one placeholder takes
-    the substitution's type rather than its text, so ``hi: <HI>`` with
-    ``HI: 500`` stays the integer 500 and ``edges: <EDGES>`` can carry a whole
-    list; a placeholder embedded in surrounding text always interpolates as a
-    string.  A loop that covers only some systems just lists those; there are
-    no conditionals.
-
-Keys starting with ``_`` are directives, never
-definitions — the convention the configs already used.  An unknown one is an
-error: a misspelled directive (``_extend:``) would otherwise be dropped and
-take everything it should have inherited with it.
-
-``set.yaml``
-    Optional, one per config set: ``extends: ../configs_mds`` makes every
-    config file the set does *not* have behave as ``_extends: ../configs_mds``
-    -- so a variant that changes one setting is ``set.yaml`` plus the one file
-    that differs.  ``description:`` is the one-line summary shown when ``-c``
-    names something that is not a set, and ``abstract: true`` marks a base
-    that is only ever inherited from (``suep-run`` refuses it).
+A key starting with ``_`` is a directive, never a definition, and an unknown
+one is an error.  docs/configuration.md is the reference for all of this;
+docs/design-notes.md says why it is built this way.
 """
 
 from __future__ import annotations

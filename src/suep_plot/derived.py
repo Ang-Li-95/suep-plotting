@@ -365,10 +365,8 @@ def _plot_efficiency_2d(name, cfg, h_num, h_den, sample_defs, output_dir, *,
 
 
 # The derived-plot types, each with the config keys naming its source
-# histograms.  One table, read both by plot_all (to decide which histograms a
-# task needs) and by plot_derived (to dispatch it) -- the two used to
-# carry separate copies, which is how a new type could be added to one and not
-# the other.
+# histograms: read by plot_all (which histograms a plot needs) and by
+# plot_derived (which renderer draws it).
 DERIVED_TYPES = {
     "profile_x":    (_plot_profile, ("source",)),
     "profile_y":    (_plot_profile, ("source",)),

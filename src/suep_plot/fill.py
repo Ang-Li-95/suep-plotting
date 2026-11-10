@@ -41,11 +41,8 @@ def compile_expr(expr: str):
     code = compile(expr, "<config expression>", "eval")
 
     def _eval(events):
-        # One namespace, passed as eval's *globals*, deliberately: a name in
-        # eval's locals is invisible to a nested scope, so with the two split a
-        # lambda or comprehension in a config expression died with
-        # "NameError: name 'ak' is not defined".  Globals are what nested
-        # scopes resolve against, so this is what makes them work.
+        # One namespace, as eval's *globals*: nested scopes (a lambda, a
+        # comprehension) resolve names there, not in eval's locals.
         return eval(  # noqa: S307 - trusted config expressions
             code,
             {"__builtins__": _SAFE_BUILTINS,
@@ -66,39 +63,15 @@ def is_jagged(arr) -> bool:
 def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
     """Attach every ``selections.yaml`` mask to *events* as a column of its name.
 
-    A selection is a named boolean array, which makes it exactly the kind of
-    thing an expression wants to reach: after this, ``electron_sel`` is
-    available as ``events.electron_sel``, so a histogram counts what the cut
-    keeps without restating it::
+    After this ``events.<selection>`` is the mask, so an expression can use a
+    cut without restating it (``ak.sum(events.electron_sel, axis=1)``).
+    Object-level masks stay jagged; missing values become False.
 
-        # selections.yaml -- the cut, written once
-        electron_sel:
-          level: object
-          collection: Electron
-          expression: "(events.Electron.pt > 10) & (events.Electron.cutBased >= 1)"
-
-        # histograms.yaml -- reaches for the mask, never re-derives it
-        n_electron_sel:
-          expression: "ak.sum(events.electron_sel, axis=1)"
-
-    Object-level masks arrive jagged, so ``ak.sum(..., axis=1)`` is the
-    multiplicity and ``ak.any(..., axis=1)`` the "has one" flag; event-level
-    masks are flat and usable directly. Because the column is the selection,
-    the plot and the cut cannot drift apart -- the alternative is two copies of
-    the same physics, and retuning a working point silently moves only one.
-
-    Called once per chunk, after the derived columns are attached, so masks over
-    derived collections (``events.cscCluster.matched``) work like any other.
-    A selection may read another one's column whichever order the two are
-    written in.
-
-    A selection that does not evaluate is fatal (:class:`FillError`): a mask
-    silently missing on one sample is a cut silently not applied.  A selection
-    whose name is already a field of ``events`` is skipped, with a message:
-    shadowing a real branch (a selection named ``Jet``) would change what
-    every other expression means.
-
-    Returns *events* with the columns added.
+    Called once per chunk, after the derived columns are attached.  A
+    selection may read another one's column, in either order.  One that does
+    not evaluate is fatal (:class:`FillError`); one named after an existing
+    field of ``events`` is skipped, with a message, so it cannot shadow a
+    real branch.  Returns *events* with the columns added.
     """
     pending = []
     for name, sel in sel_defs.items():

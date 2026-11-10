@@ -21,13 +21,9 @@ import numpy as np
 # and the per-cluster ``firstSystem`` field).
 SOURCE_CODES = {"csc": 0, "dt": 1, "rpc": 2}
 
-# Offsets that keep the flat ids of two merged systems from colliding: a DT
-# layer key and an RPC layer key are both small integers, and a DT and an RPC
-# chamber code can be identical.  Applied to the RPC component of a merge and
-# to nothing else -- RPC is never the primary system (it is merged *into* CSC
-# or DT), so CSC and DT keep their historical ids, and the shift means the same
-# thing in cscCluster and dtCluster instead of depending on the order the
-# components were passed in.
+# Offsets added to the layer and chamber ids of the RPC component of a merge,
+# so they cannot collide with the CSC or DT ids (all are small integers).
+# RPC is never the primary system, so CSC and DT ids are never shifted.
 _LAYER_KEY_STRIDE = 10 ** 12
 _CHAMBER_CODE_STRIDE = 1000
 
@@ -161,20 +157,11 @@ def _merge_hits(components):
     """Interleave several :func:`_flat_hits` dicts into one, event by event.
 
     The clustering runs on per-event slices of flat arrays, so the merged
-    arrays have to be ordered by event first and by source collection second
-    -- not simply concatenated, which would put all of one system's hits
-    before all of the other's.  The destination index of every hit is built
-    vectorized, then each array is scattered into place.
-
-    The layer/chamber ids of the RPC component are offset so that two systems
-    cannot share an id (a DT and an RPC chamber code are otherwise the same
-    small integer).  Keyed on the system, not on the position in *components*:
-    RPC is always the one merged in, never the primary, so CSC and DT keep the
-    ids they have always had -- a cluster's ``firstChamber`` still reads as the
-    plain CSC/DT chamber code and only an RPC-first cluster stands out -- and
-    ``+_CHAMBER_CODE_STRIDE`` means "RPC" in both merged collections rather
-    than "whichever component came second".  A single component is returned
-    as-is, which keeps single-system clustering bit-identical to before.
+    arrays are ordered by event first and by source collection second.  The
+    layer and chamber ids of the RPC component are offset
+    (:data:`_LAYER_KEY_STRIDE`, :data:`_CHAMBER_CODE_STRIDE`) so two systems
+    cannot share an id; CSC and DT keep theirs.  A single component is
+    returned as-is.
     """
     if len(components) == 1:
         return components[0]
@@ -232,26 +219,16 @@ RPC_CLUSTER_FIELDS = ("firstSystem", "nRPCHits", "nRPCHitsBx0", "rpcHitFrac",
 def _match_rpc(clusters, rpc, eps, system):
     """Attach the RPC timing of the rechits *near* each cluster (rpc_mode: match).
 
-    The alternative to merging: the clustering stays exactly the single-system
-    one, and the RPC rechits are associated to the finished clusters
-    afterwards -- every hit within *eps* in dR of a cluster centroid, assigned
-    to its nearest cluster so no hit dates two showers.
+    The clustering stays the single-system one; the RPC rechits are associated
+    to the finished clusters afterwards: every hit within *eps* in dR of a
+    cluster centroid, assigned to its nearest cluster so no hit dates two
+    showers.  RPC therefore adds nothing to the DBSCAN density.
 
-    RPC then contributes nothing to the DBSCAN density estimate, which is the
-    point.  RPC rechit times are flat in BX in data (only ~19% of the rechits
-    of a ZeroBias event sit at BX 0), so merged, RPC noise can push a
-    background cluster over ``min_samples``; matched, it can only annotate a
-    cluster the CSC or DT rechits already made on their own.  The cluster
-    variables therefore keep the values -- and the signal region keeps the
-    definition -- of the standard MDS analysis.
-
-    The fields are :data:`RPC_CLUSTER_FIELDS`, the same ones a merged cluster
-    carries.  ``rpcHitFrac`` means the same thing in both modes, the RPC share
-    of the cluster's hits: matching leaves the RPC hits out of ``size``, so it
-    is n / (size + n) here and n / size there.  ``firstSystem`` is always the
-    primary system, since no RPC hit is part of the cluster -- so the
-    ``first_not_rpc`` selections simply pass everything, rather than needing a
-    config of their own.
+    The fields are :data:`RPC_CLUSTER_FIELDS`, as for a merged cluster.
+    ``rpcHitFrac`` is the RPC share of the hits in both modes: n / (size + n)
+    here, since the RPC hits are not part of ``size``.  ``firstSystem`` is
+    always the primary system.  Why match rather than merge:
+    docs/design-notes.md.
     """
     hits = _flat_hits(rpc, "Time", "rpc")
     code = SOURCE_CODES[system]
@@ -301,21 +278,10 @@ def _match_rpc(clusters, rpc, eps, system):
 def _rpc_time(bx):
     """Timing of one cluster's RPC hits, from the bunch crossing.
 
-    RPC is the only muon subdetector whose MDSNano rechits carry any timing at
-    all, so its hits are what date a CSC or DT cluster.  The estimate is the
-    bunch crossing: mean / median / RMS in BX units (multiply by 25 ns for a
-    time), plus ``rpcOutOfTimeFrac``, the fraction of the cluster's RPC hits
-    outside the in-time BX -- the handle on a late, displaced shower.
-
-    The rechit *time* is deliberately not used.  No MDSNano production writes
-    it: ``Time`` is exactly 0 and ``TimeError`` exactly -1 for every RPC rechit
-    in every sample checked (private signal, central DY, ZeroBias data -- 841k
-    rechits, one distinct value each), so a mean, median, spread or
-    inverse-variance weighted time computed from it says nothing.  The BX,
-    by contrast, is filled and spans -3..4.  If a production ever fills the
-    time, add the fields back here and in configs/common/histograms.yaml.
-
-    A cluster with no RPC hit at all gives NaN throughout.
+    Mean / median / RMS in BX units (multiply by 25 ns for a time), plus
+    ``rpcOutOfTimeFrac``, the fraction of the hits outside the in-time BX.
+    The rechit ``Time`` is not used: no MDSNano production fills it (see
+    docs/derived-columns.md).  NaN throughout for a cluster with no RPC hit.
     """
     fields = ("rpcBx", "rpcBxMedian", "rpcBxSpread", "rpcOutOfTimeFrac")
     out = dict.fromkeys(fields, np.nan)

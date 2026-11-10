@@ -279,17 +279,11 @@ def _dr_kernel(ev_off, hit_eta, hit_phi, hit_idx, hit_src, keys_flat, llp_off,
                pair_max_hits):
     """Compiled inner loop of :func:`_llp_rechit_dr` (see it for definitions).
 
-    Every array is flat and preallocated by the caller; the five output arrays
-    are written in place.  ``ev_off`` slices the matched-hit arrays per event,
+    Every array is flat and preallocated by the caller; the output arrays are
+    written in place.  ``ev_off`` slices the matched-hit arrays per event,
     ``llp_off`` slices ``keys_flat`` and the output rows per event.
-    ``pair_max_hits`` is passed in as an argument, which it must be: numba
-    would freeze a module-level constant into the cached machine code at the
-    first compile.
-
-    Compiled because the groups are tiny (~3 rechits per LLP): in numpy this
-    loop was ~17x slower, spending almost all of it on per-call dispatch rather
-    than arithmetic.  Results match the numpy version to the last ulp (numpy
-    sums pairwise, this sums in a plain loop).
+    ``pair_max_hits`` must be an argument: numba would freeze a module-level
+    constant into the cached machine code.
     """
     two_pi = 2.0 * np.pi
     for i in range(len(ev_off) - 1):
