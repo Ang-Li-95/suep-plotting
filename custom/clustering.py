@@ -329,9 +329,6 @@ def _rpc_time(bx):
     return out
 
 
-_NO_LLP = np.zeros(0, dtype=np.int64)
-
-
 def dbscan_labels(eta, phi, eps, min_samples):
     """DBSCAN labels of one event's rechits (-1 = noise), in the eta-phi dR metric.
 
@@ -352,166 +349,236 @@ def dbscan_labels(eta, phi, eps, min_samples):
                   metric="precomputed").fit_predict(dmat)
 
 
+# ── the fields of one cluster ──────────────────────────────────────
+# Each function takes the arrays of one cluster's hits and returns the fields
+# it computes; _cluster_hits puts them together.  The names below are the
+# record's fields, in order.
+
+_POSITION_FIELDS = ("size", "eta", "phi", "x", "y", "z", "r", "etaSpread",
+                    "phiSpread", "rSpread", "zSpread")
+_STATION_FIELDS = ("nStation", "stationSpan", "avgStation", "maxStationFrac")
+_FIRST_HIT_FIELDS = ("firstChamber", "firstStation")
+_TRUTH_FIELDS = ("nMatchedHits", "matchedLLPIdx", "matched", "nMatchedLLP", "hasTruth")
+_TIME_FIELDS = ("time", "timeSpread", "ootHitFrac")
+
+# Fields that are not float64.
+_FIELD_DTYPES = {
+    "size": np.int64, "nStation": np.int64, "stationSpan": np.int64,
+    "nLayer": np.int64, "nZLayer": np.int64, "nMatchedHits": np.int64,
+    "firstChamber": np.int64, "firstStation": np.int64,
+    "matchedLLPIdx": np.int64, "matched": np.bool_,
+    "nMatchedLLP": np.int64, "hasTruth": np.bool_,
+    "firstSystem": np.int64, "nRPCHits": np.int64, "nRPCHitsBx0": np.int64,
+}
+
+
+def _unit_fields(unit: str) -> tuple:
+    """Field names of :func:`_hits_per_unit` for ``Layer`` or ``ZLayer``."""
+    low = unit[0].lower() + unit[1:]
+    return (f"n{unit}", f"{low}HitsMean", f"{low}HitsRMS", f"{low}HitsRelRMS",
+            f"max{unit}Frac")
+
+
+def _cluster_fields(has_time: bool, merged: bool) -> list:
+    """The per-cluster scalar fields, in the order of the cluster record."""
+    fields = [*_POSITION_FIELDS, *_STATION_FIELDS, *_unit_fields("Layer"),
+              *_unit_fields("ZLayer"), *_FIRST_HIT_FIELDS, *_TRUTH_FIELDS]
+    if has_time:
+        fields += _TIME_FIELDS
+    if merged:
+        fields += RPC_CLUSTER_FIELDS
+    return fields
+
+
+def _position(eta, phi, x, y, z) -> dict:
+    """Size, centroid and spread of a cluster.
+
+    phi is averaged on the circle, so hits either side of +-pi give a centroid
+    between them and not at 0.
+    """
+    cphi = np.arctan2(np.sin(phi).sum(), np.cos(phi).sum())
+    dphi = (phi - cphi + np.pi) % (2 * np.pi) - np.pi
+    return {
+        "size": len(eta),
+        "eta": float(eta.mean()),
+        "phi": float(cphi),
+        "x": float(x.mean()),
+        "y": float(y.mean()),
+        "z": float(z.mean()),
+        "r": float(np.hypot(x.mean(), y.mean())),
+        "etaSpread": float(eta.std()),
+        "phiSpread": float(np.sqrt(np.mean(dphi ** 2))),
+        "rSpread": float(np.hypot(x, y).std()),
+        "zSpread": float(z.std()),
+    }
+
+
+def _stations(station) -> dict:
+    """Hit multiplicity across stations.
+
+    A shower is contained in one station, a punch-through muon crosses several.
+    """
+    st = np.abs(station)
+    _, counts = np.unique(st, return_counts=True)
+    return {
+        "nStation": len(counts),
+        "stationSpan": int(st.max() - st.min()),
+        "avgStation": float(st.mean()),
+        "maxStationFrac": float(counts.max() / counts.sum()),
+    }
+
+
+def _hits_per_unit(keys, unit: str) -> dict:
+    """How the hits spread over depth units: moments of the hits-per-unit count.
+
+    A muon leaves about one hit per layer (uniform), a shower a strongly
+    varying number ("fuzziness").  *unit* is ``Layer`` (the ids of
+    :func:`_flat_layer_key`) or ``ZLayer`` (the layer plane from quantized
+    global z, see :func:`_flat_zlayer_key` for its caveat).
+    """
+    _, counts = np.unique(keys, return_counts=True)
+    mean = float(counts.mean())
+    names = _unit_fields(unit)
+    return dict(zip(names, (len(counts), mean, float(counts.std()),
+                            float(counts.std()) / mean,
+                            float(counts.max() / counts.sum()))))
+
+
+def _first_hit(dist, chamber, station) -> tuple[dict, int]:
+    """Where the cluster starts: its hit closest to the interaction point.
+
+    A punch-through begins at an innermost chamber.  Also returns that hit's
+    index within the cluster.
+    """
+    first = int(np.argmin(dist))
+    return {"firstChamber": int(chamber[first]),
+            "firstStation": int(abs(station[first]))}, first
+
+
+_NO_LLP = np.zeros(0, dtype=np.int64)
+
+
+def _truth_match(llpidx, match_min_hits: int) -> tuple[dict, np.ndarray, np.ndarray]:
+    """Which LLPs the cluster's hits come from.
+
+    The scalar fields name the dominant LLP (``matchedLLPIdx``, -1 unless it
+    clears *match_min_hits*) and how many distinct LLPs clear the threshold
+    (``nMatchedLLP``): a cluster can overlap more than one LLP's shower.
+
+    Also returns *which* LLPs clear it and their hit counts.  The dominant one
+    alone would make a second LLP whose shower landed in the same cluster look
+    unreconstructed even though its hits are right there.
+    """
+    idx = llpidx[llpidx >= 0]
+    if len(idx):
+        uniq, counts = np.unique(idx, return_counts=True)
+        best, nbest = int(uniq[counts.argmax()]), int(counts.max())
+        clears = counts >= match_min_hits
+        n_clearing = int(clears.sum())
+        all_idx = uniq[clears].astype(np.int64)
+        all_hits = counts[clears].astype(np.int64)
+    else:
+        best, nbest, n_clearing = -1, 0, 0
+        all_idx = all_hits = _NO_LLP
+    matched = nbest >= match_min_hits
+    return {"nMatchedHits": nbest,
+            "matchedLLPIdx": best if matched else -1,
+            "matched": matched,
+            "nMatchedLLP": n_clearing}, all_idx, all_hits
+
+
+def _hit_time(time, oot_cut: float) -> dict:
+    """Mean, spread and out-of-time fraction of the cluster's rechit times.
+
+    The spread separates a real shower (every hit from the same particle, so
+    one time) from a cluster DBSCAN built out of unrelated in-time and
+    out-of-time hits; ``ootHitFrac`` says how much of it sits outside
+    +-*oot_cut*.  NaN throughout if no hit has a time.
+    """
+    t = time[np.isfinite(time)]
+    if not len(t):
+        return dict.fromkeys(_TIME_FIELDS, np.nan)
+    return {"time": float(t.mean()),
+            "timeSpread": float(t.std()),
+            "ootHitFrac": float((np.abs(t) > oot_cut).mean())}
+
+
+def _rpc_content(source, bx, first: int) -> dict:
+    """The RPC hits a merged cluster picked up (:data:`RPC_CLUSTER_FIELDS`)."""
+    is_rpc = source == SOURCE_CODES["rpc"]
+    rpc_bx = bx[is_rpc]
+    return {"firstSystem": int(source[first]),
+            "nRPCHits": int(is_rpc.sum()),
+            "nRPCHitsBx0": int(np.count_nonzero(rpc_bx == 0)),
+            "rpcHitFrac": float(is_rpc.sum() / len(source)),
+            **_rpc_time(rpc_bx)}
+
+
+def _one_cluster(c: dict, has_truth: bool, has_time: bool, merged: bool,
+                 primary_code: int, settings) -> tuple[dict, np.ndarray, np.ndarray]:
+    """Every field of one cluster, from the arrays *c* of its hits."""
+    row = _position(c["eta"], c["phi"], c["x"], c["y"], c["z"])
+    row.update(_stations(c["station"]))
+    row.update(_hits_per_unit(c["layerkey"], "Layer"))
+    row.update(_hits_per_unit(c["zlayerkey"], "ZLayer"))
+    first_hit, first = _first_hit(c["dist"], c["chamber"], c["station"])
+    row.update(first_hit)
+    truth, all_idx, all_hits = _truth_match(c["llpidx"], settings["match_min_hits"])
+    row.update(truth, hasTruth=has_truth)
+    if has_time:
+        # ``time`` is the primary system's time only (CSC Tpeak): the RPC hits
+        # a merged cluster picked up are on a different clock and are dated
+        # apart, by the rpcBx* fields.
+        time = c["time"][c["source"] == primary_code] if merged else c["time"]
+        row.update(_hit_time(time, settings["oot_time_cut"]))
+    if merged:
+        row.update(_rpc_content(c["source"], c["bx"], first))
+    return row, all_idx, all_hits
+
+
 def _cluster_hits(hits, eps, min_samples, settings, merged=False):
     """DBSCAN one (possibly merged) flat hit collection -> cluster records.
 
     ``hits`` is a :func:`_flat_hits` dict, or several of them run through
     :func:`_merge_hits`; ``merged`` adds the fields that only mean something
     when more than one system went in (the RPC timing estimate, the RPC hit
-    content and which system the innermost hit came from).
+    content and which system the innermost hit came from).  A system with a
+    rechit time (CSC ``Tpeak``) gets ``time`` / ``timeSpread`` /
+    ``ootHitFrac`` from it.
 
-    A system with a rechit time (CSC ``Tpeak``) gets ``time`` / ``timeSpread``
-    / ``ootHitFrac`` from it -- the mean, the RMS and the fraction of the
-    cluster's hits outside +-``oot_time_cut``.  The spread and the out-of-time
-    fraction are the out-of-time-background handles: a real shower deposits
-    every hit at one time, a cluster DBSCAN assembled from unrelated pile-up
-    and cavern hits does not.
+    Events are processed as slices of the flat arrays; what is computed per
+    cluster is in :func:`_one_cluster`.
     """
-    match_min_hits = settings["match_min_hits"]
-    # Per cluster, every LLP clearing match_min_hits and its hit count.
-    all_idx, all_hits = [], []
-    oot_cut = settings["oot_time_cut"]
     counts = hits["counts"]
     offsets = np.concatenate([[0], np.cumsum(counts)])
-    eta, phi = hits["eta"], hits["phi"]
-    xs, ys, zs = hits["x"], hits["y"], hits["z"]
-    station, dist = hits["station"], hits["dist"]
-    layerkey, zlayerkey, chamber = hits["layerkey"], hits["zlayerkey"], hits["chamber"]
-    llpidx, source = hits["llpidx"], hits["source"]
-    has_truth = hits["has_truth"]
-    tvals = hits["time"] if hits["has_time"] else None
-    primary_code, rpc_code = hits["code"], SOURCE_CODES["rpc"]
+    has_time, has_truth = hits["has_time"], hits["has_truth"]
 
-    fields = ["size", "eta", "phi", "x", "y", "z", "r", "etaSpread", "phiSpread",
-              "rSpread", "zSpread",
-              "nStation", "stationSpan", "avgStation", "maxStationFrac",
-              "nLayer", "layerHitsMean", "layerHitsRMS", "layerHitsRelRMS",
-              "maxLayerFrac",
-              "nZLayer", "zLayerHitsMean", "zLayerHitsRMS", "zLayerHitsRelRMS",
-              "maxZLayerFrac",
-              "firstChamber", "firstStation",
-              "nMatchedHits", "matchedLLPIdx", "matched", "nMatchedLLP", "hasTruth"]
-    if tvals is not None:
-        fields += ["time", "timeSpread", "ootHitFrac"]
-    if merged:
-        fields += list(RPC_CLUSTER_FIELDS)
+    fields = _cluster_fields(has_time, merged)
     out = {f: [] for f in fields}
+    # Per cluster, every LLP clearing match_min_hits and its hit count.
+    all_idx, all_hits = [], []
     nclu = np.zeros(len(counts), dtype=np.int64)
 
     for i in range(len(counts)):
-        n = counts[i]
-        if n < min_samples:
+        if counts[i] < min_samples:
             continue
         s = slice(offsets[i], offsets[i + 1])
-        e, p = eta[s], phi[s]
-        labels = dbscan_labels(e, p, eps, min_samples)
-        for k in range(labels.max() + 1):
-            m = labels == k
-            cphi = np.arctan2(np.sin(p[m]).sum(), np.cos(p[m]).sum())
-            dphic = (p[m] - cphi + np.pi) % (2 * np.pi) - np.pi
-            idx = llpidx[s][m]
-            idx = idx[idx >= 0]
-            if len(idx):
-                uniq, cnt = np.unique(idx, return_counts=True)
-                best, nbest = int(uniq[cnt.argmax()]), int(cnt.max())
-                # How many distinct LLPs clear the match threshold in this
-                # cluster (a cluster can overlap more than one LLP's shower).
-                clears = cnt >= match_min_hits
-                nmatched_llp = int(clears.sum())
-                # ... and *which* ones, with their hit counts.  matchedLLPIdx
-                # alone names only the dominant LLP, so a second LLP whose
-                # shower landed in the same cluster would otherwise look
-                # unreconstructed even though its hits are right there.
-                all_idx.append(uniq[clears].astype(np.int64))
-                all_hits.append(cnt[clears].astype(np.int64))
-            else:
-                best, nbest, nmatched_llp = -1, 0, 0
-                all_idx.append(_NO_LLP)
-                all_hits.append(_NO_LLP)
-            matched = nbest >= match_min_hits
-            out["size"].append(int(m.sum()))
-            out["eta"].append(float(e[m].mean()))
-            out["phi"].append(float(cphi))
-            out["x"].append(float(xs[s][m].mean()))
-            out["y"].append(float(ys[s][m].mean()))
-            out["z"].append(float(zs[s][m].mean()))
-            out["r"].append(float(np.hypot(xs[s][m].mean(), ys[s][m].mean())))
-            out["etaSpread"].append(float(e[m].std()))
-            out["phiSpread"].append(float(np.sqrt(np.mean(dphic ** 2))))
-            out["rSpread"].append(float(np.hypot(xs[s][m], ys[s][m]).std()))
-            out["zSpread"].append(float(zs[s][m].std()))
-            # Hit multiplicity across stations: a shower is contained in one
-            # station, a punch-through muon crosses several.
-            st = np.abs(station[s][m])
-            _, scnt = np.unique(st, return_counts=True)
-            out["nStation"].append(len(scnt))
-            out["stationSpan"].append(int(st.max() - st.min()))
-            out["avgStation"].append(float(st.mean()))
-            out["maxStationFrac"].append(float(scnt.max() / scnt.sum()))
-            # Hit multiplicity across layers: a muon leaves ~1 hit per layer
-            # (uniform), a shower a strongly varying number ("fuzziness").
-            _, lcnt = np.unique(layerkey[s][m], return_counts=True)
-            lmean = float(lcnt.mean())
-            out["nLayer"].append(len(lcnt))
-            out["layerHitsMean"].append(lmean)
-            out["layerHitsRMS"].append(float(lcnt.std()))
-            out["layerHitsRelRMS"].append(float(lcnt.std()) / lmean)
-            out["maxLayerFrac"].append(float(lcnt.max() / lcnt.sum()))
-            # Same moments with the layer plane taken from quantized global z
-            # (CSC only in practice; see _flat_zlayer_key for the caveat on
-            # ntuples that store one z per chamber).
-            _, zcnt = np.unique(zlayerkey[s][m], return_counts=True)
-            zmean = float(zcnt.mean())
-            out["nZLayer"].append(len(zcnt))
-            out["zLayerHitsMean"].append(zmean)
-            out["zLayerHitsRMS"].append(float(zcnt.std()))
-            out["zLayerHitsRelRMS"].append(float(zcnt.std()) / zmean)
-            out["maxZLayerFrac"].append(float(zcnt.max() / zcnt.sum()))
-            # Where the cluster starts: the hit closest to the interaction
-            # point.  A punch-through begins at an innermost chamber.
-            first = int(np.argmin(dist[s][m]))
-            out["firstChamber"].append(int(chamber[s][m][first]))
-            out["firstStation"].append(int(abs(station[s][m][first])))
-            out["nMatchedHits"].append(nbest)
-            out["matchedLLPIdx"].append(best if matched else -1)
-            out["matched"].append(matched)
-            out["nMatchedLLP"].append(nmatched_llp)
-            out["hasTruth"].append(has_truth)
-            src = source[s][m] if merged else None
-            if tvals is not None:
-                # ``time`` is the primary system's time only (CSC Tpeak): the
-                # RPC hits a merged cluster picked up are dated apart, by the
-                # rpcBx* fields, and are on a different clock.
-                t = tvals[s][m] if src is None else tvals[s][m][src == primary_code]
-                t = t[np.isfinite(t)]
-                # The spread separates a real shower (every hit from the same
-                # particle, so one time) from a cluster DBSCAN built out of
-                # unrelated in-time and out-of-time hits; ootHitFrac says how
-                # much of it sits outside the in-time window.
-                out["time"].append(float(t.mean()) if len(t) else np.nan)
-                out["timeSpread"].append(float(t.std()) if len(t) else np.nan)
-                out["ootHitFrac"].append(float((np.abs(t) > oot_cut).mean())
-                                         if len(t) else np.nan)
-            if merged:
-                isrpc = src == rpc_code
-                rpc_bx = hits["bx"][s][m][isrpc]
-                out["firstSystem"].append(int(src[first]))
-                out["nRPCHits"].append(int(isrpc.sum()))
-                out["nRPCHitsBx0"].append(int(np.count_nonzero(rpc_bx == 0)))
-                out["rpcHitFrac"].append(float(isrpc.sum() / m.sum()))
-                for f, v in _rpc_time(rpc_bx).items():
-                    out[f].append(v)
+        event = {name: hits[name][s] for name in _HIT_ARRAYS}
+        labels = dbscan_labels(event["eta"], event["phi"], eps, min_samples)
         nclu[i] = labels.max() + 1
+        for k in range(nclu[i]):
+            in_cluster = labels == k
+            cluster = {name: values[in_cluster] for name, values in event.items()}
+            row, idx, n_hits = _one_cluster(cluster, has_truth, has_time, merged,
+                                            hits["code"], settings)
+            for f in fields:
+                out[f].append(row[f])
+            all_idx.append(idx)
+            all_hits.append(n_hits)
 
-    dtypes = {"size": np.int64, "nStation": np.int64, "stationSpan": np.int64,
-              "nLayer": np.int64, "nZLayer": np.int64, "nMatchedHits": np.int64,
-              "firstChamber": np.int64, "firstStation": np.int64,
-              "matchedLLPIdx": np.int64, "matched": np.bool_,
-              "nMatchedLLP": np.int64, "hasTruth": np.bool_,
-              "firstSystem": np.int64, "nRPCHits": np.int64,
-              "nRPCHitsBx0": np.int64}
-    clusters = ak.zip({f: ak.unflatten(np.asarray(v, dtype=dtypes.get(f, np.float64)), nclu)
-                       for f, v in out.items()})
+    clusters = ak.zip({
+        f: ak.unflatten(np.asarray(v, dtype=_FIELD_DTYPES.get(f, np.float64)), nclu)
+        for f, v in out.items()})
     # (event, cluster, matched-LLP): variable length, so attached after the
     # zip of the per-cluster scalars rather than inside it.
     for name, vals in (("matchedLLPIdxAll", all_idx),
