@@ -60,14 +60,14 @@ ISO_SELECTIONS = {"drMuon": "muon_sel_foriso", "drJet": "jet_sel_foriso"}
 def _selected_objects(events, name, selection):
     """Objects passing a selections.yaml entry, or None if its collection is absent.
 
-    *selection* is the entry as written -- a ``collection`` naming what the
+    *selection* is the entry's ``Selection`` -- a ``collection`` naming what the
     per-object mask is over, and an ``expression`` in the ordinary config
     dialect (``events.Muon.pt > 10``, the same one histograms.yaml uses).  A
     missing collection is not an error: a file with no ``Muon`` branch simply
     has no muon to be near, which :func:`_cluster_isolation` turns into the
     "maximally isolated" sentinel.
     """
-    collection = selection.get("collection")
+    collection = selection.collection
     if not collection:
         raise ValueError(
             f"selections.yaml: '{name}' is used to select objects, so it needs a "
@@ -80,14 +80,14 @@ def _selected_objects(events, name, selection):
         # names in eval's locals are invisible to nested scopes, which would
         # make a lambda or comprehension in a selection fail on 'ak'.
         keep = eval(  # noqa: S307 - trusted config expressions
-            selection["expression"],
+            selection.expression,
             {"__builtins__": _SAFE_BUILTINS,
              "events": events, "ev": events, "ak": ak, "np": np},
         )
     except Exception as exc:
         raise ValueError(
             f"selections.yaml: '{name}' failed on collection '{collection}': "
-            f"{selection['expression']!r}\n  {type(exc).__name__}: {exc}") from exc
+            f"{selection.expression!r}\n  {type(exc).__name__}: {exc}") from exc
 
     return events[collection][keep]
 

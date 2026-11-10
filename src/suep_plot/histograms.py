@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import difflib
 import functools
+from dataclasses import dataclass, field
 
 import awkward as ak
 import hist
@@ -50,6 +51,160 @@ REMOVED_ENTRY_KEYS = ("expression", "expression_x", "expression_y",
 
 class FillError(ValueError):
     """An expression that does not evaluate on a sample: fatal, with its context."""
+
+
+# ── what the loaders produce ──────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class Axis:
+    """What one axis fills and how it is binned: ``edges``, or bins/lo/hi."""
+
+    expression: str
+    bins: int | None = None
+    lo: float | None = None
+    hi: float | None = None
+    edges: tuple | None = None
+    label: str | None = None
+
+    def __post_init__(self):
+        if not self.expression:
+            raise ValueError("no expression")
+        if self.edges is None and None in (self.bins, self.lo, self.hi):
+            raise ValueError("no binning -- needs edges, or bins: [n, lo, hi]")
+
+    def hist_axis(self, name: str, default_label: str) -> hist.axis:
+        """The hist axis: Variable for ``edges``, Regular otherwise."""
+        label = default_label if self.label is None else self.label
+        if self.edges is not None:
+            return hist.axis.Variable([float(e) for e in self.edges],
+                                      name=name, label=label)
+        return hist.axis.Regular(self.bins, self.lo, self.hi, name=name, label=label)
+
+    def to_dict(self, suffix: str = "") -> dict:
+        out = {"expression": self.expression}
+        if self.edges is not None:
+            out["edges"] = list(self.edges)
+        else:
+            out.update(bins=self.bins, lo=self.lo, hi=self.hi)
+        if self.label is not None:
+            out["label"] = self.label
+        return {f"{k}{suffix}": v for k, v in out.items()}
+
+    @classmethod
+    def from_dict(cls, cfg: dict, suffix: str = "") -> "Axis":
+        edges = cfg.get(f"edges{suffix}")
+        return cls(expression=cfg.get(f"expression{suffix}"),
+                   bins=cfg.get(f"bins{suffix}"), lo=cfg.get(f"lo{suffix}"),
+                   hi=cfg.get(f"hi{suffix}"),
+                   edges=None if edges is None else tuple(edges),
+                   label=cfg.get(f"label{suffix}"))
+
+
+@dataclass(frozen=True)
+class Histogram:
+    """One histogram: its axes, the cuts before the fill, and how it is drawn.
+
+    ``style`` holds the plot-time keys (``log_y``, ``rebin``, ``flow``,
+    ``blind``, ``annotation``, ``log_z``, ...); they do not affect the fill.
+    """
+
+    name: str
+    x: Axis
+    y: Axis | None = None
+    selections: tuple = ()
+    weight: str | None = None
+    style: dict = field(default_factory=dict)
+
+    @property
+    def is_2d(self) -> bool:
+        return self.y is not None
+
+    @property
+    def axes(self) -> tuple:
+        return (self.x,) if self.y is None else (self.x, self.y)
+
+    def to_dict(self) -> dict:
+        """The flat form stored in the pickles and read by the plots.
+
+        1D: ``expression`` / ``bins`` / ``lo`` / ``hi`` (or ``edges``) /
+        ``label``; 2D: the same keys with ``_x`` and ``_y``.  Then the style
+        keys, ``selections`` and, if set, ``weight``.
+        """
+        if self.y is None:
+            out = self.x.to_dict()
+        else:
+            out = {**self.x.to_dict("_x"), **self.y.to_dict("_y")}
+        out.update(self.style)
+        out["selections"] = list(self.selections)
+        if self.weight:
+            out["weight"] = self.weight
+        return out
+
+    @classmethod
+    def from_dict(cls, name: str, cfg: dict) -> "Histogram":
+        """A histogram from its flat form (the inverse of :meth:`to_dict`)."""
+        two_d = "expression_x" in cfg
+        suffixes = ("_x", "_y") if two_d else ("",)
+        axis_keys = {f"{k}{s}" for k in AXIS_KEYS for s in suffixes}
+        style = {k: v for k, v in cfg.items()
+                 if k not in axis_keys | {"selections", "weight", "per_object"}}
+        return cls(name, Axis.from_dict(cfg, suffixes[0]),
+                   Axis.from_dict(cfg, "_y") if two_d else None,
+                   tuple(_as_list(cfg.get("selections"))), cfg.get("weight"), style)
+
+
+SELECTION_LEVELS = ("event", "object")
+
+
+@dataclass(frozen=True)
+class Selection:
+    """One named cut: a boolean expression, per event or per object.
+
+    ``level`` is optional and must agree with the mask (it is read off the
+    expression); ``collection`` names what an object-level mask is over, for
+    the derived-column steps that select objects with it.
+    """
+
+    expression: str
+    level: str | None = None
+    collection: str | None = None
+    label: str | None = None
+
+    def __post_init__(self):
+        if not self.expression:
+            raise ValueError("no 'expression'")
+        if self.level is not None and self.level not in SELECTION_LEVELS:
+            raise ValueError(f"'level' must be one of {SELECTION_LEVELS}, "
+                             f"got {self.level!r}")
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in vars(self).items() if v is not None}
+
+
+def as_histograms(defs: dict) -> dict:
+    """``{name: flat dict}`` -> ``{name: Histogram}`` (stored definitions, tests)."""
+    return {name: cfg if isinstance(cfg, Histogram) else Histogram.from_dict(name, cfg)
+            for name, cfg in defs.items()}
+
+
+def as_selections(defs: dict, where: str = "selections") -> dict:
+    """``{name: mapping}`` -> ``{name: Selection}``, reporting a bad entry by name."""
+    out = {}
+    for name, cfg in defs.items():
+        if isinstance(cfg, Selection):
+            out[name] = cfg
+            continue
+        cfg = dict(cfg or {})
+        known = tuple(Selection.__dataclass_fields__)
+        unknown = sorted(set(cfg) - set(known))
+        try:
+            if unknown:
+                raise ValueError(f"unknown key(s) {unknown}; known: {', '.join(known)}")
+            out[name] = Selection(**{"expression": None, **cfg})
+        except ValueError as e:
+            raise ConfigError(f"ERROR in {where}: selection '{name}': {e}") from None
+    return out
 
 
 def _bins_list(cfg: dict, where: str) -> dict:
@@ -252,34 +407,39 @@ def region_hist_name(region: str, cut: str | None, leaf: str) -> str:
     return f"{region}/{cut}/{leaf}" if cut else f"{region}/{leaf}"
 
 
-def _resolved_axis(var: str, overrides: dict, variables: dict, where: str) -> dict:
+def _resolved_axis(var: str, overrides: dict, variables: dict, where: str) -> Axis:
     """The catalog variable's axis with an entry's overrides laid over it."""
     if var not in variables:
         close = difflib.get_close_matches(var, list(variables), n=3)
         hint = f"; did you mean {', '.join(close)}?" if close else ""
         raise ConfigError(f"ERROR in {where}: unknown variable '{var}'{hint}")
     base = {k: v for k, v in variables[var].items() if k in AXIS_KEYS}
-    return _overlay(base, _bins_list(overrides, where))
+    try:
+        return Axis.from_dict(_overlay(base, _bins_list(overrides, where)))
+    except ValueError as e:
+        raise ConfigError(f"ERROR in {where}: variable '{var}': {e}") from None
 
 
-def _entry_hist(spec, variables: dict, where: str) -> tuple[str, dict]:
-    """One region entry -> (leaf name, histogram definition).
+def _entry_histogram(name: str, axes: list, rest: dict, selections: list,
+                     annotation: str, variables: dict, where: str) -> Histogram:
+    """The histogram of one region entry (see :func:`_region_entry`).
 
-    The definition is the flat form the fill and the plots read: 1D has
-    ``expression`` / ``bins`` / ``lo`` / ``hi`` (or ``edges``) / ``label``,
-    2D the same keys with ``_x`` and ``_y``.
+    *selections* are the region's and the cut's; the entry's own come after
+    them.  A 1D histogram starts from its variable's display defaults.
     """
-    leaf, axes, rest = _region_entry(spec, where)
+    rest = dict(rest)
+    selections = tuple(selections) + tuple(_as_list(rest.pop("selections", None)))
+    weight = rest.pop("weight", None)
     resolved = [_resolved_axis(var, over, variables, where) for var, over in axes]
-    if len(axes) == 1:
-        return leaf, {**variable_display(variables, axes[0][0]), **resolved[0], **rest}
-    cfg = {f"{k}_x": v for k, v in resolved[0].items()}
-    cfg.update({f"{k}_y": v for k, v in resolved[1].items()})
-    return leaf, {**cfg, **rest}
+    style = variable_display(variables, axes[0][0]) if len(axes) == 1 else {}
+    style = {**style, **rest}
+    if annotation:
+        style.setdefault("annotation", annotation)
+    return Histogram(name, *resolved, selections=selections, weight=weight, style=style)
 
 
 def expand_regions(regions: dict, variables: dict, path="histograms.yaml") -> dict:
-    """``regions:`` -> one histogram definition per (region, cut, variable).
+    """``regions:`` -> one :class:`Histogram` per (region, cut, variable).
 
     A region names its event-level cuts (``evt_sel``, AND-ed), the variables to
     fill once per event after them (``evt_vars``), and named object-level
@@ -290,14 +450,14 @@ def expand_regions(regions: dict, variables: dict, path="histograms.yaml") -> di
     """
     out: dict = {}
 
-    def add(name, cfg, selections, annotation, where):
+    def add(region, cut, spec, selections, annotation, where):
+        leaf, axes, rest = _region_entry(spec, where)
+        name = region_hist_name(region, cut, leaf)
         if name in out:
             raise ConfigError(f"ERROR in {where}: '{name}' is listed twice; "
                               "give one of them a 'name:'")
-        cfg["selections"] = list(selections) + _as_list(cfg.get("selections"))
-        if annotation:
-            cfg.setdefault("annotation", annotation)
-        out[name] = cfg
+        out[name] = _entry_histogram(name, axes, rest, selections, annotation,
+                                     variables, where)
 
     for rname, region in (regions or {}).items():
         if region is None:
@@ -317,48 +477,30 @@ def expand_regions(regions: dict, variables: dict, path="histograms.yaml") -> di
         rlabel = region.get("label", rname)
 
         for spec in region.get("evt_vars") or []:
-            ewhere = f"{where}.evt_vars"
-            leaf, cfg = _entry_hist(spec, variables, ewhere)
-            add(region_hist_name(rname, None, leaf), cfg, evt_sel, rlabel, ewhere)
+            add(rname, None, spec, evt_sel, rlabel, f"{where}.evt_vars")
 
-        for alias, cut in (region.get("objects") or {}).items():
-            if cut is None:
+        for alias, cut_cfg in (region.get("objects") or {}).items():
+            if cut_cfg is None:
                 continue
             cwhere = f"{where}.objects.{alias}"
-            if not isinstance(cut, dict):
+            if not isinstance(cut_cfg, dict):
                 raise ConfigError(f"ERROR in {cwhere}: an object cut is a mapping "
                                   f"of {', '.join(CUT_KEYS)}")
-            unknown = sorted(set(cut) - set(CUT_KEYS))
+            unknown = sorted(set(cut_cfg) - set(CUT_KEYS))
             if unknown:
                 raise ConfigError(f"ERROR in {cwhere}: unknown key(s) {unknown}; "
                                   f"known: {', '.join(CUT_KEYS)}")
-            clabel = cut.get("label", None if alias == "all" else alias.replace("_", " "))
+            clabel = cut_cfg.get("label",
+                                 None if alias == "all" else alias.replace("_", " "))
             annotation = " · ".join(str(t) for t in (rlabel, clabel) if t)
-            for spec in cut.get("vars") or []:
-                leaf, cfg = _entry_hist(spec, variables, f"{cwhere}.vars")
-                add(region_hist_name(rname, alias, leaf), cfg,
-                    evt_sel + _as_list(cut.get("cut")), annotation, cwhere)
+            for spec in cut_cfg.get("vars") or []:
+                add(rname, alias, spec, evt_sel + _as_list(cut_cfg.get("cut")),
+                    annotation, f"{cwhere}.vars")
     return out
 
 
-def check_axes(defs: dict, path="histograms.yaml") -> None:
-    """Every histogram must say what it fills and how it is binned."""
-    problems = []
-    for name, cfg in defs.items():
-        for s in ("_x", "_y") if is_2d(cfg) else ("",):
-            if not cfg.get(f"expression{s}"):
-                problems.append(f"histogram '{name}': no expression{s}")
-            triple = [f"{k}{s}" for k in _TRIPLE if f"{k}{s}" in cfg]
-            if f"edges{s}" not in cfg and len(triple) != 3:
-                missing = [f"{k}{s}" for k in _TRIPLE if f"{k}{s}" not in cfg]
-                problems.append(f"histogram '{name}': no binning -- needs "
-                                f"edges{s} or bins{s}/lo{s}/hi{s} (missing {missing})")
-    if problems:
-        raise ConfigError(f"ERROR in {path}:\n  " + "\n  ".join(problems))
-
-
 def load_histogram_defs(path: str, variables: dict | None = None) -> dict:
-    """A set's histograms.yaml -> ``{name: definition}``, one per histogram.
+    """A set's histograms.yaml -> ``{name: Histogram}``.
 
     The file holds ``regions`` and nothing else (see :func:`expand_regions`);
     the variables they list come from the set's catalog (*variables*, by
@@ -376,9 +518,7 @@ def load_histogram_defs(path: str, variables: dict | None = None) -> dict:
             "into a region -- 'evt_vars' for a per-event variable, "
             "'objects.<cut>.vars' for a per-object one -- with its expression "
             "and binning in variables.yaml (see docs/configuration.md)")
-    defs = expand_regions(raw.get("regions"), variables, path)
-    check_axes(defs, path)
-    return defs
+    return expand_regions(raw.get("regions"), variables, path)
 
 
 def normalize_selection_file(defs: dict, path, axes) -> dict:
@@ -396,14 +536,9 @@ def normalize_selection_file(defs: dict, path, axes) -> dict:
 
 
 def load_selection_defs(path: str) -> dict:
-    """A set's selections.yaml; every selection must have an expression."""
-    defs = load_config_file(path, normalize=normalize_selection_file)
-    missing = [name for name, cfg in defs.items()
-               if not isinstance(cfg, dict) or not cfg.get("expression")]
-    if missing:
-        raise ConfigError(f"ERROR in {path}: selection(s) {missing} have no "
-                          "'expression'")
-    return defs
+    """A set's selections.yaml -> ``{name: Selection}``."""
+    return as_selections(load_config_file(path, normalize=normalize_selection_file),
+                         path)
 
 
 def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
@@ -444,14 +579,12 @@ def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
     Returns *events* with the columns added.
     """
     pending = []
-    for name, cfg in sel_defs.items():
-        if not cfg or not cfg.get("expression"):
-            continue
+    for name, sel in sel_defs.items():
         if name in events.fields:
             print(f"  (selection '{name}' is already a field of events; "
                   "not attaching it as a column)")
             continue
-        pending.append((name, cfg["expression"]))
+        pending.append((name, sel.expression))
     # Selections may read each other's columns: retry what failed until a
     # pass makes no progress, then the first remaining failure is real.
     while pending:
@@ -473,39 +606,16 @@ def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
     return events
 
 
-def is_2d(cfg: dict) -> bool:
-    return "expression_x" in cfg and "expression_y" in cfg
-
-
-def _make_axis(cfg: dict, suffix: str, axis_name: str, default_label: str) -> hist.axis:
-    """Regular axis from bins/lo/hi, or Variable axis from an ``edges`` list."""
-    label_key = "label" + suffix
-    edges = cfg.get("edges" + suffix)
-    if edges is not None:
-        return hist.axis.Variable([float(e) for e in edges],
-                                  name=axis_name, label=cfg.get(label_key, default_label))
-    return hist.axis.Regular(cfg["bins" + suffix], cfg["lo" + suffix], cfg["hi" + suffix],
-                             name=axis_name, label=cfg.get(label_key, default_label))
-
-
 def build_histograms(hist_defs: dict, sample_names: list[str]) -> dict[str, hist.Hist]:
-    """Create empty hist.Hist objects for every histogram × sample."""
+    """Create an empty hist.Hist for every histogram, with a dataset axis."""
     histograms = {}
-    for name, cfg in hist_defs.items():
-        if is_2d(cfg):
-            h = hist.Hist(
-                hist.axis.StrCategory(sample_names, name="dataset", growth=True),
-                _make_axis(cfg, "_x", "x", name),
-                _make_axis(cfg, "_y", "y", ""),
-                storage=hist.storage.Weight(),
-            )
-        else:
-            h = hist.Hist(
-                hist.axis.StrCategory(sample_names, name="dataset", growth=True),
-                _make_axis(cfg, "", "x", name),
-                storage=hist.storage.Weight(),
-            )
-        histograms[name] = h
+    for name, h in hist_defs.items():
+        # The default x title is the histogram's name; a y axis has none.
+        axes = [axis.hist_axis(axis_name, default)
+                for axis, axis_name, default in zip(h.axes, "xy", (name, ""))]
+        histograms[name] = hist.Hist(
+            hist.axis.StrCategory(sample_names, name="dataset", growth=True),
+            *axes, storage=hist.storage.Weight())
     return histograms
 
 
@@ -596,31 +706,21 @@ def _weight_or_one(extra) -> np.ndarray:
     return np.where(np.isfinite(w), w, 1.0)
 
 
-def _per_object(name: str, cfg: dict, evaluate, sample: str) -> bool:
-    """Whether a histogram fills one entry per object, read off its expression.
-
-    An explicit ``per_object:`` must agree with the expression: if it does
-    not, the old behaviour was an empty histogram or a crash deep in the fill.
-    """
-    keys = ("expression_x", "expression_y") if is_2d(cfg) else ("expression",)
-    jagged = [is_jagged(evaluate("histogram", name, k, cfg[k])) for k in keys]
-    if len(set(jagged)) > 1:
-        raise FillError(f"histogram '{name}': expression_x and expression_y must "
+def _per_object(h: Histogram, evaluate, sample: str) -> bool:
+    """Whether a histogram fills one entry per object, read off its expression."""
+    jagged = {is_jagged(evaluate("histogram", h.name, "expression", axis.expression))
+              for axis in h.axes}
+    if len(jagged) > 1:
+        raise FillError(f"histogram '{h.name}': its x and y expressions must "
                         "both give one entry per object, or both one per event "
                         f"(sample '{sample}')")
-    declared = cfg.get("per_object")
-    if declared is not None and bool(declared) != jagged[0]:
-        kind = "object" if jagged[0] else "event"
-        raise FillError(f"histogram '{name}' is declared 'per_object: {declared}' "
-                        f"but its expression gives one entry per {kind} "
-                        f"(sample '{sample}'); drop the key, it is inferred")
-    return jagged[0]
+    return jagged.pop()
 
 
 def fill_histograms(
     histograms: dict[str, hist.Hist],
-    hist_defs: dict,
-    sel_defs: dict,
+    hist_defs: dict[str, Histogram],
+    sel_defs: dict[str, Selection],
     events,
     sample: str,
     weight: np.ndarray | None = None,
@@ -680,11 +780,11 @@ def fill_histograms(
 
     def selection(sel_name: str):
         if sel_name not in sel_cache:
-            sel_cfg = sel_defs[sel_name]
-            sel = evaluate("selection", sel_name, "expression", sel_cfg["expression"])
+            sel = evaluate("selection", sel_name, "expression",
+                           sel_defs[sel_name].expression)
             if isinstance(sel, ak.Array):
                 sel = ak.fill_none(sel, False)
-            level = sel_cfg.get("level")
+            level = sel_defs[sel_name].level
             if level is not None and (level == "object") != is_jagged(sel):
                 kind = "object" if is_jagged(sel) else "event"
                 raise FillError(f"selection '{sel_name}' is declared 'level: {level}' "
@@ -693,13 +793,13 @@ def fill_histograms(
             sel_cache[sel_name] = sel
         return sel_cache[sel_name]
 
-    for name, cfg in hist_defs.items():
+    for name, h in hist_defs.items():
         if name not in histograms:
             continue
 
         event_mask = np.ones(n_events, dtype=bool)
         obj_masks, obj_sel_names = [], []
-        for sel_name in cfg.get("selections", []):
+        for sel_name in h.selections:
             sel = selection(sel_name)
             if is_jagged(sel):
                 obj_masks.append(sel)
@@ -707,7 +807,7 @@ def fill_histograms(
             else:
                 event_mask = event_mask & np.asarray(sel)
 
-        per_object = _per_object(name, cfg, evaluate, sample)
+        per_object = _per_object(h, evaluate, sample)
         if layout is not None:
             layout[name] = per_object
 
@@ -719,8 +819,7 @@ def fill_histograms(
         if obj_masks:
             # A mask filters the objects of the collection it was made over;
             # over another collection it would pair objects by position.
-            key = "expression_x" if is_2d(cfg) else "expression"
-            values = eval_expr(cfg[key])
+            values = eval_expr(h.x.expression)
             other = [s for s, m in zip(obj_sel_names, obj_masks)
                      if not same_object_counts(m, values)]
             if other:
@@ -732,8 +831,8 @@ def fill_histograms(
 
         w = weight
         obj_w = None
-        if cfg.get("weight"):
-            extra_w = evaluate("histogram", name, "weight", cfg["weight"])
+        if h.weight:
+            extra_w = evaluate("histogram", name, "weight", h.weight)
             if isinstance(extra_w, ak.Array) and extra_w.ndim > 1:
                 if per_object:
                     obj_w = extra_w  # combined per object inside the fill
@@ -744,12 +843,8 @@ def fill_histograms(
                 w = weight * _weight_or_one(extra_w)
 
         try:
-            if is_2d(cfg):
-                _fill_2d(histograms[name], cfg, eval_expr, sample, event_mask, w,
-                         obj_mask, obj_w, per_object)
-            else:
-                _fill_1d(histograms[name], cfg, eval_expr, sample, event_mask, w,
-                         obj_mask, obj_w, per_object)
+            _fill(histograms[name], h, eval_expr, sample, event_mask, w,
+                  obj_mask, obj_w, per_object)
         except FillError:
             raise
         except Exception as e:  # noqa: BLE001 - re-raised with its context
@@ -773,61 +868,35 @@ def _flat_obj_weight(obj_w, obj_mask, mask, counts, wname: str) -> np.ndarray:
     return np.where(np.isfinite(flat), flat, 1.0)   # as _weight_or_one
 
 
-def _fill_1d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None,
-             per_object=None):
-    values = eval_expr(cfg["expression"])
-    if per_object is None:
-        per_object = cfg.get("per_object", is_jagged(values))
+def _fill(target: hist.Hist, h: Histogram, eval_expr, sample, mask, w,
+          obj_mask, obj_w, per_object: bool) -> None:
+    """Fill one histogram (1D or 2D) from the events passing *mask*.
+
+    Per object, the values of the objects passing *obj_mask* are flattened and
+    each carries its event's weight (times its own *obj_w*, if any); per event
+    there is one value per event.  Non-finite values are dropped.
+    """
+    values = [eval_expr(axis.expression) for axis in h.axes]
 
     if per_object:
         if obj_mask is not None:
-            values = values[obj_mask]
-        selected = _fill_none_safe(values[mask])
-        flat_vals = np.asarray(ak.flatten(selected, axis=None))
-        counts = np.asarray(ak.num(selected))
+            values = [v[obj_mask] for v in values]
+        selected = [_fill_none_safe(v[mask]) for v in values]
+        flat = [np.asarray(ak.flatten(v, axis=None)) for v in selected]
+        counts = np.asarray(ak.num(selected[0]))
         flat_w = np.repeat(w[mask], counts)
         if obj_w is not None:
             flat_w = flat_w * _flat_obj_weight(obj_w, obj_mask, mask, counts,
-                                               cfg.get("weight", ""))
+                                               h.weight or "")
     else:
-        flat_vals = np.asarray(_fill_none_safe(values[mask]))
+        flat = [np.asarray(_fill_none_safe(v[mask])) for v in values]
         flat_w = w[mask]
 
-    flat_vals = np.asarray(flat_vals, dtype=np.float64)
+    flat = [np.asarray(v, dtype=np.float64) for v in flat]
     flat_w = np.asarray(flat_w, dtype=np.float64)
 
-    valid = np.isfinite(flat_vals) & np.isfinite(flat_w)
-    h.fill(dataset=sample, x=flat_vals[valid], weight=flat_w[valid])
-
-
-def _fill_2d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None,
-              per_object=None):
-    vals_x = eval_expr(cfg["expression_x"])
-    vals_y = eval_expr(cfg["expression_y"])
-    if per_object is None:
-        per_object = cfg.get("per_object", is_jagged(vals_x))
-
-    if per_object:
-        if obj_mask is not None:
-            vals_x = vals_x[obj_mask]
-            vals_y = vals_y[obj_mask]
-        sel_x = _fill_none_safe(vals_x[mask])
-        sel_y = _fill_none_safe(vals_y[mask])
-        flat_x = np.asarray(ak.flatten(sel_x, axis=None))
-        flat_y = np.asarray(ak.flatten(sel_y, axis=None))
-        counts = np.asarray(ak.num(sel_x))
-        flat_w = np.repeat(w[mask], counts)
-        if obj_w is not None:
-            flat_w = flat_w * _flat_obj_weight(obj_w, obj_mask, mask, counts,
-                                               cfg.get("weight", ""))
-    else:
-        flat_x = np.asarray(_fill_none_safe(vals_x[mask]))
-        flat_y = np.asarray(_fill_none_safe(vals_y[mask]))
-        flat_w = w[mask]
-
-    flat_x = np.asarray(flat_x, dtype=np.float64)
-    flat_y = np.asarray(flat_y, dtype=np.float64)
-    flat_w = np.asarray(flat_w, dtype=np.float64)
-
-    valid = np.isfinite(flat_x) & np.isfinite(flat_y) & np.isfinite(flat_w)
-    h.fill(dataset=sample, x=flat_x[valid], y=flat_y[valid], weight=flat_w[valid])
+    valid = np.isfinite(flat_w)
+    for v in flat:
+        valid = valid & np.isfinite(v)
+    target.fill(dataset=sample, weight=flat_w[valid],
+                **{axis_name: v[valid] for axis_name, v in zip("xy", flat)})

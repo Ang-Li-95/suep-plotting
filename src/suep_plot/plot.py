@@ -13,8 +13,6 @@ import matplotlib.pyplot as plt
 import mplhep as hep
 import numpy as np
 
-from .histograms import is_2d as _hist_is_2d  # noqa: F401  (re-exported)
-
 hep.style.use("CMS")
 
 DEFAULT_FORMATS = ("png", "pdf")
@@ -423,10 +421,10 @@ def restyle(hist_defs: dict, sample_defs: dict, config_dir) -> None:
     # over it, so a key *removed* from the config (a rebin, a log axis, a
     # colour) stops applying too.  Only ``per_object`` is kept from the
     # pickle: the fill recorded it, the config normally does not state it.
-    for name, cfg in load_histogram_defs(Path(config_dir) / "histograms.yaml").items():
+    for name, h in load_histogram_defs(Path(config_dir) / "histograms.yaml").items():
         recorded = {k: v for k, v in hist_defs.get(name, {}).items()
                     if k == "per_object"}
-        hist_defs[name] = {**recorded, **cfg}
+        hist_defs[name] = {**recorded, **h.to_dict()}
     for name, cfg in (load_config_file(Path(config_dir) / "samples.yaml") or {}).items():
         if isinstance(cfg, dict):
             sample_defs[name] = dict(cfg)

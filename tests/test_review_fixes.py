@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from suep_plot import plot as plot_mod  # noqa: E402
 from suep_plot import processor  # noqa: E402
-from suep_plot.histograms import (FillError, build_histograms,  # noqa: E402
+from suep_plot.histograms import (FillError, as_histograms,  # noqa: E402
+                                  as_selections, build_histograms,
                                   fill_histograms, load_selection_defs)
 from suep_plot.reweights import Reweighter  # noqa: E402
 
@@ -30,7 +31,7 @@ def test_a_selection_without_an_expression_is_a_config_error(tmp_path):
     path = tmp_path / "selections.yaml"
     path.write_text("good: 'events.a > 1'\nempty: {level: event}\n")
 
-    with pytest.raises(SystemExit, match=r"\['empty'\] have no 'expression'"):
+    with pytest.raises(SystemExit, match="selection 'empty': no 'expression'"):
         load_selection_defs(path)
 
 
@@ -42,7 +43,8 @@ def test_an_object_selection_over_another_collection_is_fatal():
     sels = {"y_hard": {"expression": "events.Y.pt > 5"}}
 
     with pytest.raises(FillError, match=r"'x_pt'.*\['y_hard'\].*another collection"):
-        fill_histograms(build_histograms(defs, ["s"]), defs, sels, events, "s")
+        fill_histograms(build_histograms(as_histograms(defs), ["s"]), as_histograms(defs),
+                        as_selections(sels), events, "s")
 
 
 def test_check_expressions_reports_a_mask_over_another_collection(monkeypatch):
@@ -56,7 +58,8 @@ def test_check_expressions_reports_a_mask_over_another_collection(monkeypatch):
     sels = {"y_hard": {"expression": "events.Y.pt > 5"},
             "x_hard": {"expression": "events.X.pt > 4"}}
 
-    problems = processor.check_expressions(["f.root"], "Events", defs, sels, {})
+    problems = processor.check_expressions(
+        ["f.root"], "Events", as_histograms(defs), as_selections(sels), {})
 
     assert len(problems) == 1 and "'x_bad'" in problems[0]
 
@@ -68,9 +71,9 @@ def test_a_missing_or_nan_histogram_weight_counts_as_one():
     events = ak.Array({"a": [1.0, 2.0, 3.0], "w": [2.0, None, np.nan]})
     defs = {"h": {"expression": "events.a", "bins": 3, "lo": 0.5, "hi": 3.5,
                   "weight": "events.w"}}
-    hists = build_histograms(defs, ["s"])
+    hists = build_histograms(as_histograms(defs), ["s"])
 
-    fill_histograms(hists, defs, {}, events, "s")
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s")
 
     assert hists["h"].values().tolist() == [[2.0, 1.0, 1.0]]
     # ... which is what the same expression gives as a global reweight.
@@ -83,9 +86,9 @@ def test_a_nan_per_object_weight_counts_as_one():
                                     "w": [[np.nan, 3.0], [None]]})})
     defs = {"h": {"expression": "events.J.pt", "bins": 3, "lo": 0.5, "hi": 3.5,
                   "weight": "events.J.w"}}
-    hists = build_histograms(defs, ["s"])
+    hists = build_histograms(as_histograms(defs), ["s"])
 
-    fill_histograms(hists, defs, {}, events, "s")
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s")
 
     assert hists["h"].values().tolist() == [[1.0, 3.0, 1.0]]
 

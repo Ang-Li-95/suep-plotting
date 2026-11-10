@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # must fail these tests, not silently skip all of them.
 import custom.columns as columns  # noqa: E402
 
+from suep_plot.histograms import Selection  # noqa: E402
 from suep_plot.processor import load_columns_config  # noqa: E402
 
 # The settings most tests run on; configure() returns them, nothing installs
@@ -146,13 +147,15 @@ def _ctx(events, settings=None, selections=None):
 # The prompt-object cuts, written the way selections.yaml writes them: the
 # ordinary events.<Collection> dialect, plus a 'collection:' saying what the
 # per-object mask is over.
-MUON_SEL = {"level": "object", "collection": "Muon",
-            "expression": ("(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4)"
-                           " & events.Muon.looseId")}
-JET_SEL = {"level": "object", "collection": "Jet",
-           "expression": ("(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4)"
-                          " & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1)"
-                          " & events.Jet.tightLepVetoId")}
+MUON_SEL = Selection(
+    level="object", collection="Muon",
+    expression=("(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4)"
+                " & events.Muon.looseId"))
+JET_SEL = Selection(
+    level="object", collection="Jet",
+    expression=("(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4)"
+                " & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1)"
+                " & events.Jet.tightLepVetoId"))
 ISO_SELS = {"muon_sel_foriso": MUON_SEL, "jet_sel_foriso": JET_SEL}
 
 
@@ -176,9 +179,9 @@ def test_selected_objects_needs_no_code_for_a_new_collection():
                            {"pt": 30.0, "eta": 0.2, "phi": 0.9, "cutBased": 1}]])
     events = ak.zip({"Electron": electrons}, depth_limit=1)
 
-    kept = columns._selected_objects(events, "prompt_electron", {
-        "level": "object", "collection": "Electron",
-        "expression": "(events.Electron.pt > 15) & (events.Electron.cutBased >= 3)"})
+    kept = columns._selected_objects(events, "prompt_electron", Selection(
+        level="object", collection="Electron",
+        expression="(events.Electron.pt > 15) & (events.Electron.cutBased >= 3)"))
 
     assert ak.to_list(kept.phi) == [[0.4]]
 
@@ -249,7 +252,7 @@ def test_a_selection_used_to_pick_objects_needs_a_collection():
 
     with pytest.raises(ValueError, match="collection"):
         columns._selected_objects(events, "muon_sel_foriso",
-                                  {"expression": "events.Muon.pt > 10"})
+                                  Selection(expression="events.Muon.pt > 10"))
 
 
 def test_a_broken_expression_names_the_selection_and_the_expression():
@@ -258,8 +261,8 @@ def test_a_broken_expression_names_the_selection_and_the_expression():
 
     with pytest.raises(ValueError, match="muon_sel_foriso"):
         columns._selected_objects(events, "muon_sel_foriso",
-                                  {"collection": "Muon",
-                                   "expression": "events.Muon.noSuchField > 1"})
+                                  Selection(collection="Muon",
+                                            expression="events.Muon.noSuchField > 1"))
 
 
 def test_isolation_reads_its_cuts_from_selections_yaml():
@@ -314,13 +317,14 @@ def test_an_integer_mask_would_index_rather_than_filter():
                          {"pt": 50.0, "cutBased": 3}]])   # tight -> keep
     events = ak.zip({"Photon": photons}, depth_limit=1)
 
-    bare = {"level": "object", "collection": "Photon",
-            "expression": "(events.Photon.pt > 15) & events.Photon.cutBased"}
+    bare = Selection(level="object", collection="Photon",
+                     expression="(events.Photon.pt > 15) & events.Photon.cutBased")
     wrong = columns._selected_objects(events, "photon_sel", bare)
     assert ak.to_list(ak.num(wrong)) == [3]               # not 2
 
-    explicit = {"level": "object", "collection": "Photon",
-                "expression": "(events.Photon.pt > 15) & (events.Photon.cutBased >= 1)"}
+    explicit = Selection(
+        level="object", collection="Photon",
+        expression="(events.Photon.pt > 15) & (events.Photon.cutBased >= 1)")
     right = columns._selected_objects(events, "photon_sel", explicit)
     assert ak.to_list(right.pt) == [[30.0, 50.0]]
 

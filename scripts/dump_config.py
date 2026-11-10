@@ -56,8 +56,12 @@ def dump(config_dir: Path) -> dict:
 
     loaders = {
         "samples": lambda p: load_samples(p / "samples.yaml"),
-        "histograms": lambda p: load_histogram_defs(p / "histograms.yaml"),
-        "selections": lambda p: load_selection_defs(p / "selections.yaml"),
+        "histograms": lambda p: {
+            n: h.to_dict() for n, h in
+            load_histogram_defs(p / "histograms.yaml").items()},
+        "selections": lambda p: {
+            n: s.to_dict() for n, s in
+            load_selection_defs(p / "selections.yaml").items()},
         "corrections": lambda p: load_correction_defs(p / "corrections.yaml"),
         "reweights": lambda p: load_reweight_defs(p / "reweights.yaml"),
         "derived_plots": lambda p: load_derived_plot_defs(str(p / "derived_plots.yaml")),

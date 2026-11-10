@@ -17,11 +17,13 @@ from pathlib import Path
 # ── show ──────────────────────────────────────────────────────────
 
 
-def _binning(cfg: dict, s: str = "") -> str:
-    if f"edges{s}" in cfg:
-        edges = cfg[f"edges{s}"]
+def _binning(axis) -> str:
+    """The binning of an Axis, or of a catalog variable's mapping."""
+    get = axis.get if isinstance(axis, dict) else lambda k: getattr(axis, k)
+    edges = get("edges")
+    if edges is not None:
         return f"edges({len(edges) - 1}) [{edges[0]}, {edges[-1]}]"
-    return f"{cfg.get(f'bins{s}')} [{cfg.get(f'lo{s}')}, {cfg.get(f'hi{s}')}]"
+    return f"{get('bins')} [{get('lo')}, {get('hi')}]"
 
 
 def _short(text, width: int) -> str:
@@ -43,7 +45,7 @@ def _table(rows: list[tuple], widths: tuple) -> None:
 
 def show(config_dir: str, grep: str | None = None, sections=None) -> int:
     from .config import load_config_file, read_set_file
-    from .histograms import (is_2d, load_histogram_defs, load_selection_defs,
+    from .histograms import (load_histogram_defs, load_selection_defs,
                              load_variables, normalize_hist_file,
                              normalize_selection_file)
     from .plot import load_derived_plot_defs
@@ -93,26 +95,23 @@ def show(config_dir: str, grep: str | None = None, sections=None) -> int:
 
     if "histograms" in sections:
         rows = []
-        for name, cfg in hists.items():
+        for name, h in hists.items():
             if not keep(name):
                 continue
-            if is_2d(cfg):
-                expr = f"{cfg['expression_x']} : {cfg['expression_y']}"
-                binning = f"{_binning(cfg, '_x')} x {_binning(cfg, '_y')}"
-            else:
-                expr, binning = cfg.get("expression", ""), _binning(cfg)
+            expr = " : ".join(axis.expression for axis in h.axes)
+            binning = " x ".join(_binning(axis) for axis in h.axes)
             files = h_origins.get(f"regions/{name.split('/')[0]}", [])
-            rows.append((name, "2D" if is_2d(cfg) else "1D", expr, binning,
-                         ",".join(cfg.get("selections", [])) or "-",
+            rows.append((name, "2D" if h.is_2d else "1D", expr, binning,
+                         ",".join(h.selections) or "-",
                          " < ".join(_rel(f, base) for f in files) or "?"))
         print(f"\nHistograms ({len(rows)})")
         _table([("name", "dim", "expression", "binning", "selections", "defined in")]
                + rows, (44, 3, 44, 22, 34, 60))
 
     if "selections" in sections:
-        rows = [(name, cfg.get("expression", ""),
+        rows = [(name, sel.expression,
                  " < ".join(_rel(f, base) for f in s_origins.get(name, [])) or "?")
-                for name, cfg in sels.items() if keep(name)]
+                for name, sel in sels.items() if keep(name)]
         print(f"\nSelections ({len(rows)})")
         _table([("name", "expression", "defined in")] + rows, (36, 80, 60))
 

@@ -259,12 +259,12 @@ def _custom_config_errors(settings, sel_defs: dict) -> list[str]:
 def _reference_errors(hist_defs: dict, sel_defs: dict, reweighters: dict) -> list[str]:
     """Names a histogram uses that the set does not define."""
     errors = []
-    for hname, hcfg in sorted(hist_defs.items()):
-        wspec = str(hcfg.get("weight", ""))
+    for hname, h in sorted(hist_defs.items()):
+        wspec = h.weight or ""
         if wspec.startswith("@") and wspec[1:] not in reweighters:
             errors.append(f"histogram '{hname}': unknown reweight map '{wspec}' "
                           "(not in reweights.yaml)")
-        for sname in hcfg.get("selections", []):
+        for sname in h.selections:
             if sname not in sel_defs:
                 close = difflib.get_close_matches(sname, list(sel_defs), n=1)
                 hint = f" (did you mean '{close[0]}'?)" if close else ""
@@ -449,12 +449,12 @@ class SuepProcessor(processor.ProcessorABC):
         selections count events with >= 1 passing object.
         """
         cutflow = {"total": {"raw": int(n), "wtd": float(wvec.sum())}}
-        for sname, scfg in self.sel_defs.items():
+        for sname, selection in self.sel_defs.items():
             sel = sel_cache.get(sname)
             if sel is None:
                 # Already evaluated once as a selection column, so this cannot
                 # fail where the fill did not.
-                sel = _compile_expr(scfg["expression"])(events)
+                sel = _compile_expr(selection.expression)(events)
                 if isinstance(sel, ak.Array):
                     sel = ak.fill_none(sel, False)
             if isinstance(sel, ak.Array) and sel.ndim > 1:
@@ -496,11 +496,10 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
     """Evaluate every expression on the first events of *files*; return the failures.
 
     Each histogram's and selection's expression must evaluate, and an explicit
-    ``per_object`` / ``level`` must agree with what the expression gives, on
-    every sample -- the fill treats any failure as fatal, so finding them here
+    ``level`` must agree with what the expression gives, on every sample -- the fill treats any failure as fatal, so finding them here
     stops the run in seconds instead of on some chunk an hour in.
     """
-    from .histograms import (is_2d, is_jagged,
+    from .histograms import (is_jagged,
                              object_selection_on_event_histogram,
                              object_selection_over_other_collection,
                              same_object_counts)
@@ -526,23 +525,21 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
             return None
 
     object_level = {}          # object-level selection -> its mask
-    for name, cfg in sel_defs.items():
-        mask = evaluate(f"selection '{name}'", cfg["expression"])
+    for name, selection in sel_defs.items():
+        mask = evaluate(f"selection '{name}'", selection.expression)
         if mask is not None and is_jagged(mask):
             object_level[name] = mask
-        level = cfg.get("level")
+        level = selection.level
         if mask is not None and level is not None \
                 and (level == "object") != is_jagged(mask):
             bad.append(f"selection '{name}': declared 'level: {level}' but the "
                        "mask says otherwise (drop the key, it is inferred)")
-    for name, cfg in hist_defs.items():
-        keys = ("expression_x", "expression_y") if is_2d(cfg) else ("expression",)
-        values = [evaluate(f"histogram '{name}' {k}", cfg[k]) for k in keys]
+    for name, h in hist_defs.items():
+        values = [evaluate(f"histogram '{name}' {axis_name}", axis.expression)
+                  for axis, axis_name in zip(h.axes, "xy")]
         if all(v is not None for v in values):
             jagged = {is_jagged(v) for v in values}
-            declared = cfg.get("per_object")
-            per_object_sels = [s for s in cfg.get("selections", [])
-                               if s in object_level]
+            per_object_sels = [s for s in h.selections if s in object_level]
             if jagged == {False} and per_object_sels:
                 bad.append(object_selection_on_event_histogram(
                     name, per_object_sels, sample))
@@ -555,12 +552,8 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
             if len(jagged) > 1:
                 bad.append(f"histogram '{name}': one axis per object, the other "
                            "per event")
-            elif declared is not None and bool(declared) != jagged.pop():
-                bad.append(f"histogram '{name}': declared 'per_object: {declared}' "
-                           "but the expression says otherwise (drop the key)")
-        weight = cfg.get("weight")
-        if weight and not str(weight).startswith("@"):
-            evaluate(f"histogram '{name}' weight", weight)
+        if h.weight and not h.weight.startswith("@"):
+            evaluate(f"histogram '{name}' weight", h.weight)
     for name, cfg in corr_defs.items():
         for expr in cfg.get("inputs", []):
             evaluate(f"correction '{name}' input", expr)
@@ -644,8 +637,8 @@ def run_all(
     if errors:
         raise SystemExit("ERROR in " + str(config_dir) + ":\n"
                          + "\n".join(f"  {e}" for e in errors))
-    for hname, hcfg in hist_defs.items():
-        wspec = str(hcfg.get("weight", ""))
+    for hname, h in hist_defs.items():
+        wspec = h.weight or ""
         if wspec.startswith("@") and not reweighters[wspec[1:]].fill_only:
             print(f"WARNING: histogram '{hname}' uses '{wspec}' which is also applied "
                   f"globally; add 'fill_only: true' to the map to avoid double counting")
@@ -757,14 +750,15 @@ def run_all(
 
 
 def _with_layout(hist_defs: dict, layout: dict) -> dict:
-    """The definitions with ``per_object`` as the fill found it.
+    """The definitions in flat form, with ``per_object`` as the fill found it.
 
-    Stored in the pickle, so tools that read the histograms back
-    (``suep-reweight``) know which ones are per object without re-evaluating
-    anything.  A histogram never filled keeps whatever its config said.
+    This is what the pickle stores (see ``Histogram.to_dict``), so tools that
+    read the histograms back (``suep-plot``, ``suep-reweight``) need neither
+    the config set nor to re-evaluate anything.  A histogram never filled has
+    no ``per_object``.
     """
     per_object = {n: True for n in layout.get("object", ())}
     per_object.update({n: False for n in layout.get("event", ())})
-    return {name: ({**cfg, "per_object": per_object[name]} if name in per_object
-                   else cfg)
-            for name, cfg in hist_defs.items()}
+    return {name: ({**h.to_dict(), "per_object": per_object[name]}
+                   if name in per_object else h.to_dict())
+            for name, h in hist_defs.items()}

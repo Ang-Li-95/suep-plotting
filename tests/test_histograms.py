@@ -4,7 +4,8 @@ import awkward as ak
 import numpy as np
 import pytest
 
-from suep_plot.histograms import (FillError, _compile_expr, attach_selection_columns,
+from suep_plot.histograms import (FillError, _compile_expr, as_histograms,
+                                  as_selections, attach_selection_columns,
                                   build_histograms, fill_histograms)
 from suep_plot.reweights import Reweighter
 
@@ -27,8 +28,8 @@ def totals(h, sample="s"):
 def test_event_level_fill_and_weight():
     events = make_events()
     defs = {"met": {"expression": "events.met", "bins": 10, "lo": 0, "hi": 200}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.array([1.0, 2.0, 3.0]))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.array([1.0, 2.0, 3.0]))
     assert totals(hists["met"]) == pytest.approx(6.0)
 
 
@@ -38,18 +39,18 @@ def test_per_object_fill_with_selections():
                        "per_object": True, "selections": ["good", "highmet"]}}
     sels = {"good": {"expression": "events.Jet.pt > 60", "level": "object"},
             "highmet": {"expression": "events.met > 50"}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, sels, events, "s", np.array([1.0, 1.0, 1.0]))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), events, "s", np.array([1.0, 1.0, 1.0]))
     # events 2 and 3 pass met cut; jets > 60: none in event 2, the 200 in event 3
     assert totals(hists["jet_pt"]) == pytest.approx(1.0)
 
 
 def test_variable_binning_edges():
     defs = {"met": {"expression": "events.met", "edges": [0, 50, 100, 400]}}
-    h = build_histograms(defs, ["s"])["met"]
+    h = build_histograms(as_histograms(defs), ["s"])["met"]
     axis = h.axes["x"]
     assert list(axis.edges) == [0, 50, 100, 400]
-    fill_histograms({"met": h}, defs, {}, make_events(), "s", np.ones(3))
+    fill_histograms({"met": h}, as_histograms(defs), {}, make_events(), "s", np.ones(3))
     assert list(h[{"dataset": "s"}].view().value) == [1.0, 1.0, 1.0]
 
 
@@ -57,8 +58,8 @@ def test_jagged_weight_per_object_fill():
     events = make_events()
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
                        "per_object": True, "weight": "events.Jet.pt / 100.0"}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.ones(3))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(3))
     # each jet weighted by pt/100: 0.5 + 1.0 + 2.0
     assert totals(hists["jet_pt"]) == pytest.approx(3.5)
 
@@ -67,8 +68,8 @@ def test_jagged_weight_event_level_takes_product():
     events = make_events()
     defs = {"met": {"expression": "events.met", "bins": 10, "lo": 0, "hi": 200,
                     "weight": "events.Jet.pt / 100.0"}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.ones(3))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(3))
     # products per event: 0.5*1.0, empty -> 1, 2.0
     assert totals(hists["met"]) == pytest.approx(0.5 + 1.0 + 2.0)
 
@@ -80,8 +81,8 @@ def test_at_map_reference_fill_only():
                           "fill_only": True})
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
                        "per_object": True, "weight": "@m"}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.ones(3), reweighters={"m": rw})
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(3), reweighters={"m": rw})
     # jets with pt < 100 zeroed -> 100 and 200 remain
     assert totals(hists["jet_pt"]) == pytest.approx(2.0)
 
@@ -92,17 +93,17 @@ def test_mismatched_object_weight_raises():
     events = ak.zip({"Jet": jets, "w": other}, depth_limit=1)
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
                        "per_object": True, "weight": "events.w"}}
-    hists = build_histograms(defs, ["s"])
+    hists = build_histograms(as_histograms(defs), ["s"])
     with pytest.raises(ValueError, match="object structure"):
-        fill_histograms(hists, defs, {}, events, "s", np.ones(2))
+        fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(2))
 
 
 def test_none_values_dropped_weights_stay_aligned():
     events = make_events()
     defs = {"lead": {"expression": "ak.firsts(events.Jet.pt)",
                      "bins": 4, "lo": 0, "hi": 400}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.array([1.0, 5.0, 2.0]))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.array([1.0, 5.0, 2.0]))
     # event 2 has no jets -> None -> dropped; weights 1 and 2 remain
     assert totals(hists["lead"]) == pytest.approx(3.0)
 
@@ -117,7 +118,7 @@ def test_a_selection_becomes_a_column_of_its_own_name():
                           "expression": "events.Jet.pt > 60"},
             "high_met": {"expression": "events.met > 50"}}
 
-    out = attach_selection_columns(events, sels)
+    out = attach_selection_columns(events, as_selections(sels))
 
     assert ak.to_list(out.good_jets) == [[False, True], [], [True]]
     assert ak.to_list(out.high_met) == [False, True, True]
@@ -131,12 +132,12 @@ def test_the_column_is_what_a_multiplicity_histogram_fills_from():
     """
     events = make_events()
     sels = {"good_jets": {"level": "object", "expression": "events.Jet.pt > 60"}}
-    events = attach_selection_columns(events, sels)
+    events = attach_selection_columns(events, as_selections(sels))
 
     defs = {"n_good_jets": {"expression": "ak.sum(events.good_jets, axis=1)",
                             "bins": 5, "lo": -0.5, "hi": 4.5}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, sels, events, "s")
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), events, "s")
 
     # 2-jet event has 1 passing, empty event 0, 1-jet event 1.
     counts = hists["n_good_jets"][{"dataset": "s"}].values()
@@ -146,8 +147,8 @@ def test_the_column_is_what_a_multiplicity_histogram_fills_from():
 def test_an_object_selection_column_stays_jagged():
     """ak.sum(axis=1) needs the per-object structure, not an event-level any()."""
     events = attach_selection_columns(
-        make_events(),
-        {"good_jets": {"level": "object", "expression": "events.Jet.pt > 60"}})
+        make_events(), as_selections(
+            {"good_jets": {"level": "object", "expression": "events.Jet.pt > 60"}}))
 
     assert events.good_jets.ndim == 2
     assert ak.to_list(ak.sum(events.good_jets, axis=1)) == [1, 0, 1]
@@ -157,17 +158,17 @@ def test_a_selection_that_does_not_evaluate_is_fatal():
     """A mask silently missing on one sample is a cut silently not applied."""
     with pytest.raises(FillError, match="selection 'nope'.*sample 'sig'"):
         attach_selection_columns(
-            make_events(),
-            {"nope": {"expression": "events.NoSuchCollection.pt > 0"},
-             "fine": {"expression": "events.met > 50"}}, "sig")
+            make_events(), as_selections(
+                {"nope": {"expression": "events.NoSuchCollection.pt > 0"},
+                 "fine": {"expression": "events.met > 50"}}), "sig")
 
 
 def test_selections_may_read_each_other_in_any_order():
-    events = attach_selection_columns(make_events(), {
+    events = attach_selection_columns(make_events(), as_selections({
         "both": {"expression": "events.hard & events.highmet"},
         "hard": {"expression": "ak.any(events.Jet.pt > 60, axis=1)"},
         "highmet": {"expression": "events.met > 50"},
-    })
+    }))
 
     assert ak.to_list(events.both) == [False, False, True]
 
@@ -179,7 +180,7 @@ def test_a_selection_never_shadows_an_existing_field(capsys):
     in the config set means.
     """
     events = attach_selection_columns(
-        make_events(), {"Jet": {"expression": "events.met > 50"}})
+        make_events(), as_selections({"Jet": {"expression": "events.met > 50"}}))
 
     assert events.Jet.fields == ["pt", "eta"]        # the collection, untouched
     assert "already a field" in capsys.readouterr().out
@@ -192,7 +193,8 @@ def test_none_entries_become_false():
     ak.sum and the object filtering.
     """
     events = attach_selection_columns(
-        make_events(), {"lead_jet_hard": {"expression": "ak.firsts(events.Jet.pt) > 60"}})
+        make_events(),
+        as_selections({"lead_jet_hard": {"expression": "ak.firsts(events.Jet.pt) > 60"}}))
 
     assert ak.to_list(events.lead_jet_hard) == [False, False, True]
 
@@ -267,32 +269,23 @@ def test_the_max_dphi_idiom():
 def test_per_object_is_read_off_the_expression():
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400},
             "njet": {"expression": "ak.num(events.Jet)", "bins": 3, "lo": 0, "hi": 3}}
-    hists = build_histograms(defs, ["s"])
+    hists = build_histograms(as_histograms(defs), ["s"])
     layout = {}
 
-    fill_histograms(hists, defs, {}, make_events(), "s", np.ones(3), layout=layout)
+    fill_histograms(hists, as_histograms(defs), as_selections({}), make_events(), "s", np.ones(3), layout=layout)
 
     assert layout == {"jet_pt": True, "njet": False}
     assert totals(hists["jet_pt"]) == 3          # one entry per jet
     assert totals(hists["njet"]) == 3            # one entry per event
 
 
-def test_an_explicit_per_object_that_contradicts_the_expression_is_fatal():
-    defs = {"met": {"expression": "events.met", "bins": 2, "lo": 0, "hi": 200,
-                    "per_object": True}}
-
-    with pytest.raises(FillError, match="per_object: True"):
-        fill_histograms(build_histograms(defs, ["s"]), defs, {}, make_events(), "s",
-                        np.ones(3))
-
-
 def test_an_object_selection_needs_no_level_key():
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
                        "selections": ["good"]}}
     sels = {"good": {"expression": "events.Jet.pt > 60"}}
-    hists = build_histograms(defs, ["s"])
+    hists = build_histograms(as_histograms(defs), ["s"])
 
-    fill_histograms(hists, defs, sels, make_events(), "s", np.ones(3))
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), make_events(), "s", np.ones(3))
 
     assert totals(hists["jet_pt"]) == 2      # the 100 and the 200 GeV jets
 
@@ -304,7 +297,8 @@ def test_an_object_selection_on_a_per_event_histogram_is_fatal():
 
     with pytest.raises(FillError, match=r"histogram 'met' fills once per event.*"
                                         r"\['good'\].*ak\.any\(events\.good, axis=1\)"):
-        fill_histograms(build_histograms(defs, ["s"]), defs, sels, make_events(),
+        fill_histograms(build_histograms(as_histograms(defs), ["s"]), as_histograms(defs),
+                        as_selections(sels), make_events(),
                         "s", np.ones(3))
 
 
@@ -313,10 +307,10 @@ def test_the_event_level_cut_is_a_selection_of_its_own():
                     "selections": ["has_good"]}}
     sels = {"good": {"expression": "events.Jet.pt > 60"},
             "has_good": {"expression": "ak.any(events.good, axis=1)"}}
-    events = attach_selection_columns(make_events(), sels)
-    hists = build_histograms(defs, ["s"])
+    events = attach_selection_columns(make_events(), as_selections(sels))
+    hists = build_histograms(as_histograms(defs), ["s"])
 
-    fill_histograms(hists, defs, sels, events, "s", np.ones(3))
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), events, "s", np.ones(3))
 
     assert totals(hists["met"]) == 2         # events with >= 1 passing jet
 
@@ -325,7 +319,7 @@ def test_a_histogram_that_does_not_evaluate_is_fatal_and_named():
     defs = {"bad": {"expression": "events.NoSuch.pt", "bins": 2, "lo": 0, "hi": 1}}
 
     with pytest.raises(FillError, match="histogram 'bad'.*sample 's'"):
-        fill_histograms(build_histograms(defs, ["s"]), defs, {}, make_events(), "s",
+        fill_histograms(build_histograms(as_histograms(defs), ["s"]), as_histograms(defs), {}, make_events(), "s",
                         np.ones(3))
 
 
@@ -335,7 +329,7 @@ def test_a_2d_histogram_mixing_per_object_and_per_event_axes_is_fatal():
                     "bins_y": 2, "lo_y": 0, "hi_y": 200}}
 
     with pytest.raises(FillError, match="both"):
-        fill_histograms(build_histograms(defs, ["s"]), defs, {}, make_events(), "s",
+        fill_histograms(build_histograms(as_histograms(defs), ["s"]), as_histograms(defs), {}, make_events(), "s",
                         np.ones(3))
 
 
@@ -356,8 +350,9 @@ def test_a_selection_can_be_just_its_expression(tmp_path):
     p = _yaml(tmp_path / "s.yaml", {"highmet": "events.met > 50",
                                     "good": {"expression": "events.Jet.pt > 60"}})
 
-    assert load_selection_defs(p) == {"highmet": {"expression": "events.met > 50"},
-                                      "good": {"expression": "events.Jet.pt > 60"}}
+    sels = load_selection_defs(p)
+    assert (sels["highmet"].expression, sels["good"].expression) == \
+        ("events.met > 50", "events.Jet.pt > 60")
 
 
 # ── the variable catalog ──────────────────────────────────────────
@@ -372,12 +367,18 @@ CATALOG = {
 }
 
 
+def _flat(defs):
+    """The definitions in the flat form the pickles store (Histogram.to_dict)."""
+    return {name: h.to_dict() for name, h in defs.items()}
+
+
 def _region(tmp_path, *entries, variables=None):
     """The histograms of one region whose per-event list is *entries*."""
     from suep_plot.histograms import load_histogram_defs
 
     p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {"evt_vars": list(entries)}}})
-    return load_histogram_defs(p, variables=CATALOG if variables is None else variables)
+    return _flat(load_histogram_defs(
+        p, variables=CATALOG if variables is None else variables))
 
 
 def test_an_entry_takes_its_variable_from_the_catalog(tmp_path):
@@ -488,8 +489,8 @@ def test_a_selection_given_as_a_string_is_one_selection(tmp_path):
         "objects": {"hard": {"cut": "good", "vars": [
             {"var": "jet_pt", "selections": "central"}]}}}}})
 
-    assert load_histogram_defs(p, variables=CATALOG)["r/hard/jet_pt"]["selections"] \
-        == ["highmet", "good", "central"]
+    assert load_histogram_defs(p, variables=CATALOG)["r/hard/jet_pt"].selections \
+        == ("highmet", "good", "central")
 
 
 def test_a_set_retunes_one_key_of_a_global_variable(tmp_path, monkeypatch):
@@ -535,7 +536,7 @@ def test_regions_expand_to_one_histogram_per_cut_and_variable(tmp_path):
                             "vars": ["jet_pt", {"var": "jet_pt", "name": "jet_pt_fine",
                                                 "bins": [40, 0, 400]}]},
             }}}})
-    defs = load_histogram_defs(p, variables=CATALOG)
+    defs = _flat(load_histogram_defs(p, variables=CATALOG))
 
     assert sorted(defs) == ["jets/all/jet_pt", "jets/all/jet_pt_vs_jet_eta",
                             "jets/central/jet_pt", "jets/central/jet_pt_fine",
@@ -603,9 +604,9 @@ def test_region_histograms_fill_after_both_cuts():
         "hard": {"cut": ["good"], "vars": ["jet_pt"]}}}}, CATALOG)
     sels = {"good": {"expression": "events.Jet.pt > 60"},
             "highmet": {"expression": "events.met > 50"}}
-    hists = build_histograms(defs, ["s"])
+    hists = build_histograms(as_histograms(defs), ["s"])
 
-    fill_histograms(hists, defs, sels, make_events(), "s", np.ones(3))
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), make_events(), "s", np.ones(3))
 
     # met > 50: events 2 and 3; jets > 60 there: only the 200 GeV one
     assert totals(hists["jets/hard/jet_pt"]) == 1

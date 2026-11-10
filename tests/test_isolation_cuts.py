@@ -30,7 +30,9 @@ def test_isolation_selections_keep_clusters_with_no_muon_or_jet():
     import numpy as np
     from pathlib import Path
 
-    from suep_plot.histograms import build_histograms, fill_histograms, load_histogram_defs
+    from suep_plot.histograms import (as_histograms, as_selections,
+                                      build_histograms, fill_histograms,
+                                      load_histogram_defs)
 
     from suep_plot.histograms import load_selection_defs
 
@@ -48,8 +50,8 @@ def test_isolation_selections_keep_clusters_with_no_muon_or_jet():
     ])
     events = ak.zip({"cscCluster": clusters}, depth_limit=1)
 
-    hists = build_histograms(use, ["s"])
-    fill_histograms(hists, use, sels, events, "s", np.ones(3))
+    hists = build_histograms(as_histograms(use), ["s"])
+    fill_histograms(hists, as_histograms(use), as_selections(sels), events, "s", np.ones(3))
 
     def total(name):
         return hists[name][{"dataset": "s"}].sum(flow=True).value
