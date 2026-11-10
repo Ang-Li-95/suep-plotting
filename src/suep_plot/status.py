@@ -362,13 +362,10 @@ def config_fingerprint(config_dir: str | Path) -> dict[str, str]:
     so a resubmission can tell whether the redone tasks would fill something
     different from the tasks that already finished.
     """
-    from .config import FILL_CONFIG_FILES, config_sources
+    from .config import fill_sources
 
-    paths = sorted(config_sources(config_dir, FILL_CONFIG_FILES))
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    paths += sorted((repo_root / "custom").glob("*.py"))
     return {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in paths if p.exists()}
+            for p in fill_sources(config_dir) if p.exists()}
 
 
 def write_fingerprint(work_dir: Path, config_dir: str | Path) -> None:

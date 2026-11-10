@@ -11,12 +11,10 @@ from __future__ import annotations
 import difflib
 from pathlib import Path
 
-from .configset import import_custom, load_columns_config, load_custom_columns
-from .corrections import load_correction_defs
-from .fill import _compile_expr, prepare_events
-from .histdefs import load_histogram_defs, load_selection_defs
-from .inputs import load_samples, open_events
-from .reweights import build_reweighters, load_reweight_defs
+from .configset import ConfigSet, load_config_set
+from .fill import compile_expr, prepare_events
+from .histdefs import load_histogram_defs
+from .inputs import open_events
 
 
 # ── static checks ─────────────────────────────────────────────────
@@ -39,16 +37,37 @@ def reference_errors(hist_defs: dict, sel_defs: dict, reweighters: dict) -> list
     return errors
 
 
-def custom_config_errors(settings, sel_defs: dict) -> list[str]:
+def custom_config_errors(cs: ConfigSet) -> list[str]:
     """What custom/columns.py's ``validate()`` finds wrong with the set, if anything.
 
     Problems ``derive()`` would otherwise hit only mid-run -- e.g. the
     ``cluster_isolation`` step without the prompt-object selections it reads.
     """
-    validate = getattr(import_custom(), "validate", None)
-    if validate is None or settings is None:
+    if cs.validate_fn is None or cs.settings is None:
         return []
-    return list(validate(settings, sel_defs))
+    return list(cs.validate_fn(cs.settings, cs.selections))
+
+
+def static_errors(cs: ConfigSet) -> list[str]:
+    """What is wrong with a loaded set, as far as it shows without input files."""
+    return reference_errors(cs.histograms, cs.selections, cs.reweighters) \
+        + custom_config_errors(cs)
+
+
+def load_and_validate(config_dir: str | Path) -> tuple[ConfigSet | None, list[str]]:
+    """Load a set and run the static checks -> (the set, its problems).
+
+    The set is ``None`` when a file of it does not load at all; otherwise
+    every problem found is listed, not just the first.
+    """
+    problems: list[str] = []
+    try:
+        cs = load_config_set(config_dir, problems)
+    except SystemExit as e:
+        return None, [str(e)]
+    if not cs.samples:
+        problems.append("samples.yaml defines no samples")
+    return cs, problems + static_errors(cs)
 
 
 def validate_config_set(config_dir: str | Path) -> list[str]:
@@ -59,30 +78,7 @@ def validate_config_set(config_dir: str | Path) -> list[str]:
     reweight map a histogram names exists, that ``columns.yaml`` is valid and
     that the steps it enables find what they need.
     """
-    config_dir = Path(config_dir)
-    try:
-        sample_defs = load_samples(config_dir / "samples.yaml")
-        hist_defs = load_histogram_defs(config_dir / "histograms.yaml")
-        sel_defs = load_selection_defs(config_dir / "selections.yaml")
-        load_correction_defs(config_dir / "corrections.yaml")
-        rw_defs = load_reweight_defs(config_dir / "reweights.yaml")
-    except SystemExit as e:
-        return [str(e)]
-
-    errors = [] if sample_defs else ["samples.yaml defines no samples"]
-    try:
-        reweighters = build_reweighters(rw_defs, config_dir)
-    except (ValueError, FileNotFoundError, KeyError) as e:
-        errors.append(f"reweights.yaml: {e}")
-        reweighters = {}
-    errors += reference_errors(hist_defs, sel_defs, reweighters)
-    try:
-        _, settings = load_custom_columns(
-            load_columns_config(config_dir / "columns.yaml"), verbose=False)
-        errors += custom_config_errors(settings, sel_defs)
-    except SystemExit as e:
-        errors.append(str(e))
-    return errors
+    return load_and_validate(config_dir)[1]
 
 
 def config_warnings(config_dir: str | Path) -> list[str]:
@@ -144,7 +140,7 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
 
     def evaluate(what: str, expr: str):
         try:
-            return _compile_expr(expr)(events)
+            return compile_expr(expr)(events)
         except Exception as e:  # noqa: BLE001 - reported
             bad.append(f"{what} ({expr!r}): {type(e).__name__}: {str(e)[:120]}")
             return None

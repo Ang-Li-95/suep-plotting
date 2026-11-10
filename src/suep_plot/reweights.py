@@ -42,7 +42,7 @@ import numpy as np
 import yaml
 
 from .config import load_config_file, name_list
-from .fill import _compile_expr
+from .fill import compile_expr
 
 
 def _absolute_map_files(defs: dict, path, axes) -> dict:
@@ -156,7 +156,7 @@ class Reweighter:
 
     def evaluate(self, events):
         """Weight array for a chunk: 1D per event, or jagged for level: object."""
-        results = [_compile_expr(e)(events) for e in self.exprs]
+        results = [compile_expr(e)(events) for e in self.exprs]
 
         if self.kind == "expression":
             return results[0]

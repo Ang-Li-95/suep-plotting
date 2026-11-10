@@ -26,15 +26,13 @@ from coffea import processor
 from coffea.analysis_tools import Weights
 from coffea.nanoevents import NanoAODSchema
 
-from .checks import check_expressions, custom_config_errors, reference_errors
-from .config import FILL_CONFIG_FILES, config_sources
-from .configset import load_columns_config, load_custom_columns
-from .corrections import apply_corrections, build_correctors, load_correction_defs
-from .fill import (_compile_expr, attach_selection_columns, build_histograms,
-                   fill_histograms)
-from .histdefs import load_histogram_defs, load_selection_defs
-from .inputs import load_samples, resolve_sample_files, select_samples
-from .reweights import apply_reweights, build_reweighters, load_reweight_defs
+from .checks import check_expressions, static_errors
+from .config import fill_sources
+from .configset import load_config_set
+from .corrections import apply_corrections, build_correctors
+from .fill import build_histograms, compile_expr, fill_histograms, prepare_events
+from .inputs import resolve_sample_files, select_samples
+from .reweights import apply_reweights
 from .status import output_name
 
 
@@ -81,11 +79,8 @@ class SuepProcessor(processor.ProcessorABC):
         is_data = cfg.get("is_data", False)
         group = cfg.get("group", "")
 
-        if self.derive_fn is not None:
-            events = self.derive_fn(events, self.settings, self.sel_defs)
-        # After derive(), so a selection over a derived collection becomes a
-        # column too.  See fill.attach_selection_columns.
-        events = attach_selection_columns(events, self.sel_defs, dataset)
+        events = prepare_events(events, self.derive_fn, self.settings,
+                                self.sel_defs, dataset)
 
         n = len(events)
         weights = Weights(n, storeIndividual=False)
@@ -130,7 +125,7 @@ class SuepProcessor(processor.ProcessorABC):
             if sel is None:
                 # Already evaluated once as a selection column, so this cannot
                 # fail where the fill did not.
-                sel = _compile_expr(selection.expression)(events)
+                sel = compile_expr(selection.expression)(events)
                 if isinstance(sel, ak.Array):
                     sel = ak.fill_none(sel, False)
             if isinstance(sel, ak.Array) and sel.ndim > 1:
@@ -150,17 +145,7 @@ def _inputs_mtime(files: list[str], config_dir: Path,
     Returns ``None`` when freshness can't be established (remote/missing
     inputs), in which case the sample is always processed.
     """
-    import os
-
-    # Every file the set actually reads, not just the ones in its directory:
-    # a set that _extends a reference set or _includes a shared fragment is
-    # out of date when *those* change too (see config.config_sources).
-    paths = list(config_sources(config_dir, FILL_CONFIG_FILES))
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    # Every module of the custom-columns package, not just columns.py: the
-    # helpers live in sibling files and editing one changes the fills too.
-    paths.extend(sorted((repo_root / "custom").glob("*.py")))
-    paths.extend(Path(p) for p in extra_paths)
+    paths = fill_sources(config_dir) + [Path(p) for p in extra_paths]
 
     newest = 0.0
     for p in paths:
@@ -199,21 +184,13 @@ def run_all(
     """
     config_dir = Path(config_dir)
     output_dir = Path(output_dir)
-    sample_defs = load_samples(config_dir / "samples.yaml")
-    hist_defs = load_histogram_defs(config_dir / "histograms.yaml")
-    sel_defs = load_selection_defs(config_dir / "selections.yaml")
-    corr_defs = load_correction_defs(config_dir / "corrections.yaml")
-    rw_defs = load_reweight_defs(config_dir / "reweights.yaml")
-
-    # Reweighting changes physics results: config errors are fatal, not warnings.
-    try:
-        reweighters = build_reweighters(rw_defs, config_dir)
-    except (ValueError, FileNotFoundError, KeyError) as e:
-        raise SystemExit(f"ERROR in reweights.yaml: {e}")
+    cs = load_config_set(config_dir, verbose=True)
+    hist_defs, sel_defs, corr_defs = cs.histograms, cs.selections, cs.corrections
+    reweighters, derive_fn, settings = cs.reweighters, cs.derive_fn, cs.settings
     if reweighters:
         print(f"Loaded {len(reweighters)} reweight(s): {list(reweighters)}")
 
-    errors = reference_errors(hist_defs, sel_defs, reweighters)
+    errors = static_errors(cs)
     if errors:
         raise SystemExit("ERROR in " + str(config_dir) + ":\n"
                          + "\n".join(f"  {e}" for e in errors))
@@ -223,7 +200,7 @@ def run_all(
             print(f"WARNING: histogram '{hname}' uses '{wspec}' which is also applied "
                   f"globally; add 'fill_only: true' to the map to avoid double counting")
 
-    sample_defs = select_samples(sample_defs, samples_filter)
+    sample_defs = select_samples(cs.samples, samples_filter)
 
     correctors = {}
     if corr_defs:
@@ -235,13 +212,6 @@ def run_all(
             raise SystemExit(f"ERROR: could not load corrections.yaml: "
                              f"{type(e).__name__}: {e}")
         print(f"Loaded {len(correctors)} correction(s): {list(correctors)}")
-
-    columns_cfg = load_columns_config(config_dir / "columns.yaml")
-    derive_fn, settings = load_custom_columns(columns_cfg)
-    errors = custom_config_errors(settings, sel_defs)
-    if errors:
-        raise SystemExit("ERROR in " + str(config_dir) + ":\n"
-                         + "\n".join(f"  {e}" for e in errors))
 
     remote = (file_list or []) + [str(s) for cfg in sample_defs.values()
                                   for s in (cfg.get("files") or [])]

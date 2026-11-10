@@ -139,19 +139,17 @@ def show(config_dir: str, grep: str | None = None, sections=None) -> int:
 
 def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
     """Static checks, then (unless *static*) every expression on one file per sample."""
-    from .checks import check_expressions, config_warnings, validate_config_set
-    from .configset import load_config_set
+    from .checks import check_expressions, config_warnings, load_and_validate
     from .inputs import resolve_sample_files, select_samples
 
     rc = 0
     for cdir in config_dirs:
-        errors = validate_config_set(cdir)
+        cs, errors = load_and_validate(cdir)
         warnings = config_warnings(cdir)
         checked = []
         if not static and not errors:
-            cs = load_config_set(cdir)
             try:
-                chosen = select_samples(cs["samples"], samples)
+                chosen = select_samples(cs.samples, samples)
             except SystemExit as e:
                 errors.append(str(e))
                 chosen = {}
@@ -171,9 +169,9 @@ def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
                     errors.append(f"[{name}] no input files resolved")
                     continue
                 errors += [f"[{name}] {p}" for p in check_expressions(
-                    files, cfg.get("tree", "Events"), cs["histograms"],
-                    cs["selections"], cs["corrections"], cs["derive_fn"],
-                    cs["reweighters"], cs["settings"], sample=name)]
+                    files, cfg.get("tree", "Events"), cs.histograms,
+                    cs.selections, cs.corrections, cs.derive_fn,
+                    cs.reweighters, cs.settings, sample=name)]
                 checked.append(name)
         status = "FAILED" if errors else "OK"
         detail = (f"; expressions evaluated on one file of {len(checked)} sample(s)"
@@ -221,7 +219,7 @@ def fields(config_dir: str, sample: str, n: int = 1000, grep: str | None = None,
     from .inputs import open_events, resolve_sample_files, select_samples
 
     cs = load_config_set(config_dir)
-    cfg = select_samples(cs["samples"], [sample])[sample]
+    cfg = select_samples(cs.samples, [sample])[sample]
     files = resolve_sample_files(cfg)
     if not files:
         raise SystemExit(f"ERROR: sample '{sample}' resolves no input file")
@@ -230,10 +228,10 @@ def fields(config_dir: str, sample: str, n: int = 1000, grep: str | None = None,
         ensure_proxy(need_seconds=60)
     print(f"{sample}: first {n} events of {files[0]}")
     events = open_events(files[0], cfg.get("tree", "Events"), n)
-    events = prepare_events(events, cs["derive_fn"], cs["settings"],
-                            cs["selections"], sample)
+    events = prepare_events(events, cs.derive_fn, cs.settings,
+                            cs.selections, sample)
     pattern = re.compile(grep) if grep else None
-    selections = set(cs["selections"])
+    selections = set(cs.selections)
     for name in sorted(events.fields):
         sub = events[name]
         sub_fields = list(getattr(sub, "fields", []) or [])

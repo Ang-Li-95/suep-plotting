@@ -4,7 +4,7 @@ import awkward as ak
 import numpy as np
 import pytest
 
-from suep_plot.fill import (FillError, _compile_expr, attach_selection_columns,
+from suep_plot.fill import (FillError, compile_expr, attach_selection_columns,
                             build_histograms, fill_histograms)
 from suep_plot.histdefs import as_histograms, as_selections
 from suep_plot.reweights import Reweighter
@@ -211,17 +211,17 @@ def test_a_lambda_in_an_expression_can_see_the_namespace():
             "ak.combinations(events.Jet.pt, 2, axis=1, fields=['a', 'b']))")
 
     # The 2-jet event has one pair (50 + 100); the others have none.
-    assert ak.to_list(_compile_expr(expr)(events)) == [150.0, 0.0, 0.0]
+    assert ak.to_list(compile_expr(expr)(events)) == [150.0, 0.0, 0.0]
 
 
 def test_a_comprehension_in_an_expression_can_see_the_namespace():
     events = make_events()
     expr = "ak.concatenate([ak.num(events.Jet), ak.num(events.Jet)], axis=0)"
-    assert ak.to_list(_compile_expr(expr)(events)) == [2, 0, 1, 2, 0, 1]
+    assert ak.to_list(compile_expr(expr)(events)) == [2, 0, 1, 2, 0, 1]
 
     # A genuine comprehension, which is its own scope.
     expr = "np.array([len(x) for x in ak.to_list(events.Jet.pt)])"
-    assert list(_compile_expr(expr)(events)) == [2, 0, 1]
+    assert list(compile_expr(expr)(events)) == [2, 0, 1]
 
 
 def test_the_builtins_are_still_restricted():
@@ -230,11 +230,11 @@ def test_the_builtins_are_still_restricted():
     for expr in ("__import__('os').listdir('.')", "open('/etc/passwd')",
                  "eval('1+1')"):
         with pytest.raises(NameError):
-            _compile_expr(expr)(events)
+            compile_expr(expr)(events)
 
     # The four that are provided still work.
-    assert _compile_expr("max(1, 2)")(events) == 2
-    assert _compile_expr("abs(-3)")(events) == 3
+    assert compile_expr("max(1, 2)")(events) == 2
+    assert compile_expr("abs(-3)")(events) == 3
 
 
 def test_the_max_dphi_idiom():
@@ -253,14 +253,14 @@ def test_the_max_dphi_idiom():
             "events.cscCluster.phi, 2, axis=1))) + np.pi) % (2 * np.pi) - np.pi), "
             "axis=1)")
 
-    got = ak.to_list(_compile_expr(expr)(events))
+    got = ak.to_list(compile_expr(expr)(events))
     assert got[0] == pytest.approx(3.1)      # |0.1 - (-3.0)| = 3.1 < pi
     assert got[1] is None and got[2] is None
 
     # Never exceeds pi, whatever the inputs.
     wide = ak.zip({"cscCluster": ak.Array([[{"phi": -3.14}, {"phi": 3.14}]])},
                   depth_limit=1)
-    assert _compile_expr(expr)(wide)[0] == pytest.approx(0.0034, abs=1e-3)
+    assert compile_expr(expr)(wide)[0] == pytest.approx(0.0034, abs=1e-3)
 
 
 # ── per object or per event: read off the expression ──────────────

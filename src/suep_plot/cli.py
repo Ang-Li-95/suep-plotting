@@ -151,7 +151,9 @@ def _check_config_dir(path: str, runnable: bool = True) -> str:
 
 def _git_state() -> dict:
     """Commit and dirty flag of the checkout the package runs from."""
-    repo = str(Path(__file__).resolve().parents[2])
+    from .config import REPO_ROOT
+
+    repo = str(REPO_ROOT)
     try:
         commit = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
                                 capture_output=True, text=True, timeout=20).stdout.strip()

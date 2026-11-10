@@ -36,7 +36,7 @@ _SAFE_BUILTINS = {"abs": abs, "len": len, "min": min, "max": max}
 
 
 @functools.lru_cache(maxsize=None)
-def _compile_expr(expr: str):
+def compile_expr(expr: str):
     """Compile an expression string into a callable(events) -> array."""
     code = compile(expr, "<config expression>", "eval")
 
@@ -113,7 +113,7 @@ def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
         failed = []
         for name, expr in pending:
             try:
-                mask = _compile_expr(expr)(events)
+                mask = compile_expr(expr)(events)
             except Exception as e:  # noqa: BLE001 - re-raised below if it persists
                 failed.append((name, expr, e))
                 continue
@@ -270,7 +270,7 @@ def fill_histograms(
                     raise KeyError(f"unknown reweight map '{expr}'")
                 expr_cache[expr] = rw.evaluate(events)
             else:
-                expr_cache[expr] = _compile_expr(expr)(events)
+                expr_cache[expr] = compile_expr(expr)(events)
         return expr_cache[expr]
 
     def evaluate(kind: str, name: str, key: str, expr: str):

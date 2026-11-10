@@ -21,6 +21,8 @@ import functools
 import awkward as ak
 import numpy as np
 
+from suep_plot.fill import compile_expr
+
 
 
 # drMuon / drJet in events with no reconstructed muon / jet at all.  Such a
@@ -48,9 +50,6 @@ def _dr_to_nearest(clusters, objects):
     return ak.fill_none(ak.min(np.sqrt(deta ** 2 + dphi ** 2), axis=2), NO_OBJECT_DR)
 
 
-_SAFE_BUILTINS = {"abs": abs, "len": len, "min": min, "max": max}
-
-
 # The selections.yaml entries the cluster isolation is measured against, and
 # the dR field each one produces.  Both are object-level selections over a
 # prompt collection; see docs/derived-columns.md.
@@ -76,14 +75,7 @@ def _selected_objects(events, name, selection):
         return None
 
     try:
-        # One namespace, as eval's *globals* -- see histograms._compile_expr:
-        # names in eval's locals are invisible to nested scopes, which would
-        # make a lambda or comprehension in a selection fail on 'ak'.
-        keep = eval(  # noqa: S307 - trusted config expressions
-            selection.expression,
-            {"__builtins__": _SAFE_BUILTINS,
-             "events": events, "ev": events, "ak": ak, "np": np},
-        )
+        keep = compile_expr(selection.expression)(events)
     except Exception as exc:
         raise ValueError(
             f"selections.yaml: '{name}' failed on collection '{collection}': "

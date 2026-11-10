@@ -11,6 +11,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from .config import REPO_ROOT
 from .status import JOBS_FILE, output_name, record_submission, write_fingerprint
 
 # Wall-time caps of the CBE.next QOS levels.  The site's submit hook adds the
@@ -297,7 +298,7 @@ def submit_jobs(
 
     write_fingerprint(work_dir, config_dir)
 
-    repo_root = Path(__file__).resolve().parent.parent.parent
+    repo_root = REPO_ROOT
     proxy_file = proxy_path(proxy)
     array_spec = f"0-{n_jobs - 1}"
 

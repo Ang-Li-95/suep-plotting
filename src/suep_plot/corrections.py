@@ -23,7 +23,7 @@ import numpy as np
 # Ensure the scipy/_lazywhere shim is applied before coffea.lookup_tools loads.
 from . import _compat  # noqa: F401
 from .config import load_config_file, name_list
-from .fill import _compile_expr
+from .fill import compile_expr
 
 
 def load_correction_defs(path: str) -> dict:
@@ -76,7 +76,7 @@ def build_correctors(corr_defs: dict) -> dict:
 
 
 def _eval_inputs(cfg, events):
-    return [_compile_expr(inp)(events) for inp in cfg["inputs"]]
+    return [compile_expr(inp)(events) for inp in cfg["inputs"]]
 
 
 def _object_product(wrapper, input_arrays):

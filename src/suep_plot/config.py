@@ -76,6 +76,10 @@ import yaml
 
 DIRECTIVES = ("_extends", "_include", "_registry", "_axes", "_repeat")
 
+# The checkout: configs/, custom/, variables.yaml and datasets.yaml live here,
+# next to src/.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 SET_FILE = "set.yaml"
 SET_KEYS = ("extends", "description", "abstract")
 
@@ -368,7 +372,7 @@ CONFIG_FILES = ("samples.yaml", "histograms.yaml", "selections.yaml",
 
 # The variable catalog every set reads: expression, binning and axis title of
 # each variable, written once (next to datasets.yaml at the repo root).
-GLOBAL_VARIABLES = Path(__file__).resolve().parents[2] / "variables.yaml"
+GLOBAL_VARIABLES = REPO_ROOT / "variables.yaml"
 
 # The subset that decides what lands in the pickles.  derived_plots.yaml is
 # deliberately absent: it is read by suep-plot only, so editing a profile or an
@@ -398,3 +402,16 @@ def config_sources(config_dir: str | Path, files=CONFIG_FILES) -> set:
     if "variables.yaml" in files and GLOBAL_VARIABLES.exists():
         sources.add(GLOBAL_VARIABLES.resolve())
     return sources
+
+
+def fill_sources(config_dir: str | Path) -> list:
+    """Every file that decides what a run fills, in a stable order.
+
+    The fill-relevant YAML the set reads (see :func:`config_sources`) and
+    every module of ``custom/`` -- the helpers live in sibling files, and
+    editing one changes the fills as much as editing ``columns.py``.  The
+    up-to-date check compares their mtimes, the resubmission check their
+    hashes.
+    """
+    return sorted(config_sources(config_dir, FILL_CONFIG_FILES)) \
+        + sorted((REPO_ROOT / "custom").glob("*.py"))
