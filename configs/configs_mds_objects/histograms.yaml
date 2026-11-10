@@ -17,7 +17,7 @@
 regions:
   csc:
     label: CSC clusters
-    per_event:
+    evt_vars:
       - {var: csc_cluster_n, bins: [6, -0.5, 5.5]}
       - mds_cluster_n
       - csc_cluster_n_matched
@@ -25,12 +25,12 @@ regions:
       - max_dphi_cluster_sel
   dt:
     label: DT clusters
-    per_event:
+    evt_vars:
       - {var: dt_cluster_n, bins: [6, -0.5, 5.5]}
       - dt_cluster_n_matched
   jet:
     label: jets
-    per_event:
+    evt_vars:
       - ht
     objects:
       all:
@@ -44,7 +44,7 @@ regions:
         vars: *jet_all
   event:
     label: events
-    per_event:
+    evt_vars:
       - puppi_met
       - puppi_met_phi
       - n_jet_sel_foriso_mask

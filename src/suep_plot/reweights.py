@@ -41,7 +41,7 @@ import awkward as ak
 import numpy as np
 import yaml
 
-from .config import load_config_file
+from .config import load_config_file, name_list
 from .histograms import _compile_expr
 
 
@@ -113,8 +113,10 @@ class Reweighter:
         self.level = cfg.get("level", "event")
         if self.level not in ("event", "object"):
             raise ValueError(f"reweight '{name}': level must be 'event' or 'object'")
-        self.apply_to = cfg.get("apply_to", "all")
-        self.samples = cfg.get("samples")
+        where = f"reweight '{name}'"
+        self.apply_to = name_list(cfg.get("apply_to", "all") or "all", where,
+                                  "apply_to", keep=("all",))
+        self.samples = name_list(cfg.get("samples"), where, "samples")
         self.fill_only = bool(cfg.get("fill_only", False))
         self.clamp = bool(cfg.get("clamp", False))
 

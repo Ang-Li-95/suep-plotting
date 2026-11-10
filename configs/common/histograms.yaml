@@ -20,7 +20,7 @@
 regions:
   csc:
     label: CSC clusters
-    per_event:
+    evt_vars:
       - csc_cluster_n
     objects:
       all:
@@ -68,7 +68,7 @@ regions:
           - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
   dt:
     label: DT clusters
-    per_event:
+    evt_vars:
       - dt_cluster_n
     objects:
       all:
@@ -106,7 +106,7 @@ regions:
           - {var: dt_cluster_rpc_time_from_bx, selections: [dt_cluster_has_rpc]}
   event:
     label: events
-    per_event:
+    evt_vars:
       - puppi_met
       - n_jet_sel_foriso
       - n_fatjet

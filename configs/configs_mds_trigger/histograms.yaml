@@ -16,63 +16,63 @@
 regions:
   csc:
     label: CSC clusters
-    per_event:
+    evt_vars:
       - evt_max_csc_cluster_size
       - evt_second_csc_cluster_size
   hlt_csccluster_loose:
-    events: [hlt_csccluster_loose]
-    per_event:
+    evt_sel: [hlt_csccluster_loose]
+    evt_vars:
       - evt_max_csc_cluster_size
       - evt_n_csc_rechits_matched
   dt:
     label: DT clusters
-    per_event:
+    evt_vars:
       - evt_max_dt_cluster_size
   hlt_l1cscshower_dt50:
-    events: [hlt_l1cscshower_dt50]
-    per_event:
+    evt_sel: [hlt_l1cscshower_dt50]
+    evt_vars:
       - evt_max_dt_cluster_size
   hlt_l1cscshower_dt75:
-    events: [hlt_l1cscshower_dt75]
-    per_event:
+    evt_sel: [hlt_l1cscshower_dt75]
+    evt_vars:
       - evt_max_dt_cluster_size
   hlt_l1met_dt50:
-    events: [hlt_l1met_dt50]
-    per_event:
+    evt_sel: [hlt_l1met_dt50]
+    evt_vars:
       - evt_max_dt_cluster_size
       - pf_met
       - {name: evt_met_vs_hltdtsize_num_l1met50, x: {var: pf_met, edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400, 500]}, y: evt_max_hlt_dt_cluster_size}
   hlt_l1met_dtnomb1s50:
-    events: [hlt_l1met_dtnomb1s50]
-    per_event:
+    evt_sel: [hlt_l1met_dtnomb1s50]
+    evt_vars:
       - evt_max_dt_cluster_size
       - pf_met
   event:
     label: events
-    per_event:
+    evt_vars:
       - pf_met
       - {name: evt_met_vs_hltdtsize_den, x: {var: pf_met, edges: [0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400, 500]}, y: evt_max_hlt_dt_cluster_size}
   has_hlt_dtcluster:
-    events: [has_hlt_dtcluster]
-    per_event:
+    evt_sel: [has_hlt_dtcluster]
+    evt_vars:
       - pf_met
   hlt_pfmetnomu120:
-    events: [hlt_pfmetnomu120]
-    per_event:
+    evt_sel: [hlt_pfmetnomu120]
+    evt_vars:
       - pf_met
   has_hlt_dtcluster_hlt_l1met_dt50:
-    events: [has_hlt_dtcluster, hlt_l1met_dt50]
-    per_event:
+    evt_sel: [has_hlt_dtcluster, hlt_l1met_dt50]
+    evt_vars:
       - pf_met
   csc_rechit:
     label: CSC rechits
-    per_event:
+    evt_vars:
       - evt_n_csc_rechits_matched
   hlt_doublecsc100:
-    events: [hlt_doublecsc100]
-    per_event:
+    evt_sel: [hlt_doublecsc100]
+    evt_vars:
       - evt_second_csc_cluster_size
   hlt_doublecsc75:
-    events: [hlt_doublecsc75]
-    per_event:
+    evt_sel: [hlt_doublecsc75]
+    evt_vars:
       - evt_second_csc_cluster_size

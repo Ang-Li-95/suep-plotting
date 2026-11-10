@@ -32,7 +32,9 @@ _TRIPLE = ("bins", "lo", "hi")
 # Display defaults a catalog variable may carry for its 1D histograms.
 DISPLAY_KEYS = ("log_x", "log_y", "flow", "rebin", "blind")
 # What a region and one of its object cuts may say (see expand_regions).
-REGION_KEYS = ("label", "events", "per_event", "objects")
+REGION_KEYS = ("label", "evt_sel", "evt_vars", "objects")
+# Former names of region keys: refused, with the new name in the message.
+RENAMED_REGION_KEYS = {"events": "evt_sel", "per_event": "evt_vars"}
 CUT_KEYS = ("cut", "label", "vars")
 
 
@@ -86,6 +88,9 @@ def normalize_hist(cfg, where: str):
     for ax in ("x", "y"):
         if cfg.get(ax) is not None:
             cfg = {**cfg, ax: _normalize_axis(cfg[ax], f"{where}.{ax}")}
+    # 'selections: name' means the one selection, not its letters.
+    if isinstance(cfg.get("selections"), str):
+        cfg = {**cfg, "selections": [cfg["selections"]]}
     variants = cfg.get("variants")
     if isinstance(variants, dict):
         cfg = {**cfg, "variants": {v: normalize_hist(o, f"{where}.variants.{v}")
@@ -174,7 +179,7 @@ def _as_list(value) -> list:
 
 
 def _region_entry(spec, where: str) -> tuple[str, dict]:
-    """One entry of a ``vars`` / ``per_event`` list -> (leaf name, definition).
+    """One entry of a ``vars`` / ``evt_vars`` list -> (leaf name, definition).
 
     ``name`` (a catalog variable, 1D), ``[x, y]`` (2D), or a mapping
     ``{var: name, <overrides>}`` / ``{x: ..., y: ..., <overrides>}`` with an
@@ -223,8 +228,8 @@ def entry_leaf(spec) -> str:
 def expand_regions(regions: dict, path="histograms.yaml") -> dict:
     """``regions:`` -> one histogram definition per (region, cut, variable).
 
-    A region names its event-level cuts (``events``, AND-ed), the variables to
-    fill once per event after them (``per_event``), and named object-level
+    A region names its event-level cuts (``evt_sel``, AND-ed), the variables to
+    fill once per event after them (``evt_vars``), and named object-level
     cuts (``objects``), each with the variables filled after the event cuts
     *and* that cut.  The histograms are named ``<region>/<cut>/<variable>``
     (``<region>/<variable>`` per event), which also becomes their folder in
@@ -240,9 +245,12 @@ def expand_regions(regions: dict, path="histograms.yaml") -> dict:
                               f"{', '.join(REGION_KEYS)}")
         unknown = sorted(set(region) - set(REGION_KEYS))
         if unknown:
-            raise ConfigError(f"ERROR in {where}: unknown key(s) {unknown}; "
+            renamed = [f"'{k}' is now '{RENAMED_REGION_KEYS[k]}'"
+                       for k in unknown if k in RENAMED_REGION_KEYS]
+            hint = f" ({'; '.join(renamed)})" if renamed else ""
+            raise ConfigError(f"ERROR in {where}: unknown key(s) {unknown}{hint}; "
                               f"known: {', '.join(REGION_KEYS)}")
-        events = _as_list(region.get("events"))
+        events = _as_list(region.get("evt_sel"))
         rlabel = region.get("label", rname)
 
         def add(name, cfg, selections, annotation, entry_where):
@@ -255,8 +263,8 @@ def expand_regions(regions: dict, path="histograms.yaml") -> dict:
                 cfg.setdefault("annotation", annotation)
             out[name] = cfg
 
-        for spec in region.get("per_event") or []:
-            ewhere = f"{where}.per_event"
+        for spec in region.get("evt_vars") or []:
+            ewhere = f"{where}.evt_vars"
             leaf, cfg = _region_entry(spec, ewhere)
             add(region_hist_name(rname, None, leaf), cfg, events, rlabel, ewhere)
 
@@ -386,6 +394,45 @@ def check_axes(defs: dict, path="histograms.yaml") -> None:
         raise ConfigError(f"ERROR in {path}:\n  " + "\n  ".join(problems))
 
 
+def _override_axis(variant: dict, ax: str, spec, fail) -> dict:
+    """*variant* with its ``x`` / ``y`` axis overridden by a variant's *spec*.
+
+    The base may carry the axis as an ``x:`` / ``y:`` mapping (not resolved
+    yet) or in long form.  A spec naming a catalog variable replaces the axis;
+    one giving only some keys (``{hi: 800}``) changes those and keeps the rest.
+    """
+    if isinstance(spec, str):
+        spec = {"var": spec}
+    if not isinstance(spec, dict):
+        fail(f"'{ax}:' must be a variable name or a mapping of axis keys")
+    base_axis = variant.get(ax)
+    if isinstance(base_axis, dict):
+        merged = dict(spec) if "var" in spec else _overlay(base_axis, spec)
+        return {**variant, ax: merged}
+    two_d = is_2d(variant)
+    if "var" in spec or (ax == "y" and not two_d):
+        fail(f"'{ax}:' cannot be overridden here because the base histogram is "
+             "written in long form (expression / bins / ...); write the base "
+             "with 'x:' (and 'y:'), or override the long-form keys directly")
+    s = f"_{ax}" if two_d else ""
+    return _overlay(variant, {f"{k}{s}": v for k, v in spec.items()}, (s,))
+
+
+def _decorate_label(cfg):
+    """Apply a variant's deferred ``label_prefix`` / ``label_suffix``.
+
+    Deferred when the base label was not known at expansion time -- it comes
+    from the catalog variable, filled in by :func:`resolve_axes`.
+    """
+    if not isinstance(cfg, dict) or "_label_decor" not in cfg:
+        return cfg
+    cfg = dict(cfg)
+    prefix, suffix = cfg.pop("_label_decor")
+    if cfg.get("label") is not None:
+        cfg["label"] = f"{prefix}{cfg['label']}{suffix}"
+    return cfg
+
+
 def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
     """Expand ``variants:`` into one histogram definition per variant.
 
@@ -409,8 +456,12 @@ def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
     yields ``csc_cluster_size``, ``csc_cluster_size_matched`` and
     ``csc_cluster_size_unmatched``.  A variant's ``selections`` are *appended*
     to the base ones (base cuts keep applying), ``label_prefix`` /
-    ``label_suffix`` decorate the base label, and any other key overrides the
-    base outright.  ``keep_base: false`` drops the unselected histogram.
+    ``label_suffix`` decorate the base label, an ``x:`` / ``y:`` is merged
+    into the base axis (``x: {hi: 800}`` changes the range, ``x: other_var``
+    replaces the axis), and any other key overrides the base outright.
+    ``keep_base: false`` drops the unselected histogram.
+
+    Runs on the definitions as written, before :func:`resolve_axes`.
     """
     variant_sets = raw.get("_variant_sets") or {}
     out: dict = {}
@@ -444,16 +495,30 @@ def expand_variants(raw: dict, path: str = "histograms.yaml") -> dict:
             overrides = dict(overrides or {})
             variant = dict(base)
 
-            selections = list(base.get("selections", [])) + \
-                list(overrides.pop("selections", []))
+            selections = _as_list(base.get("selections")) + \
+                _as_list(overrides.pop("selections", None))
             if selections:
                 variant["selections"] = selections
+
+            # An axis override is merged into the base axis, never left next
+            # to it: the base's own keys would otherwise win when the axes
+            # are resolved and the override would be silently ignored.
+            for ax in ("x", "y"):
+                if overrides.get(ax) is not None:
+                    variant = _override_axis(
+                        variant, ax, overrides.pop(ax),
+                        lambda msg: _fail(f"histogram '{name}' variant "
+                                          f"'{suffix}': {msg}"))
 
             label = overrides.pop("label", variant.get("label"))
             prefix = overrides.pop("label_prefix", "")
             suffix_label = overrides.pop("label_suffix", "")
             if label is not None:
                 variant["label"] = f"{prefix}{label}{suffix_label}"
+            elif prefix or suffix_label:
+                # The label comes from the catalog variable: decorate it once
+                # the axes are resolved (see _decorate_label).
+                variant["_label_decor"] = (prefix, suffix_label)
 
             variant.update(overrides)
 
@@ -487,18 +552,24 @@ def load_histogram_defs(path: str, variables: dict | None = None) -> dict:
         raise ConfigError(f"ERROR in {path}: region histogram(s) {clash} are also "
                           "defined on their own")
     raw.update(generated)
-    raw = {name: cfg if str(name).startswith("_")
-           else resolve_axes(name, cfg, variables, path)
-           for name, cfg in raw.items()}
+    # Variants first, on the axes as written: a variant may override an axis,
+    # and that has to be merged into the base axis before it is resolved.
     defs = expand_variants(raw, str(path))
-    # A variant may override an axis too.
-    defs = {name: resolve_axes(name, cfg, variables, path) for name, cfg in defs.items()}
+    defs = {name: _decorate_label(resolve_axes(name, cfg, variables, path))
+            for name, cfg in defs.items()}
     check_axes(defs, path)
     return defs
 
 
 def load_selection_defs(path: str) -> dict:
-    return load_config_file(path, normalize=normalize_selection_file)
+    """A set's selections.yaml; every selection must have an expression."""
+    defs = load_config_file(path, normalize=normalize_selection_file)
+    missing = [name for name, cfg in defs.items()
+               if not isinstance(cfg, dict) or not cfg.get("expression")]
+    if missing:
+        raise ConfigError(f"ERROR in {path}: selection(s) {missing} have no "
+                          "'expression'")
+    return defs
 
 
 def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
@@ -647,6 +718,50 @@ def is_jagged(arr) -> bool:
     return isinstance(arr, ak.Array) and arr.ndim > 1
 
 
+def object_selection_on_event_histogram(name: str, selections: list, sample: str) -> str:
+    """The error for a per-event histogram that lists a per-object selection.
+
+    An object-level mask says which objects pass, not which events: there is
+    no single event-level reading of it (and of two of them over different
+    collections, none at all).  The event-level cut is its own selection.
+    """
+    example = selections[0]
+    return (f"histogram '{name}' fills once per event, but selection(s) "
+            f"{selections} have one entry per object (sample '{sample}'). "
+            "Write the event-level cut as a selection of its own, e.g. "
+            f"\"ak.any(events.{example}, axis=1)\", and list that instead")
+
+
+def same_object_counts(mask, values) -> bool:
+    """Whether a per-object *mask* has one entry per object of *values*."""
+    n_mask = ak.fill_none(ak.num(mask, axis=1), -1)
+    n_values = ak.fill_none(ak.num(values, axis=1), -1)
+    return bool(ak.all(n_mask == n_values))
+
+
+def object_selection_over_other_collection(name: str, selections: list,
+                                           sample: str) -> str:
+    """The error for an object mask that does not match the histogram's objects."""
+    return (f"histogram '{name}': selection(s) {selections} do not have one "
+            f"entry per object of the histogram's expression (sample "
+            f"'{sample}') -- they select objects of another collection. An "
+            "object-level selection can only filter the collection it is "
+            "written over")
+
+
+def _weight_or_one(extra) -> np.ndarray:
+    """A histogram's extra per-event weight; missing or non-finite counts as 1.
+
+    The same convention as a reweight applied globally
+    (:meth:`reweights.Reweighter.event_weight`), so ``weight: "@map"`` on one
+    histogram and the map registered for the whole sample agree.
+    """
+    if isinstance(extra, ak.Array):
+        extra = ak.fill_none(extra, 1.0)
+    w = np.asarray(extra, dtype=np.float64)
+    return np.where(np.isfinite(w), w, 1.0)
+
+
 def _per_object(name: str, cfg: dict, evaluate, sample: str) -> bool:
     """Whether a histogram fills one entry per object, read off its expression.
 
@@ -685,11 +800,16 @@ def fill_histograms(
     expression that does not evaluate is fatal (:class:`FillError`), naming
     the histogram, the sample and the expression.
 
+    An object-level selection filters the objects a per-object histogram
+    fills.  On a per-event histogram it is an error: the event-level cut
+    ("has a passing object") is written as a selection of its own.
+
     Histogram ``weight`` entries may be NanoEvents expressions or ``"@name"``
     references to a reweight map (*reweighters*).  Either may evaluate to a
     jagged (per-object) array: for per-object histograms each object is then
     weighted individually; for event-level histograms the per-object weights
-    are multiplied into one weight per event.
+    are multiplied into one weight per event.  A missing or non-finite weight
+    counts as 1, as it does for a reweight applied globally.
 
     *layout*, if given, receives ``{histogram: per_object}`` for every
     histogram filled.  Returns the selection cache (name -> evaluated mask) so
@@ -744,11 +864,12 @@ def fill_histograms(
             continue
 
         event_mask = np.ones(n_events, dtype=bool)
-        obj_masks = []
+        obj_masks, obj_sel_names = [], []
         for sel_name in cfg.get("selections", []):
             sel = selection(sel_name)
             if is_jagged(sel):
                 obj_masks.append(sel)
+                obj_sel_names.append(sel_name)
             else:
                 event_mask = event_mask & np.asarray(sel)
 
@@ -756,14 +877,24 @@ def fill_histograms(
         if layout is not None:
             layout[name] = per_object
 
+        if obj_masks and not per_object:
+            raise FillError(object_selection_on_event_histogram(
+                name, obj_sel_names, sample))
+
         obj_mask = None
         if obj_masks:
+            # A mask filters the objects of the collection it was made over;
+            # over another collection it would pair objects by position.
+            key = "expression_x" if is_2d(cfg) else "expression"
+            values = eval_expr(cfg[key])
+            other = [s for s, m in zip(obj_sel_names, obj_masks)
+                     if not same_object_counts(m, values)]
+            if other:
+                raise FillError(object_selection_over_other_collection(
+                    name, other, sample))
             obj_mask = obj_masks[0]
             for m in obj_masks[1:]:
                 obj_mask = obj_mask & m
-            if not per_object:
-                event_mask = event_mask & np.asarray(ak.any(obj_mask, axis=1))
-                obj_mask = None
 
         w = weight
         obj_w = None
@@ -773,10 +904,10 @@ def fill_histograms(
                 if per_object:
                     obj_w = extra_w  # combined per object inside the fill
                 else:
-                    w = weight * np.asarray(
-                        ak.prod(ak.fill_none(extra_w, 1.0), axis=1), dtype=np.float64)
+                    w = weight * _weight_or_one(
+                        ak.prod(ak.fill_none(extra_w, 1.0), axis=1))
             else:
-                w = weight * np.asarray(_fill_none_safe(extra_w), dtype=np.float64)
+                w = weight * _weight_or_one(extra_w)
 
         try:
             if is_2d(cfg):
@@ -804,7 +935,8 @@ def _flat_obj_weight(obj_w, obj_mask, mask, counts, wname: str) -> np.ndarray:
         raise ValueError(
             f"object-level weight '{wname}' does not match the object structure of "
             "this histogram's expression (both must use the same collection)")
-    return np.asarray(ak.flatten(ow, axis=None), dtype=np.float64)
+    flat = np.asarray(ak.flatten(ow, axis=None), dtype=np.float64)
+    return np.where(np.isfinite(flat), flat, 1.0)   # as _weight_or_one
 
 
 def _fill_1d(h, cfg, eval_expr, sample, mask, w, obj_mask=None, obj_w=None,

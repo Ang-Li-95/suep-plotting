@@ -22,7 +22,7 @@ import numpy as np
 
 # Ensure the scipy/_lazywhere shim is applied before coffea.lookup_tools loads.
 from . import _compat  # noqa: F401
-from .config import load_config_file
+from .config import load_config_file, name_list
 from .histograms import _compile_expr
 
 
@@ -66,6 +66,10 @@ def build_correctors(corr_defs: dict) -> dict:
 
     correctors = {}
     for name, cfg in corr_defs.items():
+        # 'apply_to: background' is the one group, never a substring match.
+        cfg = {**cfg, "apply_to": name_list(cfg.get("apply_to", "all") or "all",
+                                            f"correction '{name}'", "apply_to",
+                                            keep=("all",))}
         cset = correctionlib.CorrectionSet.from_file(_resolve_file(cfg["file"]))
         correctors[name] = (correctionlib_wrapper(cset[cfg["name"]]), cfg)
     return correctors

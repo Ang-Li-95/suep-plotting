@@ -330,7 +330,12 @@ def plot(argv=None):
     config_dir, info = _plot_config_dir(args.input, args.config_dir)
     output_dir = args.output_dir
     if output_dir is None:
-        output_dir = os.path.join(args.input[0], "plots") if info else "plots"
+        # <run>/plots only when the one input *is* that run directory; with
+        # several inputs (or a pickle first) there is no single run to put
+        # the figures under.
+        single_run = (info is not None and len(args.input) == 1
+                      and os.path.isdir(args.input[0]))
+        output_dir = os.path.join(args.input[0], "plots") if single_run else "plots"
 
     os.environ.setdefault("MPLBACKEND", "Agg")
     from .plot import plot_all

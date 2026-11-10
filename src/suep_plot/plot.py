@@ -412,18 +412,24 @@ def restyle(hist_defs: dict, sample_defs: dict, config_dir) -> None:
     """Re-read plot-time styling from a config set, in place.
 
     The pickles carry the histogram and sample definitions as they were at
-    fill time; this lays the config set's current ones over them, so a label,
-    colour, rebin or log-axis change needs no reprocessing.  (What was filled
+    fill time; this replaces them with the config set's current ones, so a
+    label, colour, rebin or log-axis change needs no reprocessing.  (What was filled
     -- the axes, the expression -- is the histogram itself and cannot change.)
     """
     from .config import load_config_file
     from .histograms import load_histogram_defs
 
+    # The config's definition replaces the pickled one rather than being laid
+    # over it, so a key *removed* from the config (a rebin, a log axis, a
+    # colour) stops applying too.  Only ``per_object`` is kept from the
+    # pickle: the fill recorded it, the config normally does not state it.
     for name, cfg in load_histogram_defs(Path(config_dir) / "histograms.yaml").items():
-        hist_defs[name] = {**hist_defs.get(name, {}), **cfg}
+        recorded = {k: v for k, v in hist_defs.get(name, {}).items()
+                    if k == "per_object"}
+        hist_defs[name] = {**recorded, **cfg}
     for name, cfg in (load_config_file(Path(config_dir) / "samples.yaml") or {}).items():
         if isinstance(cfg, dict):
-            sample_defs[name] = {**sample_defs.get(name, {}), **cfg}
+            sample_defs[name] = dict(cfg)
 
 
 # ── 1D histogram plotting ────────────────────────────────────────
@@ -678,16 +684,20 @@ def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *,
 
 
 def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *,
-                     log_y=False, lumi=None, formats=DEFAULT_FORMATS, **_):
+                     log_y=False, lumi=None, formats=DEFAULT_FORMATS,
+                     normalize=False, ratio=True, **_):
     if not _require(histograms, [cfg["source"]], name):
         return 0
     h = histograms[cfg["source"]]
     proj_axis = "x" if cfg["type"] == "projection_x" else "y"
 
+    # A projection is drawn as an ordinary 1D histogram, so the command-line
+    # switches that apply to those (--normalize, --no-ratio) apply here too.
     plot_histogram(h.project("dataset", proj_axis),
                    {"label": cfg.get("label_x", h.axes[proj_axis].label)},
                    sample_defs, output_dir, name,
-                   log_y=log_y, lumi=lumi, formats=formats)
+                   normalize=normalize, log_y=log_y, lumi=lumi, formats=formats,
+                   ratio=ratio)
     return 1
 
 
@@ -750,6 +760,23 @@ def _plot_efficiency(name, cfg, histograms, sample_defs, output_dir, *,
                    ylabel=cfg.get("label_y", "Efficiency"))
 
 
+def _ratio_with_error(num, num_var, den, den_var):
+    """num / den per bin with its uncertainty; NaN where the denominator is empty.
+
+    The two histograms are taken as statistically independent, so the
+    relative uncertainties add in quadrature:
+    ``r * sqrt(var_n / n^2 + var_d / d^2)``, written so that an empty
+    numerator still gets the denominator-scaled error of its own variance.
+    For a numerator that is a subset of the denominator this overestimates --
+    that case is what the ``efficiency`` type is for.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ok = den > 0
+        ratio = np.where(ok, num / den, np.nan)
+        err = np.where(ok, np.sqrt(num_var + ratio ** 2 * den_var) / den, np.nan)
+    return ratio, err
+
+
 def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
                 lumi=None, formats=DEFAULT_FORMATS, **_):
     num_name, den_name = cfg["numerator"], cfg["denominator"]
@@ -763,9 +790,7 @@ def _plot_ratio(name, cfg, histograms, sample_defs, output_dir, *,
         if s not in h_den.axes["dataset"]:
             continue
         nv, dv = hn.view(), h_den[{"dataset": s}].view()
-        with np.errstate(divide="ignore", invalid="ignore"):
-            ratio = np.where(dv.value > 0, nv.value / dv.value, np.nan)
-            err = np.where(dv.value > 0, np.sqrt(nv.variance) / dv.value, np.nan)
+        ratio, err = _ratio_with_error(nv.value, nv.variance, dv.value, dv.variance)
         ax.errorbar(centers, ratio, yerr=err, marker=mk, linestyle=ls,
                     label=label, color=color, markersize=MARKERSIZE, capsize=3,
                     linewidth=1.5)
@@ -890,14 +915,20 @@ def derived_sources(name: str, cfg: dict) -> list[str] | None:
 
 
 def _plot_derived_one(name, cfg, histograms, sample_defs, output_dir, *,
-                      log_y=False, lumi=None, formats=DEFAULT_FORMATS) -> int:
-    """Dispatch a single derived-plot definition to its renderer."""
+                      log_y=False, lumi=None, formats=DEFAULT_FORMATS,
+                      normalize=False, ratio=True) -> int:
+    """Dispatch a single derived-plot definition to its renderer.
+
+    *normalize* and *ratio* reach the renderers that draw ordinary 1D
+    histograms (the projections); the others ignore them.
+    """
     entry = DERIVED_TYPES.get(cfg.get("type", ""))
     if entry is None:
         print(f"  WARNING: unknown derived type '{cfg.get('type', '')}' for '{name}'")
         return 0
     return entry[0](name, cfg, histograms, sample_defs, output_dir,
-                    log_y=log_y, lumi=lumi, formats=formats)
+                    log_y=log_y, lumi=lumi, formats=formats,
+                    normalize=normalize, ratio=ratio)
 
 
 # ── Cutflow table ────────────────────────────────────────────────
@@ -1095,7 +1126,8 @@ def _render_task(args) -> tuple[str, str | None]:
             _, _, cfg, hists = task
             _plot_derived_one(name, cfg, hists, common["sample_defs"], common["output_dir"],
                               log_y=common["log_y"], lumi=common["lumi"],
-                              formats=common["formats"])
+                              formats=common["formats"],
+                              normalize=common["normalize"], ratio=common["ratio"])
         return name, None
     except Exception as e:  # noqa: BLE001 - reported per plot, run continues
         return name, f"{type(e).__name__}: {e}"

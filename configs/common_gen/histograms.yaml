@@ -293,7 +293,7 @@ regions:
         vars: *dt_matched
   llp:
     label: LLPs
-    per_event:
+    evt_vars:
       - llp_n
       - llp_n_tracker
       - llp_n_calo

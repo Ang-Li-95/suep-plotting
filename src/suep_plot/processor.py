@@ -89,8 +89,11 @@ def _split_xrootd_url(url: str) -> tuple[str, str]:
     return f"{scheme}://{host}/", "/" + path.lstrip("/")
 
 
-def _xrootd_listdir(fs, path: str) -> list[str]:
-    """Recursively list ``*.root`` under a remote directory (server paths)."""
+def _xrootd_listdir(fs, path: str, recursive: bool = True) -> list[str]:
+    """List ``*.root`` under a remote directory (server paths).
+
+    Subdirectories are walked too unless *recursive* is false.
+    """
     from XRootD.client.flags import DirListFlags
 
     status, listing = fs.dirlist(path, DirListFlags.STAT)
@@ -101,7 +104,8 @@ def _xrootd_listdir(fs, path: str) -> list[str]:
     for entry in listing:
         child = f"{path.rstrip('/')}/{entry.name}"
         if entry.statinfo is not None and entry.statinfo.flags & 2:  # kXR_isDir
-            out.extend(_xrootd_listdir(fs, child))
+            if recursive:
+                out.extend(_xrootd_listdir(fs, child))
         elif entry.name.endswith(".root"):
             out.append(child)
     return sorted(out)
@@ -121,8 +125,10 @@ def _resolve_xrootd(spec: str) -> list[str]:
     fs = client.FileSystem(prefix)
     # Server paths are absolute, so host + path keeps the usual root://host//eos/…
     if "*" in path or "?" in path:
+        # Like a local glob: the pattern matches files in that directory only,
+        # not same-named files further down.
         parent, _, pattern = path.rpartition("/")
-        return [prefix + f for f in _xrootd_listdir(fs, parent)
+        return [prefix + f for f in _xrootd_listdir(fs, parent, recursive=False)
                 if fnmatch.fnmatch(f.rpartition("/")[2], pattern)]
     return [prefix + f for f in _xrootd_listdir(fs, path)]
 
@@ -494,7 +500,10 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
     every sample -- the fill treats any failure as fatal, so finding them here
     stops the run in seconds instead of on some chunk an hour in.
     """
-    from .histograms import is_2d, is_jagged
+    from .histograms import (is_2d, is_jagged,
+                             object_selection_on_event_histogram,
+                             object_selection_over_other_collection,
+                             same_object_counts)
 
     if not files:
         return []
@@ -516,8 +525,11 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
             bad.append(f"{what} ({expr!r}): {type(e).__name__}: {str(e)[:120]}")
             return None
 
+    object_level = {}          # object-level selection -> its mask
     for name, cfg in sel_defs.items():
         mask = evaluate(f"selection '{name}'", cfg["expression"])
+        if mask is not None and is_jagged(mask):
+            object_level[name] = mask
         level = cfg.get("level")
         if mask is not None and level is not None \
                 and (level == "object") != is_jagged(mask):
@@ -529,6 +541,17 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
         if all(v is not None for v in values):
             jagged = {is_jagged(v) for v in values}
             declared = cfg.get("per_object")
+            per_object_sels = [s for s in cfg.get("selections", [])
+                               if s in object_level]
+            if jagged == {False} and per_object_sels:
+                bad.append(object_selection_on_event_histogram(
+                    name, per_object_sels, sample))
+            if jagged == {True}:
+                other = [s for s in per_object_sels
+                         if not same_object_counts(object_level[s], values[0])]
+                if other:
+                    bad.append(object_selection_over_other_collection(
+                        name, other, sample))
             if len(jagged) > 1:
                 bad.append(f"histogram '{name}': one axis per object, the other "
                            "per event")

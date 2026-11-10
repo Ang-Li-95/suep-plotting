@@ -115,7 +115,7 @@ under another name. Add a new dataset to `datasets.yaml`, not to a config. A
 - **Fill time** needs `suep-run` again. This covers:
   - a variable's `expression` and binning;
   - adding a variable to a region;
-  - `events`, `cut`, `selections` and `weight`;
+  - `evt_sel`, `cut`, `selections` and `weight`;
   - anything in `custom/` or in `columns.yaml`.
 - **Plot time** needs only `suep-plot` again (seconds, no xrootd). This covers:
   - every `label` (the variable's, the region's, the cut's), `annotation`,
@@ -190,8 +190,8 @@ a `name:`. `log_z: true` on a 2D entry gives a log colour scale.
 regions:
   csc:                        # region
     label: CSC clusters       # on the figures: "CSC clusters · muon-isolated"
-    events: [has_csc_cluster] # event-level cuts, AND-ed (optional)
-    per_event: [csc_cluster_n]   # filled once per event -> csc/csc_cluster_n
+    evt_sel: [has_csc_cluster] # event-level cuts, AND-ed (optional)
+    evt_vars: [csc_cluster_n]   # filled once per event -> csc/csc_cluster_n
     objects:
       all: {vars: [...]}      # no cut; its label is never drawn
       iso_muon:
@@ -200,15 +200,16 @@ regions:
         vars: [...]
 ```
 
-- A histogram's selections are the region's `events`, then the cut's `cut`,
+- A histogram's selections are the region's `evt_sel`, then the cut's `cut`,
   then the entry's own `selections`.
 - **Per object or per event is read off the expression.**
   - A jagged variable (`events.cscCluster.size`) fills once per object that
     passes.
-  - A per-event variable under an object cut fills once per event with **at
-    least one** passing object.
+  - A per-event variable takes event-level selections only; an object-level
+    one there is an error. For "has a passing object", define an event-level
+    selection: `has_x: "ak.any(events.<object_sel>, axis=1)"`.
   - Never write `per_object`.
-- `<cut>: null` in a child deletes an inherited cut, and `per_event: []`
+- `<cut>: null` in a child deletes an inherited cut, and `evt_vars: []`
   clears an inherited list.
 - A per-system family of regions can be written once with a `_repeat` inside
   `regions:`, using the file's `_axes`. `<SYS>` / `<SYSU>` are substituted in
@@ -226,7 +227,7 @@ has_two_csc_clusters: "ak.num(events.cscCluster) >= 2"     # one entry per event
 ```
 
 An object-level cut becomes a new entry under `objects:`. An event-level one
-becomes a region's `events:`, often in a new region:
+becomes a region's `evt_sel:`, often in a new region:
 
 ```yaml
 regions:
@@ -235,8 +236,8 @@ regions:
       big: {cut: csc_cluster_big, label: '$N_{\mathrm{hits}} > 100$', vars: [csc_cluster_eta, csc_cluster_phi]}
   csc_2cl:
     label: '$\geq 2$ CSC clusters'
-    events: [has_two_csc_clusters]
-    per_event: [csc_cluster_n]
+    evt_sel: [has_two_csc_clusters]
+    evt_vars: [csc_cluster_n]
     objects:
       all: {vars: [csc_cluster_size]}
 ```

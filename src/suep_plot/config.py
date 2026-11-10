@@ -122,6 +122,24 @@ def _merge(base: dict, over: dict) -> dict:
     return out
 
 
+def name_list(value, where: str, key: str, keep=()):
+    """A config value naming groups or samples -> a list of names.
+
+    A bare string is one name, not a sequence of letters: ``apply_to:
+    background`` must not match by substring (``"" in "background"`` is true,
+    so a sample without a group would be picked up).  Values listed in *keep*
+    (``"all"``, ``None``) pass through unchanged.
+    """
+    if value is None or (isinstance(value, str) and value in keep):
+        return value
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)) and all(isinstance(v, str) for v in value):
+        return list(value)
+    raise ValueError(f"{where}: '{key}' must be a name or a list of names, "
+                     f"got {value!r}")
+
+
 def read_set_file(config_dir: str | Path) -> dict:
     """A config set's ``set.yaml`` (``{}`` if it has none), checked."""
     path = Path(config_dir) / SET_FILE

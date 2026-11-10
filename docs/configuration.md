@@ -191,8 +191,8 @@ Most histograms are written as a **region tree**:
 regions:
   csc:                                      # region
     label: CSC clusters                     # shown on the figures (default: the name)
-    events: [has_csc_cluster]               # event-level cuts, AND-ed (may be omitted)
-    per_event: [csc_cluster_n]              # filled once per event after the event cuts
+    evt_sel: [has_csc_cluster]              # event-level cuts, AND-ed (may be omitted)
+    evt_vars: [csc_cluster_n]               # filled once per event after the event cuts
     objects:                                # object-level cuts -> variables
       all:                                  # no cut: every cluster
         vars: &csc_vars
@@ -207,15 +207,16 @@ regions:
 ```
 
 Each entry becomes one histogram named **`<region>/<cut>/<variable>`**
-(`csc/iso_muon/csc_cluster_size`), or `<region>/<variable>` for `per_event`.
+(`csc/iso_muon/csc_cluster_size`), or `<region>/<variable>` for `evt_vars`.
 The name is also the figure's folder: `plots/csc/iso_muon/csc_cluster_size.png`.
 
-- **Selections** of a histogram: the region's `events`, then the cut's `cut`,
+- **Selections** of a histogram: the region's `evt_sel`, then the cut's `cut`,
   then the entry's own `selections` (all AND-ed).
 - **Per object or per event** is read off the expression: a variable with one
   entry per object (`events.cscCluster.size`) fills once per object passing the
-  cuts; a per-event variable under an object cut fills once per event with at
-  least one passing object.
+  cuts. A per-event variable takes event-level selections only: under an
+  object-level one it is an error (see [`selections.yaml`](#selectionsyaml) for how to
+  write "has a passing object").
 - **Labels**: the x-axis title is the variable's; the region and cut labels go
   on the figure ("CSC clusters · muon-isolated"). A cut's label defaults to its
   name, except `all`.
@@ -236,7 +237,7 @@ the same variable listed twice under one cut needs a `name:` for one of them.
 **Inheritance.** Regions merge deeply, so a child set adds a cut to an
 inherited region with one entry, or deletes one with `<cut>: null`. A `vars`
 list is replaced, not appended: to change one variable of an inherited cut,
-restate its list. `per_event: []` clears an inherited list.
+restate its list. `evt_vars: []` clears an inherited list.
 
 A per-system family of regions can be written once with a `_repeat` inside
 `regions:` (using the file's `_axes`).
@@ -315,8 +316,16 @@ muon_sel_foriso:                                        # read by the isolation 
 
 Whether a selection is event- or object-level is read off its mask (one entry
 per object = object-level); a `level:` key is accepted but must agree.
-Object-level selections filter the objects a per-object histogram fills;
-applied to a per-event histogram they mean "at least one object passes".
+Object-level selections filter the objects a per-object histogram fills.
+Listing one on a per-event histogram (or in a region's `evt_sel:`, with
+`evt_vars` variables) is an error, caught by `suep-config check` and before
+any file is processed: an object mask says which objects pass, not which
+events. Write the event-level cut as a selection of its own, from the mask's
+column:
+
+```yaml
+has_muon_sel: "ak.any(events.muon_sel_foriso, axis=1)"   # event-level
+```
 
 ### Selections as columns
 

@@ -20,7 +20,7 @@ _extends: ../common
 
 regions:
   csc:
-    per_event: []
+    evt_vars: []
     objects:
       src:
         cut: csc_cluster_src
@@ -68,7 +68,7 @@ regions:
           - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
       all: null
   dt:
-    per_event: []
+    evt_vars: []
     objects:
       src:
         cut: dt_cluster_src

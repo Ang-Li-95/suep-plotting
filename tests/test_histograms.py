@@ -288,15 +288,36 @@ def test_an_explicit_per_object_that_contradicts_the_expression_is_fatal():
 
 def test_an_object_selection_needs_no_level_key():
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
-                       "selections": ["good"]},
-            "met": {"expression": "events.met", "bins": 4, "lo": 0, "hi": 400,
-                    "selections": ["good"]}}
+                       "selections": ["good"]}}
     sels = {"good": {"expression": "events.Jet.pt > 60"}}
     hists = build_histograms(defs, ["s"])
 
     fill_histograms(hists, defs, sels, make_events(), "s", np.ones(3))
 
     assert totals(hists["jet_pt"]) == 2      # the 100 and the 200 GeV jets
+
+
+def test_an_object_selection_on_a_per_event_histogram_is_fatal():
+    defs = {"met": {"expression": "events.met", "bins": 4, "lo": 0, "hi": 400,
+                    "selections": ["good"]}}
+    sels = {"good": {"expression": "events.Jet.pt > 60"}}
+
+    with pytest.raises(FillError, match=r"histogram 'met' fills once per event.*"
+                                        r"\['good'\].*ak\.any\(events\.good, axis=1\)"):
+        fill_histograms(build_histograms(defs, ["s"]), defs, sels, make_events(),
+                        "s", np.ones(3))
+
+
+def test_the_event_level_cut_is_a_selection_of_its_own():
+    defs = {"met": {"expression": "events.met", "bins": 4, "lo": 0, "hi": 400,
+                    "selections": ["has_good"]}}
+    sels = {"good": {"expression": "events.Jet.pt > 60"},
+            "has_good": {"expression": "ak.any(events.good, axis=1)"}}
+    events = attach_selection_columns(make_events(), sels)
+    hists = build_histograms(defs, ["s"])
+
+    fill_histograms(hists, defs, sels, events, "s", np.ones(3))
+
     assert totals(hists["met"]) == 2         # events with >= 1 passing jet
 
 
@@ -497,8 +518,8 @@ def test_regions_expand_to_one_histogram_per_cut_and_variable(tmp_path):
     p = _yaml(tmp_path / "h.yaml", {"regions": {
         "jets": {
             "label": "Jets",
-            "events": ["highmet"],
-            "per_event": ["met"],
+            "evt_sel": ["highmet"],
+            "evt_vars": ["met"],
             "objects": {
                 "all": {"vars": ["jet_pt", ["jet_pt", "jet_eta"]]},
                 "central": {"cut": ["central"], "label": "|eta| < 1",
@@ -569,7 +590,7 @@ def test_a_misspelled_region_key_is_reported(tmp_path):
 def test_region_histograms_fill_after_both_cuts():
     from suep_plot.histograms import expand_regions, resolve_axes
 
-    defs = expand_regions({"jets": {"events": ["highmet"], "objects": {
+    defs = expand_regions({"jets": {"evt_sel": ["highmet"], "objects": {
         "hard": {"cut": ["good"], "vars": ["jet_pt"]}}}})
     defs = {n: resolve_axes(n, c, CATALOG) for n, c in defs.items()}
     sels = {"good": {"expression": "events.Jet.pt > 60"},

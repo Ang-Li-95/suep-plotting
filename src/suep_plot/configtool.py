@@ -81,10 +81,10 @@ def show(config_dir: str, grep: str | None = None, sections=None) -> int:
             if not region or not any(keep(f"{rname}/{a}") for a in
                                      [""] + list((region.get("objects") or {}))):
                 continue
-            events = region.get("events") or []
-            print(f"  {rname}:  events {events if events else '(no cut)'}")
-            if region.get("per_event"):
-                print(f"    (per event)  {len(region['per_event'])} variable(s)")
+            evt_sel = region.get("evt_sel") or []
+            print(f"  {rname}:  evt_sel {evt_sel if evt_sel else '(no cut)'}")
+            if region.get("evt_vars"):
+                print(f"    evt_vars         {len(region['evt_vars'])} variable(s)")
             for alias, cut in (region.get("objects") or {}).items():
                 if not cut:
                     continue
