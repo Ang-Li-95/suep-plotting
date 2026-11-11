@@ -167,6 +167,7 @@ llp_pt:           {expression: events.llp.pt, edges: [0, 1, 2, 3, 4, 5, 6, 7, 8,
 | `bins: [n, lo, hi]` or `edges: [...]` | the default binning |
 | `label` | the axis title |
 | `log_x`, `log_y`, `flow`, `rebin`, `blind` | optional display defaults of its 1D histograms |
+| `mc_only: true` | the variable reads simulation truth (`events.Pileup`, gen particles, ...): its histograms are neither filled nor checked for a sample with `is_data: true`, which is then simply absent from those plots |
 
 Anything else is an error. A histogram names the variable and overrides any of
 these for itself. A config set can retune a default for all of its histograms
@@ -176,6 +177,7 @@ inherited through `_extends` / `set.yaml` like every other file):
 ```yaml
 # configs/configs_xyz/variables.yaml
 llp_decay_r: {bins: [90, 0, 900]}       # every histogram of llp_decay_r follows
+llp_pt: {bins: [50, 0, 50]}             # bins replaces the inherited edges (and edges replaces bins)
 my_new_variable: {expression: "events.llp.pt / events.llp.energy", bins: [50, 0, 1], label: '$p_T/E$'}
 ```
 
@@ -266,6 +268,10 @@ Plot-time keys (take effect on the next `suep-plot`, **no reprocessing**):
 | `rebin` | -- | merge N adjacent bins (1D) |
 | `flow` | `sum` | fold under/overflow into the edge bins; `none` drops it |
 | `log_x` / `log_y` / `log_z` | `false` | log axes / colour scale |
+
+Besides these, an entry takes `name`, `var` (or `x` and `y`) and the axis
+overrides `bins` / `lo` / `hi` / `edges` / `label`. Any other key is an error,
+so a misspelled `selections:` cannot silently drop the cut.
 
 Whether a histogram fills once per object or once per event is read off the
 variable's expression (jagged = per object); there is no key for it.

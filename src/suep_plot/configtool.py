@@ -171,7 +171,8 @@ def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
                 errors += [f"[{name}] {p}" for p in check_expressions(
                     files, cfg.get("tree", "Events"), cs.histograms,
                     cs.selections, cs.corrections, cs.derive_fn,
-                    cs.reweighters, cs.settings, sample=name)]
+                    cs.reweighters, cs.settings, sample=name,
+                    is_data=cfg.get("is_data", False))]
                 checked.append(name)
         status = "FAILED" if errors else "OK"
         detail = (f"; expressions evaluated on one file of {len(checked)} sample(s)"

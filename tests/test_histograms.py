@@ -519,6 +519,76 @@ def test_a_variable_with_an_unknown_key_is_reported(tmp_path, monkeypatch):
         histdefs.load_variables()
 
 
+def test_a_set_level_bins_override_replaces_inherited_edges(tmp_path, monkeypatch):
+    """edges would win over bins if both survived the merge."""
+    from suep_plot import histdefs
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"pt": {"expression": "events.pt", "edges": [0, 1, 5, 50]},
+                  "met": {"expression": "events.met", "bins": [10, 0, 200]}})
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
+    _yaml(tmp_path / "base" / "variables.yaml", {"pt": {"bins": [50, 0, 50]}})
+    _yaml(tmp_path / "set" / "variables.yaml",
+          {"_extends": "../base", "met": {"edges": [0, 50, 200]}})
+
+    catalog = histdefs.load_variables(tmp_path / "set")
+
+    assert catalog["pt"] == {"expression": "events.pt", "bins": 50, "lo": 0, "hi": 50}
+    assert catalog["met"] == {"expression": "events.met", "edges": [0, 50, 200]}
+
+
+def test_a_variable_with_both_binnings_is_reported(tmp_path, monkeypatch):
+    from suep_plot import histdefs
+    from suep_plot.config import ConfigError
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"pt": {"expression": "events.pt", "edges": [0, 1, 5],
+                         "bins": [5, 0, 5]}})
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
+
+    with pytest.raises(ConfigError, match="give one binning"):
+        histdefs.load_variables()
+
+
+def test_an_mc_only_variable_marks_its_histograms(tmp_path):
+    from suep_plot.histdefs import load_histogram_defs
+
+    catalog = {**CATALOG, "npu": {"expression": "events.Pileup.nTrueInt",
+                                  "bins": 10, "lo": 0, "hi": 100, "mc_only": True}}
+    p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {
+        "evt_vars": ["met", "npu", ["met", "npu"]]}}})
+    defs = load_histogram_defs(p, variables=catalog)
+
+    assert [name for name, h in defs.items() if h.mc_only] == ["r/npu", "r/met_vs_npu"]
+    # Not a plot-style key, and it survives the flat form of the pickles.
+    assert "mc_only" not in defs["r/npu"].style
+    assert as_histograms(_flat(defs))["r/npu"].mc_only
+    assert "mc_only" not in _flat(defs)["r/met"]
+
+
+def test_mc_only_is_true_or_false(tmp_path, monkeypatch):
+    from suep_plot import histdefs
+    from suep_plot.config import ConfigError
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"npu": {"expression": "events.npu", "bins": [10, 0, 100],
+                          "mc_only": "yes"}})
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
+
+    with pytest.raises(ConfigError, match="'mc_only' is true or false"):
+        histdefs.load_variables()
+
+
+@pytest.mark.parametrize("key, meant", [("selection", "selections"),
+                                        ("wieght", "weight")])
+def test_an_unknown_key_of_an_entry_is_reported(tmp_path, key, meant):
+    """It used to become plot style, and the cut or weight was dropped."""
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match=rf"unknown key.*'{key}' -> '{meant}'"):
+        _region(tmp_path, {"var": "met", key: "highmet"})
+
+
 # ── regions ───────────────────────────────────────────────────────
 
 

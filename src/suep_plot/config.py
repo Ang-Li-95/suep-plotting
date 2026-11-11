@@ -192,10 +192,13 @@ def _resolve_registry(defs: dict, registry: dict, path: Path) -> dict:
     out = {}
     for name, cfg in defs.items():
         cfg = dict(cfg or {})
+        explicit = "_from" in cfg
         base_name = cfg.pop("_from", name)
         base = registry.get(base_name)
         if base is None:
-            if not cfg:
+            # An entry with keys of its own may be a sample defined right
+            # here -- but not one that says which registry entry it is.
+            if explicit or not cfg:
                 known = ", ".join(sorted(registry)) or "(empty registry)"
                 raise ConfigError(
                     f"ERROR in {path}: '{name}' is not defined here and has no "

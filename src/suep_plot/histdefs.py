@@ -34,6 +34,22 @@ _TRIPLE = ("bins", "lo", "hi")
 DISPLAY_KEYS = ("log_x", "log_y", "flow", "rebin", "blind")
 
 
+# ``mc_only: true`` on a catalog variable: it reads simulation truth
+# (``events.Pileup``, gen particles, ...), so its histograms are neither
+# filled nor checked for a sample with ``is_data: true``.
+VARIABLE_FLAGS = ("mc_only",)
+
+
+VARIABLE_KEYS = AXIS_KEYS + DISPLAY_KEYS + VARIABLE_FLAGS
+
+
+# What a region entry may say besides its axes: fill-time keys, the leaf
+# name, and the plot-time style keys.  Anything else is an error, so that a
+# misspelled ``selections`` cannot silently drop the cut.
+ENTRY_STYLE_KEYS = DISPLAY_KEYS + ("annotation", "log_z")
+ENTRY_KEYS = ("name", "selections", "weight") + ENTRY_STYLE_KEYS
+
+
 # What a region and one of its object cuts may say (see expand_regions).
 REGION_KEYS = ("label", "evt_sel", "evt_vars", "objects")
 
@@ -105,6 +121,8 @@ class Histogram:
 
     ``style`` holds the plot-time keys (``log_y``, ``rebin``, ``flow``,
     ``blind``, ``annotation``, ``log_z``, ...); they do not affect the fill.
+    ``mc_only`` is set when one of its variables is: the histogram is then
+    skipped for data samples.
     """
 
     name: str
@@ -113,6 +131,7 @@ class Histogram:
     selections: tuple = ()
     weight: str | None = None
     style: dict = field(default_factory=dict)
+    mc_only: bool = False
 
     @property
     def is_2d(self) -> bool:
@@ -137,6 +156,8 @@ class Histogram:
         out["selections"] = list(self.selections)
         if self.weight:
             out["weight"] = self.weight
+        if self.mc_only:
+            out["mc_only"] = True
         return out
 
     @classmethod
@@ -146,10 +167,12 @@ class Histogram:
         suffixes = ("_x", "_y") if two_d else ("",)
         axis_keys = {f"{k}{s}" for k in AXIS_KEYS for s in suffixes}
         style = {k: v for k, v in cfg.items()
-                 if k not in axis_keys | {"selections", "weight", "per_object"}}
+                 if k not in axis_keys | {"selections", "weight", "per_object",
+                                          "mc_only"}}
         return cls(name, Axis.from_dict(cfg, suffixes[0]),
                    Axis.from_dict(cfg, "_y") if two_d else None,
-                   tuple(_as_list(cfg.get("selections"))), cfg.get("weight"), style)
+                   tuple(_as_list(cfg.get("selections"))), cfg.get("weight"), style,
+                   bool(cfg.get("mc_only", False)))
 
 
 SELECTION_LEVELS = ("event", "object")
@@ -248,6 +271,26 @@ def _as_list(value) -> list:
 # ── the variable catalog ──────────────────────────────────────────
 
 
+def _one_binning(cfg: dict, where: str) -> dict:
+    """Make the binning an entry gives replace the other kind when merged.
+
+    ``edges`` and bins/lo/hi are two ways to bin one axis.  The files of a
+    catalog are merged key by key, so an override with ``bins: [n, lo, hi]``
+    would otherwise leave the inherited ``edges`` in place (and ``edges``
+    wins).  A ``None`` deletes the inherited key in the merge.
+    """
+    has_edges = cfg.get("edges") is not None
+    has_triple = any(cfg.get(k) is not None for k in _TRIPLE)
+    if has_edges and has_triple:
+        raise ConfigError(f"ERROR in {where}: both 'edges' and bins/lo/hi -- "
+                          "give one binning")
+    if has_edges:
+        return {**cfg, **{k: None for k in _TRIPLE}}
+    if has_triple:
+        return {**cfg, "edges": None}
+    return cfg
+
+
 def normalize_variable_file(defs: dict, path, axes) -> dict:
     """A catalog entry: an axis (expression, binning, label) + display defaults."""
     out = {}
@@ -258,12 +301,16 @@ def normalize_variable_file(defs: dict, path, axes) -> dict:
         where = f"{path}: variable '{name}'"
         if not isinstance(cfg, dict):
             raise ConfigError(f"ERROR in {where}: a variable is a mapping of "
-                              f"{', '.join(AXIS_KEYS + DISPLAY_KEYS)}")
-        unknown = sorted(set(cfg) - set(AXIS_KEYS) - set(DISPLAY_KEYS))
+                              f"{', '.join(VARIABLE_KEYS)}")
+        unknown = sorted(set(cfg) - set(VARIABLE_KEYS))
         if unknown:
             raise ConfigError(f"ERROR in {where}: unknown key(s) {unknown}; known: "
-                              f"{', '.join(AXIS_KEYS + DISPLAY_KEYS)}")
-        out[name] = _bins_list(cfg, where)
+                              f"{', '.join(VARIABLE_KEYS)}")
+        for flag in VARIABLE_FLAGS:
+            if flag in cfg and not isinstance(cfg[flag], bool):
+                raise ConfigError(f"ERROR in {where}: '{flag}' is true or false, "
+                                  f"got {cfg[flag]!r}")
+        out[name] = _one_binning(_bins_list(cfg, where), where)
     return out
 
 
@@ -280,6 +327,9 @@ def load_variables(set_dir=None) -> dict:
         local = load_config_file(Path(set_dir) / "variables.yaml",
                                  normalize=normalize_variable_file)
         catalog = _merge(catalog, local)
+    # The deletion markers of _one_binning that had nothing to delete.
+    catalog = {name: {k: v for k, v in cfg.items() if v is not None}
+               for name, cfg in catalog.items()}
     problems = []
     for name, cfg in catalog.items():
         if not cfg.get("expression"):
@@ -297,7 +347,7 @@ def variable_display(variables: dict | None, var) -> dict:
     """The 1D display defaults a catalog variable carries (log_y, flow, ...)."""
     if not variables or var not in variables:
         return {}
-    return {k: v for k, v in variables[var].items() if k not in AXIS_KEYS}
+    return {k: v for k, v in variables[var].items() if k in DISPLAY_KEYS}
 
 
 # ── regions: event cuts -> object cuts -> variables ───────────────
@@ -347,8 +397,9 @@ def _region_entry(spec, where: str) -> tuple[str, list, dict]:
     ``name``                              1D, a catalog variable
     ``[x, y]``                            2D, two catalog variables
     ``{var: name, <keys>}``               1D with overrides: binning or label
-                                          of the axis, ``selections``,
-                                          ``weight``, display keys, ``name``
+                                          of the axis, and :data:`ENTRY_KEYS`
+                                          (``selections``, ``weight``, display
+                                          keys, ``name``)
     ``{x: ..., y: ..., <keys>}``          2D; each axis a variable name or
                                           ``{var: name, <axis overrides>}``
 
@@ -429,6 +480,17 @@ def _entry_histogram(name: str, axes: list, rest: dict, selections: list,
     them.  A 1D histogram starts from its variable's display defaults.
     """
     rest = dict(rest)
+    unknown = sorted(set(rest) - set(ENTRY_KEYS))
+    if unknown:
+        hints = []
+        for key in unknown:
+            close = difflib.get_close_matches(key, ENTRY_KEYS + AXIS_OVERRIDES, n=1)
+            if close:
+                hints.append(f"'{key}' -> '{close[0]}'?")
+        hint = f" ({'; '.join(hints)})" if hints else ""
+        raise ConfigError(f"ERROR in {where}: histogram '{name}': unknown key(s) "
+                          f"{unknown}{hint}; known: "
+                          f"{', '.join(ENTRY_KEYS + AXIS_OVERRIDES)}")
     selections = tuple(selections) + tuple(_as_list(rest.pop("selections", None)))
     weight = rest.pop("weight", None)
     resolved = [_resolved_axis(var, over, variables, where) for var, over in axes]
@@ -436,7 +498,9 @@ def _entry_histogram(name: str, axes: list, rest: dict, selections: list,
     style = {**style, **rest}
     if annotation:
         style.setdefault("annotation", annotation)
-    return Histogram(name, *resolved, selections=selections, weight=weight, style=style)
+    mc_only = any(variables[var].get("mc_only", False) for var, _ in axes)
+    return Histogram(name, *resolved, selections=selections, weight=weight,
+                     style=style, mc_only=mc_only)
 
 
 def expand_regions(regions: dict, variables: dict, path="histograms.yaml") -> dict:

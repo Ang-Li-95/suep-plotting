@@ -93,10 +93,16 @@ class SuepProcessor(processor.ProcessorABC):
         if self.reweighters:
             apply_reweights(self.reweighters, events, dataset, group, is_data, weights)
 
-        histograms = build_histograms(self.hist_defs, [dataset])
+        # A data sample has no simulation truth: its mc_only histograms are
+        # not built at all, so the plots show the sample as absent from them
+        # rather than as an empty curve.
+        hist_defs = self.hist_defs
+        if is_data:
+            hist_defs = {k: h for k, h in hist_defs.items() if not h.mc_only}
+        histograms = build_histograms(hist_defs, [dataset])
         wvec = weights.weight()
         layout: dict = {}
-        sel_cache = fill_histograms(histograms, self.hist_defs, self.sel_defs,
+        sel_cache = fill_histograms(histograms, hist_defs, self.sel_defs,
                                     events, dataset, wvec,
                                     reweighters=self.reweighters, layout=layout)
 
@@ -270,7 +276,7 @@ def run_all(
     for name, cfg, files, tree, _ in todo:
         problems += [f"  [{name}] {p}" for p in check_expressions(
             files, tree, hist_defs, sel_defs, corr_defs, derive_fn, reweighters,
-            settings, sample=name)]
+            settings, sample=name, is_data=cfg.get("is_data", False))]
     if problems:
         raise SystemExit("ERROR: config expressions that do not work (checked on "
                          "the first events of each sample's first file):\n"

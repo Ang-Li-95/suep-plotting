@@ -241,3 +241,24 @@ def test_a_former_region_keyword_is_refused_with_its_new_name(old, new):
 
     with pytest.raises(SystemExit, match=f"'{old}' is now '{new}'"):
         expand_regions({"r": {old: ["x"]}}, {})
+
+
+# ── mc_only variables ─────────────────────────────────────────────
+
+
+def test_check_expressions_skips_mc_only_histograms_for_data(monkeypatch):
+    """Data has no Pileup branch; that must not stop the run."""
+    events = ak.Array({"met": [10.0, 60.0]})
+    monkeypatch.setattr(checks, "open_events", lambda *a, **k: events)
+    defs = as_histograms({
+        "met": {"expression": "events.met", "bins": 2, "lo": 0, "hi": 100},
+        "npu": {"expression": "events.Pileup.nTrueInt", "bins": 2, "lo": 0,
+                "hi": 100, "mc_only": True}})
+
+    def check(**kw):
+        return checks.check_expressions(["f.root"], "Events", defs,
+                                        as_selections({}), {}, **kw)
+
+    assert check(is_data=True) == []
+    as_mc = check()
+    assert len(as_mc) == 1 and "'npu'" in as_mc[0]

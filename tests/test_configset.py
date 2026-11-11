@@ -77,3 +77,13 @@ def test_custom_columns_use_the_package_evaluator():
 
     assert helpers.compile_expr is compile_expr
     assert not hasattr(helpers, "_SAFE_BUILTINS")
+
+
+def test_a_sample_without_files_is_reported(tmp_path):
+    """A misspelled registry name next to an override is a sample of its own."""
+    s = _set(tmp_path / "s", **{"samples.yaml": {
+        "sig": {"files": ["/data/sig.root"]}, "sgi": {"max_files": 3}}})
+
+    problems = validate_config_set(s)
+
+    assert len(problems) == 1 and "sample 'sgi': no 'files'" in problems[0]

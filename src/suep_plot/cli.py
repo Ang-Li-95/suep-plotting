@@ -236,7 +236,7 @@ def run(argv=None):
                         help="(with --plot) luminosity [/fb] for label + MC scaling")
     parser.add_argument("--log", action="store_true", help="(with --plot) logarithmic y-axis")
     parser.add_argument("--normalize", action="store_true",
-                        help="(with --plot) normalize signal to unit area")
+                        help="(with --plot) draw every sample at unit area")
     parser.add_argument("--formats", default="png,pdf",
                         help="(with --plot) comma-separated figure formats")
     parser.add_argument("-j", "--jobs", type=int, default=0,
@@ -312,7 +312,8 @@ def plot(argv=None):
                         help="Config set for plot-time styling and derived plots "
                              "(default: from the run's run_info.json)")
     parser.add_argument("--normalize", action="store_true",
-                        help="Normalize signal histograms to unit area")
+                        help="Draw every sample (signal, background, data) at unit "
+                             "area, to compare shapes")
     parser.add_argument("--log", action="store_true", help="Logarithmic y-axis")
     parser.add_argument("--lumi", type=float, default=None,
                         help="Integrated luminosity [/fb]: shown in the CMS label and "

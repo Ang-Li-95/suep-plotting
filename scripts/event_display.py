@@ -82,7 +82,9 @@ def read_event(arrays, i, systems, settings):
 def cluster_summary(hits, settings):
     """Per-cluster (label, size, matched llpIdx or -1) for one system."""
     summary = []
-    for k in range(hits["label"].max() + 1):
+    # No rechits in this system: no clusters (and nothing to take a max of).
+    n_clusters = hits["label"].max() + 1 if len(hits["label"]) else 0
+    for k in range(n_clusters):
         m = hits["label"] == k
         best, nbest = -1, 0
         if "llpIdx" in hits:

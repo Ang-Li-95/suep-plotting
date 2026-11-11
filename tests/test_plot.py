@@ -433,3 +433,39 @@ def test_the_comparison_scripts_style_wrappers_reach_suep_plot(tmp_path):
     index = compare_style.write_gallery(str(tmp_path), "title", "subtitle",
                                         [("one", 0.5)], "score")
     assert Path(index).exists()
+
+
+def test_normalize_draws_data_at_unit_area_too(tmp_path, monkeypatch):
+    """Data used to stay at raw counts next to unit-area MC."""
+    from suep_plot import figures
+
+    h = make_hist("bkg", [10.0] * 30 + [60.0] * 10)
+    h += make_hist("data", [10.0] * 3 + [60.0] * 5)
+    sample_defs = {"data": {"is_data": True}, "bkg": {"group": "background"}}
+    seen = {}
+
+    def ratio_panel(rax, data_hists, bkg_hists):
+        seen["ratio"] = [sum(x.sum().value for x in hs)
+                         for hs in (data_hists, bkg_hists)]
+
+    def finish(fig, ax, *args, **kwargs):
+        seen["top"] = ax.get_ylim()[1]
+
+    monkeypatch.setattr(figures, "_draw_ratio_panel", ratio_panel)
+    monkeypatch.setattr(figures, "_finish", finish)
+    figures.plot_histogram(h, {"label": "x"}, sample_defs, str(tmp_path), "x",
+                           normalize=True, formats=("png",))
+
+    assert seen["ratio"] == pytest.approx([1.0, 1.0])
+    assert seen["top"] < 2.0           # unit-area points, not the raw counts
+
+
+def test_the_event_display_takes_a_system_without_rechits():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import event_display
+
+    hits = {"label": np.array([], dtype=int)}
+    assert event_display.cluster_summary(hits, {"match_min_hits": 10}) == []

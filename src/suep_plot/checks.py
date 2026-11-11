@@ -48,9 +48,21 @@ def custom_config_errors(cs: ConfigSet) -> list[str]:
     return list(cs.validate_fn(cs.settings, cs.selections))
 
 
+def sample_errors(samples: dict) -> list[str]:
+    """Samples that name no input: a misspelled name next to an override.
+
+    ``dy_2mu_50to12: {max_files: 10}`` (the registry has ``dy_2mu_50to120``)
+    is a sample of its own with nothing to read, not an override.
+    """
+    return [f"sample '{name}': no 'files' -- not in the registry and not "
+            "defined here (a misspelled name?)"
+            for name, cfg in samples.items() if not (cfg or {}).get("files")]
+
+
 def static_errors(cs: ConfigSet) -> list[str]:
     """What is wrong with a loaded set, as far as it shows without input files."""
-    return reference_errors(cs.histograms, cs.selections, cs.reweighters) \
+    return sample_errors(cs.samples) \
+        + reference_errors(cs.histograms, cs.selections, cs.reweighters) \
         + custom_config_errors(cs)
 
 
@@ -115,12 +127,16 @@ def config_warnings(config_dir: str | Path) -> list[str]:
 
 
 def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
-                      reweighters=None, settings=None, sample: str = "?") -> list[str]:
+                      reweighters=None, settings=None, sample: str = "?",
+                      is_data: bool = False) -> list[str]:
     """Evaluate every expression on the first events of *files*; return the failures.
 
     Each histogram's and selection's expression must evaluate, and an explicit
-    ``level`` must agree with what the expression gives, on every sample -- the fill treats any failure as fatal, so finding them here
-    stops the run in seconds instead of on some chunk an hour in.
+    ``level`` must agree with what the expression gives, on every sample -- the
+    fill treats any failure as fatal, so finding them here stops the run in
+    seconds instead of on some chunk an hour in.  For a data sample
+    (*is_data*) the ``mc_only`` histograms are left out, as they are in the
+    fill.
     """
     from .fill import (is_jagged, object_selection_on_event_histogram,
                        object_selection_over_other_collection, same_object_counts)
@@ -156,6 +172,8 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
             bad.append(f"selection '{name}': declared 'level: {level}' but the "
                        "mask says otherwise (drop the key, it is inferred)")
     for name, h in hist_defs.items():
+        if is_data and h.mc_only:
+            continue
         values = [evaluate(f"histogram '{name}' {axis_name}", axis.expression)
                   for axis, axis_name in zip(h.axes, "xy")]
         if all(v is not None for v in values):

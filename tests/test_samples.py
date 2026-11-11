@@ -195,3 +195,14 @@ def test_a_set_without_samples_is_an_error():
 
     with pytest.raises(SystemExit, match="no samples"):
         select_samples({}, None)
+
+
+def test_a_misspelled_from_is_an_error(tmp_path):
+    from suep_plot.config import ConfigError
+
+    _write(tmp_path / "datasets.yaml", {"real": {"files": ["/data/real"]}})
+    path = _write(tmp_path / "samples.yaml", {
+        "_registry": "datasets.yaml", "alias": {"_from": "reel", "label": "x"}})
+
+    with pytest.raises(ConfigError, match="no registry entry 'reel'"):
+        load_samples(path)

@@ -155,6 +155,19 @@ def save_figure(fig, output_dir: str, name: str, formats=DEFAULT_FORMATS) -> Non
 # ── 1D histograms ─────────────────────────────────────────────────
 
 
+def _unit_area(h: hist.Hist) -> hist.Hist:
+    """*h* scaled to unit area (unchanged when it is empty)."""
+    total = h.sum().value
+    return h * (1.0 / total) if total > 0 else h
+
+
+def _total(hists: list[hist.Hist]) -> hist.Hist:
+    out = hists[0].copy()
+    for h in hists[1:]:
+        out += h
+    return out
+
+
 def plot_histogram(
     h: hist.Hist,
     hist_cfg: dict,
@@ -173,6 +186,9 @@ def plot_histogram(
 
     When both data and stacked backgrounds are present (and *ratio* is true),
     a Data/MC ratio panel with an MC-stat band is drawn underneath.
+    With *normalize* every sample -- signal, background and data -- is drawn
+    at unit area, and the ratio panel compares the shapes: all data over all
+    backgrounds, each total at unit area.
     Per-histogram config keys honoured at plot time: ``blind``, ``rebin``,
     ``flow: sum``, ``log_x``, ``log_y``.
     """
@@ -189,6 +205,12 @@ def plot_histogram(
 
     want_ratio = bool(ratio and data_hists and bkg_hists)
     fig, ax, rax = figure(ratio=want_ratio)
+    ratio_data, ratio_bkg = data_hists, bkg_hists
+    if normalize:
+        if want_ratio:
+            ratio_data = [_unit_area(_total(data_hists))]
+            ratio_bkg = [_unit_area(_total(bkg_hists))]
+        data_hists = [_unit_area(dh) for dh in data_hists]
 
     if bkg_hists:
         bkg_labels = [sample_defs.get(s, {}).get("label", s) for s in bkg_samples]
@@ -199,8 +221,7 @@ def plot_histogram(
             # directly comparable with the signal curves below.
             bkg_ls = [sample_defs.get(s, {}).get("linestyle", "-") for s in bkg_samples]
             for bh, label, color, ls in zip(bkg_hists, bkg_labels, bkg_colors, bkg_ls):
-                if bh.sum().value > 0:
-                    bh = bh * (1.0 / bh.sum().value)
+                bh = _unit_area(bh)
                 hep.histplot(bh, ax=ax, histtype="step", label=label,
                              color=color, linewidth=2, linestyle=ls,
                              yerr=np.sqrt(bh.variances()))
@@ -224,8 +245,7 @@ def plot_histogram(
         sh = prep_1d(h[{"dataset": s}], hist_cfg)
         label = cfg.get("label", s)
         if normalize:
-            if sh.sum().value > 0:
-                sh = sh * (1.0 / sh.sum().value)
+            sh = _unit_area(sh)
         else:
             scale = float(cfg.get("scale", 1.0) or 1.0)
             if scale != 1.0:
@@ -252,6 +272,8 @@ def plot_histogram(
             color="black",
             marker="o",
             markersize=5,
+            # Scaled counts are no longer Poisson: sqrt(sum w^2), as for MC.
+            **({"yerr": np.sqrt(dh.variances())} if normalize else {}),
         )
 
     # With a ratio panel the x label belongs under it, not under the main axes.
@@ -263,7 +285,7 @@ def plot_histogram(
     if hist_cfg.get("log_x"):
         ax.set_xscale("log")
     if want_ratio:
-        _draw_ratio_panel(rax, data_hists, bkg_hists)
+        _draw_ratio_panel(rax, ratio_data, ratio_bkg)
 
     _finish(fig, ax, output_dir, name, formats, lumi=lumi,
             has_data=bool(data_samples), xlabel="" if rax is not None else None,
