@@ -21,8 +21,10 @@ import mplhep as hep  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from suep_plot.figures import (  # noqa: E402,F401  (re-exported to the scripts)
-    DEFAULT_FORMATS, cms_label, figure, is_2d_hist, palette, prep_1d, save_figure)
-from suep_plot.gallery import write_gallery  # noqa: E402
+    DEFAULT_FORMATS, figure, is_2d_hist, palette, prep_1d, save_figure)
+# Under other names: this module defines its own cms_label / write_gallery.
+from suep_plot.figures import cms_label as _cms_label  # noqa: E402
+from suep_plot.gallery import write_gallery as _write_gallery  # noqa: E402
 from suep_plot.results import merge_results, resolve_inputs, sample_of  # noqa: E402
 
 hep.style.use("CMS")
@@ -40,7 +42,7 @@ def cms_label(ax, lumi=None, has_data=False):
     Pass ``has_data`` when one of the overlaid samples is real data, so the
     header drops "Simulation".
     """
-    cms_label(ax, lumi=lumi, has_data=has_data)
+    _cms_label(ax, lumi=lumi, has_data=has_data)
 
 
 # ── loading ───────────────────────────────────────────────────────
@@ -108,5 +110,5 @@ def save(fig, dest: str, name: str, formats=DEFAULT_FORMATS):
 def write_gallery(dest: str, title: str, subtitle: str, ranked, score_label: str):
     """Thumbnail gallery of the ranked plots, in rank order with their scores."""
     os.makedirs(dest, exist_ok=True)
-    return write_gallery(dest, ranked=ranked, title=title, subtitle=subtitle,
-                               score_label=score_label)
+    return _write_gallery(dest, ranked=ranked, title=title, subtitle=subtitle,
+                          score_label=score_label)

@@ -193,6 +193,21 @@ def test_status_does_not_count_a_pickle_from_an_earlier_submission(tmp_path):
     assert [t.index for t in check(str(out))[1]] == [0]      # to redo
 
 
+def test_a_resubmit_of_a_hand_submitted_run_keeps_its_finished_pickles(tmp_path):
+    """jobs.tsv first appears at the resubmit; that is not when the run started."""
+    from suep_plot.status import classify, record_submission
+
+    out = _fake_run(tmp_path, [("sig", 0), ("sig", 1)], written=["sig.part0.pkl"])
+    _age(out / "slurm" / "task_list.txt", 3600)
+    _age(out / "sig.part0.pkl", 1800)
+
+    record_submission(out / "slurm", "123", "1")
+
+    by_state, _ = classify(str(out))
+    assert by_state["stale"] == []
+    assert [t.index for t in by_state["done"]] == [0]
+
+
 def test_status_lists_pickles_that_no_task_writes(tmp_path):
     from suep_plot.status import classify
 
@@ -402,3 +417,19 @@ def test_the_comparison_scripts_load_exactly_the_named_sample(tmp_path):
                                                        "zerobias_2024C_ctrl"]
     data = compare_style.load_sample(str(tmp_path), "zerobias_2024C")
     assert list(data["samples"]) == ["zerobias_2024C"]
+
+
+def test_the_comparison_scripts_style_wrappers_reach_suep_plot(tmp_path):
+    """cms_label / write_gallery wrap the suep_plot functions of the same name."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import compare_style
+
+    fig, ax, _ = compare_style.figure()
+    compare_style.cms_label(ax)
+    compare_style.save(fig, str(tmp_path), "one")
+    index = compare_style.write_gallery(str(tmp_path), "title", "subtitle",
+                                        [("one", 0.5)], "score")
+    assert Path(index).exists()

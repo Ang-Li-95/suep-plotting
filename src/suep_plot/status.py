@@ -125,19 +125,24 @@ def read_jobs(work_dir: Path) -> list[dict]:
 def submission_time(work_dir: Path) -> float:
     """When this run was first submitted, as a POSIX timestamp.
 
-    The first ``jobs.tsv`` row; for runs that predate ``jobs.tsv`` (or were
-    submitted by hand after ``--dry-run``) the time ``task_list.txt`` was
-    written, which is the same moment to within the submission itself.
+    The earlier of the first ``jobs.tsv`` row and the time ``task_list.txt``
+    was written.  For a run ``suep-submit`` sent off itself the two are the
+    same moment to within the submission.  A run submitted by hand after
+    ``--dry-run`` (or one that predates ``jobs.tsv``) gets its first row only
+    from a later ``--resubmit``, which is not when the run started.
     """
     work_dir = Path(work_dir)
+    times = []
     jobs = read_jobs(work_dir)
     if jobs:
         try:
-            return datetime.fromisoformat(jobs[0]["submitted"]).timestamp()
+            times.append(datetime.fromisoformat(jobs[0]["submitted"]).timestamp())
         except ValueError:
             pass
     task_list = work_dir / "task_list.txt"
-    return task_list.stat().st_mtime if task_list.exists() else 0.0
+    if task_list.exists():
+        times.append(task_list.stat().st_mtime)
+    return min(times, default=0.0)
 
 
 def submitted_job_ids(work_dir: Path) -> list[str]:
