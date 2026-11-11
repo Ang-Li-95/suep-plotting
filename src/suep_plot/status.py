@@ -176,24 +176,42 @@ def parse_sacct(text: str, job_order: list[str]) -> dict[int, tuple[str, str]]:
     return {i: (s, j) for i, (s, j, _) in best.items()}
 
 
-def slurm_states(work_dir: Path) -> dict[int, tuple[str, str]]:
+class SchedulerUnavailable(RuntimeError):
+    """``sacct`` could not be asked about jobs the run is known to have."""
+
+
+def slurm_states(work_dir: Path, strict: bool = False) -> dict[int, tuple[str, str]]:
     """Latest Slurm state of every array index of the run, from one ``sacct`` call.
 
-    Empty when the run predates ``jobs.tsv`` or ``sacct`` is unavailable --
-    the completion check then falls back to the pickles alone.
+    Empty when the run has no recorded job (it predates ``jobs.tsv`` or was
+    submitted by hand).  Empty as well when ``sacct`` cannot be asked -- the
+    completion check then falls back to the pickles alone -- unless *strict*,
+    which raises :class:`SchedulerUnavailable` instead: a caller that acts on
+    "not pending or running" must not read a failed query as that.
     """
     ids = submitted_job_ids(work_dir)
-    sacct = shutil.which("sacct")
-    if not ids or not sacct:
+    if not ids:
         return {}
+
+    def unavailable(why: str) -> dict:
+        if strict:
+            raise SchedulerUnavailable(why)
+        return {}
+
+    sacct = shutil.which("sacct")
+    if not sacct:
+        return unavailable("'sacct' was not found")
     cmd = [sacct, "-j", ",".join(ids), "-X", "--array", "-n", "-P",
            "--format=JobID,State,ExitCode,Elapsed"]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    except (OSError, subprocess.TimeoutExpired):
-        return {}
+    except subprocess.TimeoutExpired:
+        return unavailable("'sacct' did not answer within 120 s")
+    except OSError as e:
+        return unavailable(f"'sacct' could not be run: {e}")
     if res.returncode != 0:
-        return {}
+        return unavailable(f"'sacct' failed (rc={res.returncode}): "
+                           f"{res.stderr.strip()[:200]}")
     return parse_sacct(res.stdout, ids)
 
 
@@ -430,7 +448,8 @@ def resubmit(output_dir: str, verify: bool = True, dry_run: bool = False,
              allow_config_change: bool = False) -> tuple[int, int]:
     """Resubmit the unfinished array indices over the original job.sh.
 
-    Tasks Slurm still reports as pending or running are left alone.
+    Tasks Slurm still reports as pending or running are left alone; if
+    Slurm cannot be asked about the run's recorded jobs, nothing is submitted.
     *overrides* (``time`` / ``mem`` / ``qos`` / ``partition``) go on the
     ``sbatch`` command line, where they take precedence over the script's
     ``#SBATCH`` lines -- the way to give a task that hit its time or memory
@@ -444,7 +463,14 @@ def resubmit(output_dir: str, verify: bool = True, dry_run: bool = False,
 
     out = Path(output_dir).resolve()
     work = out / "slurm"
-    states = slurm_states(work)
+    try:
+        states = slurm_states(work, strict=True)
+    except SchedulerUnavailable as e:
+        # Without the states a task that is only still queued or running
+        # looks unfinished, and would be submitted a second time.
+        sys.exit(f"ERROR: cannot tell which tasks of {out} are still pending or "
+                 f"running: {e}.\n  Nothing was resubmitted; try again when "
+                 "the scheduler answers.")
     redo = report(output_dir, verify, states)
     if not redo:
         return 0

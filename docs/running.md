@@ -129,7 +129,9 @@ suep-status -o $OUT/configs_mds --resubmit --time 16:00:00 --mem 16000
 `--resubmit` sends `sbatch --array=<failed indices>` over the original
 `job.sh`, so the redone tasks own exactly the same input files. It
 
-- leaves tasks that are still queued or running alone;
+- leaves tasks that are still queued or running alone, and submits nothing at
+  all if `sacct` cannot be asked about the run's jobs (a failed query would
+  otherwise read as "nothing is running" and those tasks would run twice);
 - puts `--time` / `--mem` / `--qos` / `--partition` on the sbatch line, where
   they override the script (a task that hit its limit needs more of it), and
   picks the QOS a longer `--time` needs;

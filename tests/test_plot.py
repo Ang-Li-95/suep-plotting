@@ -469,3 +469,30 @@ def test_the_event_display_takes_a_system_without_rechits():
 
     hits = {"label": np.array([], dtype=int)}
     assert event_display.cluster_summary(hits, {"match_min_hits": 10}) == []
+
+
+def test_resubmit_stops_when_slurm_cannot_be_asked(tmp_path, monkeypatch):
+    """A failed sacct is not "nothing is pending": those tasks would run twice."""
+    import subprocess
+
+    from suep_plot import status
+
+    out = _fake_run(tmp_path, [("sig", 0), ("sig", 1)], written=[])
+    status.record_submission(out / "slurm", "777", "0-1")
+    monkeypatch.setattr(status.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def sacct_fails(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, "", "slurmdbd: connection refused")
+
+    monkeypatch.setattr(status.subprocess, "run", sacct_fails)
+    with pytest.raises(SystemExit, match="Nothing was resubmitted"):
+        status.resubmit(str(out), dry_run=True)
+    # The report alone still works, from the pickles.
+    assert status.slurm_states(out / "slurm") == {}
+
+    def sacct_hangs(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, 120)
+
+    monkeypatch.setattr(status.subprocess, "run", sacct_hangs)
+    with pytest.raises(SystemExit, match="did not answer"):
+        status.resubmit(str(out), dry_run=True)
