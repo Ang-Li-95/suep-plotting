@@ -496,3 +496,19 @@ def test_resubmit_stops_when_slurm_cannot_be_asked(tmp_path, monkeypatch):
     monkeypatch.setattr(status.subprocess, "run", sacct_hangs)
     with pytest.raises(SystemExit, match="did not answer"):
         status.resubmit(str(out), dry_run=True)
+
+
+def test_the_comparison_checks_binning_across_signal_and_background():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import compare_sig_bkg
+
+    def one(lo, hi):
+        return hist.Hist(hist.axis.Regular(2, lo, hi, name="x"))
+
+    assert compare_sig_bkg.same_edges(one(0, 100), one(0, 100))
+    assert not compare_sig_bkg.same_edges(one(0, 100), one(0, 200))
+    assert not compare_sig_bkg.same_edges(
+        one(0, 100), hist.Hist(hist.axis.Regular(4, 0, 100, name="x")))

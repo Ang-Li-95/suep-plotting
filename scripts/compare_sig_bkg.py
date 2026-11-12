@@ -39,6 +39,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import compare_style as style  # noqa: E402
 
 
+def same_edges(a, b) -> bool:
+    """Whether two 1D histograms have the same bin edges."""
+    ea, eb = a.axes[0].edges, b.axes[0].edges
+    return ea.shape == eb.shape and bool(np.allclose(ea, eb))
+
+
 def collect(entries, base_or_key, hist_cfg, dropped=None):
     """Unit-normalized 1D slices for [(sample, result_dict)] on a common axis.
 
@@ -52,7 +58,7 @@ def collect(entries, base_or_key, hist_cfg, dropped=None):
     Returns [(sample, Hist)], or None when nothing survives or the survivors
     disagree on binning.
     """
-    out, edges = [], None
+    out, first = [], None
     for sample, data, key in entries:
         h = data["histograms"].get(key)
         sh = None if h is None else style.slice_1d(h, sample, hist_cfg)
@@ -61,10 +67,9 @@ def collect(entries, base_or_key, hist_cfg, dropped=None):
             if dropped is not None:
                 dropped.setdefault(sample, set()).add(base_or_key)
             continue
-        if edges is None:
-            edges = sh.axes[0].edges
-        elif edges.shape != sh.axes[0].edges.shape or not np.allclose(
-                edges, sh.axes[0].edges):
+        if first is None:
+            first = sh
+        elif not same_edges(first, sh):
             print(f"  !! axis mismatch, skipping {base_or_key}")
             return None
         out.append((sample, sh))
@@ -275,6 +280,9 @@ def main():
     args = p.parse_args()
 
     sig_all = style.load_samples(args.sig_out, args.sig_samples)
+    if not sig_all:
+        wanted = f" matching {args.sig_samples}" if args.sig_samples else ""
+        raise SystemExit(f"no signal pickles{wanted} found in {args.sig_out}")
     bkg_all = {}
     for bkg_dir in args.bkg_out:
         for name, data in style.load_samples(bkg_dir, args.bkg_samples).items():
@@ -329,6 +337,11 @@ def main():
         sig_slices = collect(sig_entries, base, hist_cfg, dropped)
         bkg_slices = collect(bkg_entries, base, hist_cfg, dropped)
         if not sig_slices or not bkg_slices:
+            continue
+        # collect() compares within each side only; the separation is taken
+        # bin by bin across the two, so they need the same axis as well.
+        if not same_edges(sig_slices[0][1], bkg_slices[0][1]):
+            print(f"  !! signal and background binning differ, skipping {base}")
             continue
         by_bkg = draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest,
                       tag, bkg_tag)

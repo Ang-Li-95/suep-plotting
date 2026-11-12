@@ -206,3 +206,28 @@ def test_a_misspelled_from_is_an_error(tmp_path):
 
     with pytest.raises(ConfigError, match="no registry entry 'reel'"):
         load_samples(path)
+
+
+def test_files_given_as_one_string_is_one_path(tmp_path):
+    """Not a list of its letters."""
+    from suep_plot.inputs import resolve_sample_files
+
+    assert resolve_sample_files({"files": "some.root"}) == ["some.root"]
+
+
+def test_a_child_override_keeps_what_the_parent_set_over_the_registry(tmp_path):
+    """_registry next to _extends used to re-read the pool over the parent."""
+    _write(tmp_path / "pool.yaml",
+           {"real": {"files": ["/d"], "label": "R", "max_files": 9},
+            "other": {"files": ["/o"]}})
+    (tmp_path / "p").mkdir()
+    (tmp_path / "c").mkdir()
+    _write(tmp_path / "p" / "samples.yaml", {
+        "_registry": "../pool.yaml", "real": {"label": "custom", "max_files": 3}})
+    child = _write(tmp_path / "c" / "samples.yaml", {
+        "_extends": "../p", "_registry": "../pool.yaml",
+        "real": {"color": "red"}, "other": None})
+
+    assert load_samples(child) == {
+        "real": {"files": ["/d"], "label": "custom", "max_files": 3, "color": "red"},
+        "other": {"files": ["/o"]}}

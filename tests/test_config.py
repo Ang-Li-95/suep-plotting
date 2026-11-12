@@ -404,3 +404,21 @@ def test_set_yaml_rejects_unknown_keys(tmp_path):
 
     with pytest.raises(ConfigError, match="unknown key"):
         read_set_file(tmp_path / "variant")
+
+
+def test_an_empty_include_is_no_include(tmp_path):
+    path = tmp_path / "x.yaml"
+    path.write_text("_include:\nfoo: {a: 1}\n")
+
+    assert load_config_file(path) == {"foo": {"a": 1}}
+
+
+def test_a_reweight_map_is_a_source_of_the_fills(tmp_path):
+    """Editing the map changes the fills, so the resubmit check must see it."""
+    from suep_plot.config import fill_sources
+
+    _write(tmp_path / "reweights.yaml", {"w": {"file": "map.yaml"}})
+    _write(tmp_path / "map.yaml", {"variable": "events.met", "edges": [0, 1],
+                                   "weights": [1.0]})
+
+    assert (tmp_path / "map.yaml").resolve() in fill_sources(tmp_path)

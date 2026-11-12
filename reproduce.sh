@@ -13,15 +13,16 @@
 # --dry-run writes the job scripts without submitting, to inspect them first.
 # See docs/running.md for the Slurm workflow.
 set -eo pipefail
-cd "$(dirname "$0")"
 
 if [ -z "$1" ] || [[ "$1" == -* ]]; then
     echo "usage: bash reproduce.sh <output-root> [--dry-run]" >&2
     echo "  e.g. bash reproduce.sh /groups/<group>/<user>/suep_output" >&2
     exit 1
 fi
+# Before the cd: a relative <output-root> is relative to where this was called.
 OUT_ROOT="$(realpath -m "$1")"
 shift
+cd "$(dirname "$0")"
 
 # ── environment ──────────────────────────────────────────────────────
 eval "$(conda shell.bash hook)"

@@ -22,7 +22,7 @@ import awkward as ak
 import numpy as np
 import yaml
 
-from .config import load_config_file, name_list
+from .config import load_config_file, name_list, weight_concerns
 from .fill import compile_expr
 
 
@@ -126,14 +126,13 @@ class Reweighter:
             raise ValueError(f"reweight '{name}': need 'expression', 'variable', "
                              "'variable_x'+'variable_y', or 'file'")
 
+    def concerns(self, sample: str, group: str, is_data: bool) -> bool:
+        """Whether this reweight is meant for a sample (see config.weight_concerns)."""
+        return weight_concerns(self.samples, self.apply_to, sample, group, is_data)
+
     def applies_to(self, sample: str, group: str, is_data: bool) -> bool:
-        if self.fill_only:
-            return False
-        if self.samples is not None:
-            return sample in self.samples
-        if is_data:
-            return False
-        return self.apply_to == "all" or group in self.apply_to
+        """Whether it goes into the event weight of a sample: not if ``fill_only``."""
+        return not self.fill_only and self.concerns(sample, group, is_data)
 
     def evaluate(self, events):
         """Weight array for a chunk: 1D per event, or jagged for level: object."""
@@ -184,6 +183,21 @@ def apply_reweights(reweighters: dict[str, Reweighter], events, sample: str,
     for name, rw in reweighters.items():
         if rw.applies_to(sample, group, is_data):
             weights.add(name, rw.event_weight(events))
+
+
+def _unit_weight(events):
+    return 1.0
+
+
+def reweight_weights(reweighters: dict[str, Reweighter], sample: str, group: str,
+                     is_data: bool) -> dict:
+    """``{name: events -> weights}`` for a histogram's ``weight: "@name"``.
+
+    The map as evaluated for a sample it is meant for, 1 for the others --
+    the same rule as for the event weight, ``fill_only`` or not.
+    """
+    return {name: rw.evaluate if rw.concerns(sample, group, is_data) else _unit_weight
+            for name, rw in reweighters.items()}
 
 
 # ── Map generation (suep-reweight) ────────────────────────────────

@@ -262,3 +262,22 @@ def test_check_expressions_skips_mc_only_histograms_for_data(monkeypatch):
     assert check(is_data=True) == []
     as_mc = check()
     assert len(as_mc) == 1 and "'npu'" in as_mc[0]
+
+
+def test_check_expressions_checks_only_what_the_fill_applies(monkeypatch):
+    """A correction or reweight the sample never gets must not stop its run."""
+    events = ak.Array({"met": [10.0, 60.0]})
+    monkeypatch.setattr(checks, "open_events", lambda *a, **k: events)
+    corr = {"pileup": {"inputs": ["events.Pileup.nTrueInt"]},
+            "sig_sf": {"inputs": ["events.Sig.x"], "apply_to": ["signal"]}}
+    rws = {"w": Reweighter("w", {"expression": "events.Gen.w",
+                                 "apply_to": ["signal"]})}
+
+    def check(**kw):
+        return checks.check_expressions(["f.root"], "Events", {}, as_selections({}),
+                                        corr, reweighters=rws, sample="s", **kw)
+
+    assert check(is_data=True) == []
+    as_bkg = check(group="background")
+    assert len(as_bkg) == 1 and "'pileup'" in as_bkg[0]
+    assert len(check(group="signal")) == 3

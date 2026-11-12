@@ -95,6 +95,18 @@ def name_list(value, where: str, key: str, keep=()):
                      f"got {value!r}")
 
 
+def weight_concerns(samples, apply_to, sample: str, group: str, is_data: bool) -> bool:
+    """Whether a reweight or a correction is meant for a sample.
+
+    One rule for both: simulation only, of the groups in *apply_to* (``"all"``
+    or a list) -- unless *samples* names samples explicitly, which then
+    decides alone and is the only way to reach data.
+    """
+    if samples is not None:
+        return sample in samples
+    return not is_data and (apply_to == "all" or group in apply_to)
+
+
 def read_set_file(config_dir: str | Path) -> dict:
     """A config set's ``set.yaml`` (``{}`` if it has none), checked."""
     path = Path(config_dir) / SET_FILE
@@ -187,12 +199,21 @@ def _expand_repeats(raw: dict, path: Path, inherited_axes: dict):
     return out, axes
 
 
-def _resolve_registry(defs: dict, registry: dict, path: Path) -> dict:
-    """Resolve each entry against the ``_registry`` pool (see the module docs)."""
+def _resolve_registry(defs: dict, registry: dict, path: Path,
+                      inherited: dict | None = None) -> dict:
+    """Resolve each entry against the ``_registry`` pool (see the module docs).
+
+    An entry the file already inherits (*inherited*, through ``_extends``) is
+    not taken from the pool again: its keys here are overrides of the
+    inherited entry, and re-reading the pool would undo the parent's own.
+    """
     out = {}
     for name, cfg in defs.items():
         cfg = dict(cfg or {})
         explicit = "_from" in cfg
+        if not explicit and name in (inherited or {}):
+            out[name] = cfg
+            continue
         base_name = cfg.pop("_from", name)
         base = registry.get(base_name)
         if base is None:
@@ -275,7 +296,7 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
             origins=origins, _seen=[*_seen, resolved]))
         axes.update(merged.pop("_axes", {}) or {})
 
-    includes = raw.pop("_include", [])
+    includes = raw.pop("_include", None) or []
     if isinstance(includes, str):
         includes = [includes]
     for inc in includes:
@@ -302,7 +323,7 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
                                   f"{reg_path}")
             registry.update(load_config_file(reg_path, sources=sources,
                                              _seen=[*_seen, resolved]))
-        defs = _resolve_registry(defs, registry, path)
+        defs = _resolve_registry(defs, registry, path, inherited=merged)
     if normalize is not None:
         defs = normalize(defs, path, axes)
     if origins is not None:
@@ -357,7 +378,27 @@ def config_sources(config_dir: str | Path, files=CONFIG_FILES) -> set:
             pass
     if "variables.yaml" in files and GLOBAL_VARIABLES.exists():
         sources.add(GLOBAL_VARIABLES.resolve())
+    if "reweights.yaml" in files:
+        sources |= _reweight_map_files(config_dir)
     return sources
+
+
+def _reweight_map_files(config_dir: Path) -> set:
+    """The ``file:`` maps reweights.yaml names (read as plain YAML, not through
+    :func:`load_config_file`, so they are not among its sources)."""
+    try:
+        defs = load_config_file(config_dir / "reweights.yaml")
+    except SystemExit:
+        return set()
+    out = set()
+    for cfg in defs.values():
+        if isinstance(cfg, dict) and cfg.get("file"):
+            path = Path(cfg["file"])
+            if not path.is_absolute():
+                path = config_dir / path
+            if path.exists():
+                out.add(path.resolve())
+    return out
 
 
 def fill_sources(config_dir: str | Path) -> list:

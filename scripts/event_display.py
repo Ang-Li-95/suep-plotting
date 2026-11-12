@@ -263,8 +263,9 @@ def main():
     p.add_argument("-n", "--nevents", type=int, default=5,
                    help="how many event displays to draw (default: 5)")
     p.add_argument("--entries", type=int, nargs="+",
-                   help="draw these entry numbers of the first file instead of "
-                        "scanning for events with clusters")
+                   help="draw these entry numbers of the first file (all of "
+                        "them, whatever -n says) instead of scanning for "
+                        "events with clusters")
     p.add_argument("--systems", default="csc,dt",
                    help="comma-separated subset of csc,dt (default: both)")
     p.add_argument("--min-size", type=int, default=0,
@@ -314,6 +315,10 @@ def main():
         is_data = bool(samples[args.dataset].get("is_data", False))
     if not files:
         p.error("no input files resolved")
+    # --entries names entries of the first file, and all of them are drawn.
+    limit = args.nevents
+    if args.entries is not None:
+        files, limit = files[:1], len(args.entries)
 
     outdir = Path(args.out)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -331,7 +336,7 @@ def main():
         arrays = tree.arrays(present)
         entries = args.entries if args.entries is not None else range(len(arrays))
         for i in entries:
-            if ndrawn >= args.nevents:
+            if ndrawn >= limit:
                 break
             event = read_event(arrays, i, systems, settings)
             summaries = {s: cluster_summary(h, settings)
@@ -354,7 +359,7 @@ def main():
                   + ", ".join(f"{SYSTEMS[s]['label']}:{len(cs)}"
                               for s, cs in summaries.items() if cs) + ")")
             ndrawn += 1
-        if ndrawn >= args.nevents:
+        if ndrawn >= limit:
             break
 
     if ndrawn == 0:

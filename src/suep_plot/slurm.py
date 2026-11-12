@@ -150,8 +150,9 @@ def ensure_proxy(proxy: str | None = None, need_seconds: int = 600) -> str:
 
 
 def _reads_xrootd(samples: dict) -> bool:
-    return any("://" in str(spec)
-               for cfg in samples.values() for spec in (cfg.get("files") or []))
+    from .inputs import file_specs
+
+    return any("://" in spec for cfg in samples.values() for spec in file_specs(cfg))
 
 
 # ── submission ────────────────────────────────────────────────────

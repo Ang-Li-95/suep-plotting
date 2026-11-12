@@ -29,10 +29,10 @@ from coffea.nanoevents import NanoAODSchema
 from .checks import check_expressions, static_errors
 from .config import fill_sources
 from .configset import load_config_set
-from .corrections import apply_corrections, build_correctors
+from .corrections import apply_corrections, build_correctors, correction_weights
 from .fill import build_histograms, compile_expr, fill_histograms, prepare_events
-from .inputs import resolve_sample_files, select_samples
-from .reweights import apply_reweights
+from .inputs import file_specs, resolve_sample_files, select_samples
+from .reweights import apply_reweights, reweight_weights
 from .status import output_name
 
 
@@ -88,10 +88,14 @@ class SuepProcessor(processor.ProcessorABC):
             weights.add("genWeight", np.ones(n, dtype=np.float64))
         else:
             weights.add("genWeight", np.asarray(events.genWeight, dtype=np.float64))
-            if self.correctors:
-                apply_corrections(self.correctors, events, group, weights)
-        if self.reweighters:
-            apply_reweights(self.reweighters, events, dataset, group, is_data, weights)
+        # Corrections and reweights are for simulation, unless one names this
+        # sample under 'samples:' (config.weight_concerns).
+        apply_corrections(self.correctors, events, dataset, group, is_data, weights)
+        apply_reweights(self.reweighters, events, dataset, group, is_data, weights)
+        # What a histogram's own 'weight: "@name"' refers to, by the same rule.
+        named_weights = {
+            **reweight_weights(self.reweighters, dataset, group, is_data),
+            **correction_weights(self.correctors, dataset, group, is_data)}
 
         # A data sample has no simulation truth: its mc_only histograms are
         # not built at all, so the plots show the sample as absent from them
@@ -104,7 +108,7 @@ class SuepProcessor(processor.ProcessorABC):
         layout: dict = {}
         sel_cache = fill_histograms(histograms, hist_defs, self.sel_defs,
                                     events, dataset, wvec,
-                                    reweighters=self.reweighters, layout=layout)
+                                    named_weights=named_weights, layout=layout)
 
         cutflow = self._cutflow(events, sel_cache, wvec, n)
 
@@ -202,9 +206,14 @@ def run_all(
                          + "\n".join(f"  {e}" for e in errors))
     for hname, h in hist_defs.items():
         wspec = h.weight or ""
-        if wspec.startswith("@") and not reweighters[wspec[1:]].fill_only:
+        if not wspec.startswith("@"):
+            continue
+        name = wspec[1:]
+        fill_only = (reweighters[name].fill_only if name in reweighters
+                     else bool(corr_defs[name].get("fill_only")))
+        if not fill_only:
             print(f"WARNING: histogram '{hname}' uses '{wspec}' which is also applied "
-                  f"globally; add 'fill_only: true' to the map to avoid double counting")
+                  f"globally; add 'fill_only: true' to it to avoid double counting")
 
     sample_defs = select_samples(cs.samples, samples_filter)
 
@@ -219,8 +228,8 @@ def run_all(
                              f"{type(e).__name__}: {e}")
         print(f"Loaded {len(correctors)} correction(s): {list(correctors)}")
 
-    remote = (file_list or []) + [str(s) for cfg in sample_defs.values()
-                                  for s in (cfg.get("files") or [])]
+    remote = (file_list or []) + [s for cfg in sample_defs.values()
+                                  for s in file_specs(cfg)]
     if any("://" in f for f in remote):
         from .slurm import ensure_proxy
         ensure_proxy(need_seconds=60)
@@ -245,8 +254,7 @@ def run_all(
         if file_list is not None:
             files = list(file_list)
         else:
-            file_specs = cfg.get("files") or []
-            if not file_specs:
+            if not file_specs(cfg):
                 print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
                 continue
             files = resolve_sample_files(cfg)
@@ -276,7 +284,8 @@ def run_all(
     for name, cfg, files, tree, _ in todo:
         problems += [f"  [{name}] {p}" for p in check_expressions(
             files, tree, hist_defs, sel_defs, corr_defs, derive_fn, reweighters,
-            settings, sample=name, is_data=cfg.get("is_data", False))]
+            settings, sample=name, is_data=cfg.get("is_data", False),
+            group=cfg.get("group", ""))]
     if problems:
         raise SystemExit("ERROR: config expressions that do not work (checked on "
                          "the first events of each sample's first file):\n"

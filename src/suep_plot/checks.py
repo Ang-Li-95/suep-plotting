@@ -12,6 +12,7 @@ import difflib
 from pathlib import Path
 
 from .configset import ConfigSet, load_config_set
+from .corrections import concerns as correction_concerns
 from .fill import compile_expr, prepare_events
 from .histdefs import load_histogram_defs
 from .inputs import open_events
@@ -20,14 +21,24 @@ from .inputs import open_events
 # ── static checks ─────────────────────────────────────────────────
 
 
-def reference_errors(hist_defs: dict, sel_defs: dict, reweighters: dict) -> list[str]:
-    """Names a histogram uses that the set does not define."""
-    errors = []
+def reference_errors(hist_defs: dict, sel_defs: dict, reweighters: dict,
+                     corrections: dict | None = None) -> list[str]:
+    """Names a histogram uses that the set does not define.
+
+    A weight ``"@name"`` names a reweight map or a correction; a name that is
+    both would be ambiguous.
+    """
+    corrections = corrections or {}
+    errors = [f"'{name}' is both a reweight (reweights.yaml) and a correction "
+              f"(corrections.yaml): a histogram weight '@{name}' would be "
+              "ambiguous; rename one"
+              for name in sorted(set(reweighters) & set(corrections))]
     for hname, h in sorted(hist_defs.items()):
         wspec = h.weight or ""
-        if wspec.startswith("@") and wspec[1:] not in reweighters:
-            errors.append(f"histogram '{hname}': unknown reweight map '{wspec}' "
-                          "(not in reweights.yaml)")
+        if wspec.startswith("@") and wspec[1:] not in reweighters \
+                and wspec[1:] not in corrections:
+            errors.append(f"histogram '{hname}': unknown weight '{wspec}' "
+                          "(neither in reweights.yaml nor in corrections.yaml)")
         for sname in h.selections:
             if sname not in sel_defs:
                 close = difflib.get_close_matches(sname, list(sel_defs), n=1)
@@ -62,7 +73,8 @@ def sample_errors(samples: dict) -> list[str]:
 def static_errors(cs: ConfigSet) -> list[str]:
     """What is wrong with a loaded set, as far as it shows without input files."""
     return sample_errors(cs.samples) \
-        + reference_errors(cs.histograms, cs.selections, cs.reweighters) \
+        + reference_errors(cs.histograms, cs.selections, cs.reweighters,
+                           cs.corrections) \
         + custom_config_errors(cs)
 
 
@@ -128,15 +140,16 @@ def config_warnings(config_dir: str | Path) -> list[str]:
 
 def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
                       reweighters=None, settings=None, sample: str = "?",
-                      is_data: bool = False) -> list[str]:
+                      is_data: bool = False, group: str = "") -> list[str]:
     """Evaluate every expression on the first events of *files*; return the failures.
 
     Each histogram's and selection's expression must evaluate, and an explicit
     ``level`` must agree with what the expression gives, on every sample -- the
     fill treats any failure as fatal, so finding them here stops the run in
-    seconds instead of on some chunk an hour in.  For a data sample
-    (*is_data*) the ``mc_only`` histograms are left out, as they are in the
-    fill.
+    seconds instead of on some chunk an hour in.  Only what the fill uses for
+    this sample is checked: for a data sample (*is_data*) neither the
+    ``mc_only`` histograms nor the corrections, and of the corrections and
+    reweights the ones whose ``apply_to`` / ``samples`` cover it (*group*).
     """
     from .fill import (is_jagged, object_selection_on_event_histogram,
                        object_selection_over_other_collection, same_object_counts)
@@ -193,10 +206,17 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
                            "per event")
         if h.weight and not h.weight.startswith("@"):
             evaluate(f"histogram '{name}' weight", h.weight)
+    # A correction or a reweight is evaluated on the samples it is meant for
+    # (config.weight_concerns), in the event weight or as a histogram's
+    # "@name" weight, so those are the samples it is checked on.
     for name, cfg in corr_defs.items():
+        if not correction_concerns(name, cfg, sample, group, is_data):
+            continue
         for expr in cfg.get("inputs", []):
             evaluate(f"correction '{name}' input", expr)
     for name, rw in (reweighters or {}).items():
+        if not rw.concerns(sample, group, is_data):
+            continue
         for expr in rw.exprs:
             evaluate(f"reweight '{name}'", expr)
     return bad

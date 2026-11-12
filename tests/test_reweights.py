@@ -81,6 +81,29 @@ def test_applies_to_rules():
     assert not rw.applies_to("qcd", "background", is_data=False)
 
 
+def test_a_histogram_weight_follows_the_same_rule_as_the_event_weight():
+    """'@name' is the map on the samples it is meant for, and 1 on the others."""
+    from suep_plot.reweights import reweight_weights
+
+    events = make_events()
+    rws = {
+        "mc": Reweighter("mc", {"expression": "events.met * 0 + 2.0", "fill_only": True}),
+        "bkg": Reweighter("bkg", {"expression": "events.met * 0 + 3.0",
+                                  "apply_to": "background"}),
+        "dat": Reweighter("dat", {"expression": "events.met * 0 + 5.0",
+                                  "samples": ["data"], "fill_only": True}),
+    }
+
+    def weights(sample, group, is_data):
+        named = reweight_weights(rws, sample, group, is_data)
+        return {name: float(np.asarray(w(events)).flat[0]) for name, w in named.items()}
+
+    assert weights("qcd", "background", False) == {"mc": 2.0, "bkg": 3.0, "dat": 1.0}
+    assert weights("sig", "signal", False) == {"mc": 2.0, "bkg": 1.0, "dat": 1.0}
+    # Data gets a weight only from the map that names it under 'samples:'.
+    assert weights("data", "", True) == {"mc": 1.0, "bkg": 1.0, "dat": 5.0}
+
+
 def test_config_validation():
     with pytest.raises(ValueError, match="len\\(weights\\)"):
         Reweighter("r", {"variable": "events.met", "edges": [0, 1, 2], "weights": [1.0]})

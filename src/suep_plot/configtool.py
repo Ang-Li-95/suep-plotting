@@ -153,8 +153,9 @@ def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
             except SystemExit as e:
                 errors.append(str(e))
                 chosen = {}
-            remote = any("://" in str(s) for c in chosen.values()
-                         for s in (c.get("files") or []))
+            from .inputs import file_specs
+
+            remote = any("://" in s for c in chosen.values() for s in file_specs(c))
             if remote:
                 from .slurm import ensure_proxy
                 ensure_proxy(need_seconds=60)
@@ -172,7 +173,8 @@ def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
                     files, cfg.get("tree", "Events"), cs.histograms,
                     cs.selections, cs.corrections, cs.derive_fn,
                     cs.reweighters, cs.settings, sample=name,
-                    is_data=cfg.get("is_data", False))]
+                    is_data=cfg.get("is_data", False),
+                    group=cfg.get("group", ""))]
                 checked.append(name)
         status = "FAILED" if errors else "OK"
         detail = (f"; expressions evaluated on one file of {len(checked)} sample(s)"

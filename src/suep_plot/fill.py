@@ -201,7 +201,7 @@ def fill_histograms(
     events,
     sample: str,
     weight: np.ndarray | None = None,
-    reweighters: dict | None = None,
+    named_weights: dict | None = None,
     layout: dict | None = None,
 ) -> dict:
     """Fill all histograms from a chunk of NanoEvents.
@@ -216,7 +216,10 @@ def fill_histograms(
     ("has a passing object") is written as a selection of its own.
 
     Histogram ``weight`` entries may be NanoEvents expressions or ``"@name"``
-    references to a reweight map (*reweighters*).  Either may evaluate to a
+    references to a reweight map or a correction (*named_weights*: ``{name:
+    events -> weights}``, already resolved for this sample -- see
+    :func:`reweights.reweight_weights` and
+    :func:`corrections.correction_weights`).  Either may evaluate to a
     jagged (per-object) array: for per-object histograms each object is then
     weighted individually; for event-level histograms the per-object weights
     are multiplied into one weight per event.  A missing or non-finite weight
@@ -238,10 +241,9 @@ def fill_histograms(
     def eval_expr(expr: str):
         if expr not in expr_cache:
             if expr.startswith("@"):
-                rw = (reweighters or {}).get(expr[1:])
-                if rw is None:
-                    raise KeyError(f"unknown reweight map '{expr}'")
-                expr_cache[expr] = rw.evaluate(events)
+                if expr[1:] not in (named_weights or {}):
+                    raise KeyError(f"unknown reweight map or correction '{expr}'")
+                expr_cache[expr] = named_weights[expr[1:]](events)
             else:
                 expr_cache[expr] = compile_expr(expr)(events)
         return expr_cache[expr]

@@ -135,13 +135,19 @@ def _resolve_files(file_specs: list[str]) -> list[str]:
     return out
 
 
+def file_specs(cfg: dict) -> list[str]:
+    """A sample's ``files:`` as a list; a bare string is one entry, not letters."""
+    specs = cfg.get("files") or []
+    return [specs] if isinstance(specs, str) else [str(s) for s in specs]
+
+
 def resolve_sample_files(cfg: dict) -> list[str]:
     """The files of one sample, honouring an optional ``max_files:`` cap.
 
     ``max_files`` takes the first N of the resolved list.  The list is sorted,
     so a capped run is reproducible and can be widened later.
     """
-    files = _resolve_files(cfg.get("files") or [])
+    files = _resolve_files(file_specs(cfg))
     cap = cfg.get("max_files")
     return files[:int(cap)] if cap else files
 

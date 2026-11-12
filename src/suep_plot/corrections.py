@@ -8,13 +8,19 @@ event-weight manager (nominal + up/down systematics, weight statistics).
 ``kind``:
   * ``event_weight`` — one weight per event; added directly to ``Weights``.
   * ``object_sf``     — one SF per object; the per-event weight is the product
-    over objects (``evaluate`` → ``ak.unflatten`` → ``ak.prod``).  Scalar inputs
-    (e.g. a ``"nominal"`` systematic string) are passed through unflattened, so
-    the correctionlib string/category axis works correctly.
+    over objects.  Scalar inputs (e.g. a ``"nominal"`` systematic string) are
+    passed through unflattened, so the correctionlib string/category axis
+    works correctly.
+
+A histogram can also name a correction as its own weight (``weight:
+"@<name>"``): a per-object histogram then weights each object with its own
+scale factor.  ``fill_only: true`` keeps such a correction out of the event
+weight, so it is not applied twice.
 """
 
 from __future__ import annotations
 
+import functools
 import os
 
 import awkward as ak
@@ -22,7 +28,7 @@ import numpy as np
 
 # Ensure the scipy/_lazywhere shim is applied before coffea.lookup_tools loads.
 from . import _compat  # noqa: F401
-from .config import load_config_file, name_list
+from .config import load_config_file, name_list, weight_concerns
 from .fill import compile_expr
 
 
@@ -67,23 +73,34 @@ def build_correctors(corr_defs: dict) -> dict:
     correctors = {}
     for name, cfg in corr_defs.items():
         # 'apply_to: background' is the one group, never a substring match.
-        cfg = {**cfg, "apply_to": name_list(cfg.get("apply_to", "all") or "all",
-                                            f"correction '{name}'", "apply_to",
-                                            keep=("all",))}
+        cfg = {**cfg, **dict(zip(("samples", "apply_to"), _targets(name, cfg)))}
         cset = correctionlib.CorrectionSet.from_file(_resolve_file(cfg["file"]))
         correctors[name] = (correctionlib_wrapper(cset[cfg["name"]]), cfg)
     return correctors
+
+
+def _targets(name: str, cfg: dict) -> tuple:
+    """(samples, apply_to) of a correction, as lists of names.
+
+    ``apply_to: background`` is the one group, never a substring match.
+    """
+    where = f"correction '{name}'"
+    return (name_list(cfg.get("samples"), where, "samples"),
+            name_list(cfg.get("apply_to", "all") or "all", where, "apply_to",
+                      keep=("all",)))
 
 
 def _eval_inputs(cfg, events):
     return [compile_expr(inp)(events) for inp in cfg["inputs"]]
 
 
-def _object_product(wrapper, input_arrays):
-    """Per-event product of a per-object SF.
+def _scale_factors(wrapper, input_arrays):
+    """The correction evaluated with the structure of its inputs.
 
-    Jagged (per-object) inputs are flattened; scalar inputs (systematic strings,
-    numbers) are passed through so the correctionlib category axis is respected.
+    Jagged (per-object) inputs are flattened for the evaluator and the result
+    is given back per object; scalar inputs (systematic strings, numbers) are
+    passed through so the correctionlib category axis is respected.  With no
+    jagged input the result is one value per event.
     """
     counts = None
     flat_inputs = []
@@ -95,36 +112,67 @@ def _object_product(wrapper, input_arrays):
         else:
             flat_inputs.append(a)
     if counts is None:
-        # No jagged input — treat as an event-level weight.
         return np.asarray(wrapper(*flat_inputs), dtype=np.float64)
-    sf_flat = wrapper(*flat_inputs)
-    per_event = ak.prod(ak.unflatten(sf_flat, counts), axis=1)
-    return np.asarray(ak.fill_none(per_event, 1.0), dtype=np.float64)
+    return ak.unflatten(wrapper(*flat_inputs), counts)
 
 
-def apply_corrections(correctors: dict, events, sample_group: str, weights) -> None:
+def evaluate_correction(wrapper, cfg: dict, events):
+    """One correction on a chunk: per event, or per object for ``object_sf``."""
+    input_arrays = _eval_inputs(cfg, events)
+    kind = cfg.get("kind", "event_weight")
+    if kind == "event_weight":
+        return np.asarray(wrapper(*input_arrays), dtype=np.float64)
+    if kind == "object_sf":
+        return _scale_factors(wrapper, input_arrays)
+    raise ValueError(f"unknown correction kind '{kind}' (event_weight or object_sf)")
+
+
+def concerns(name: str, cfg: dict, sample: str, group: str, is_data: bool) -> bool:
+    """Whether a correction is meant for a sample (see config.weight_concerns)."""
+    samples, apply_to = _targets(name, cfg)
+    return weight_concerns(samples, apply_to, sample, group, is_data)
+
+
+def apply_corrections(correctors: dict, events, sample: str, group: str,
+                      is_data: bool, weights) -> None:
     """Register every applicable correction into a coffea ``Weights`` object.
+
+    A per-object scale factor enters the event weight as its product over the
+    event's objects.  A ``fill_only`` correction is skipped: it is used only
+    where a histogram names it (see :func:`correction_weights`).
 
     Parameters
     ----------
-    correctors   : output of :func:`build_correctors`
-    events       : NanoEvents array for the current chunk
-    sample_group : sample ``group`` string (used by ``apply_to`` filtering)
-    weights      : :class:`coffea.analysis_tools.Weights` to add corrections to
+    correctors : output of :func:`build_correctors`
+    events     : NanoEvents array for the current chunk
+    sample, group, is_data : the sample, for the ``samples`` / ``apply_to`` rule
+    weights    : :class:`coffea.analysis_tools.Weights` to add corrections to
     """
     for name, (wrapper, cfg) in correctors.items():
-        apply_to = cfg.get("apply_to", "all")
-        if apply_to != "all" and sample_group not in apply_to:
+        if cfg.get("fill_only") or not concerns(name, cfg, sample, group, is_data):
             continue
-
-        input_arrays = _eval_inputs(cfg, events)
-        kind = cfg.get("kind", "event_weight")
-
-        if kind == "event_weight":
-            sf = np.asarray(wrapper(*input_arrays), dtype=np.float64)
-        elif kind == "object_sf":
-            sf = _object_product(wrapper, input_arrays)
-        else:
-            raise ValueError(f"Unknown correction kind '{kind}' for '{name}'")
-
+        try:
+            sf = evaluate_correction(wrapper, cfg, events)
+        except ValueError as e:
+            raise ValueError(f"correction '{name}': {e}") from None
+        if isinstance(sf, ak.Array):
+            sf = np.asarray(ak.fill_none(ak.prod(sf, axis=1), 1.0), dtype=np.float64)
         weights.add(name, sf)
+
+
+def _no_correction(events):
+    return 1.0
+
+
+def correction_weights(correctors: dict, sample: str, group: str,
+                       is_data: bool) -> dict:
+    """``{name: events -> weights}`` for a histogram's ``weight: "@name"``.
+
+    For a sample the correction is meant for, the weights are the correction
+    as evaluated (per object for ``object_sf``); for the others they are 1, so
+    a histogram that names a scale factor can be filled for every sample of
+    the set.
+    """
+    return {name: (functools.partial(evaluate_correction, wrapper, cfg)
+                   if concerns(name, cfg, sample, group, is_data) else _no_correction)
+            for name, (wrapper, cfg) in correctors.items()}

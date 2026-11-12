@@ -82,7 +82,8 @@ def test_at_map_reference_fill_only():
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
                        "per_object": True, "weight": "@m"}}
     hists = build_histograms(as_histograms(defs), ["s"])
-    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(3), reweighters={"m": rw})
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(3),
+                    named_weights={"m": rw.evaluate})
     # jets with pt < 100 zeroed -> 100 and 200 remain
     assert totals(hists["jet_pt"]) == pytest.approx(2.0)
 
@@ -587,6 +588,31 @@ def test_an_unknown_key_of_an_entry_is_reported(tmp_path, key, meant):
 
     with pytest.raises(ConfigError, match=rf"unknown key.*'{key}' -> '{meant}'"):
         _region(tmp_path, {"var": "met", key: "highmet"})
+
+
+def test_a_selection_rewritten_as_a_string_drops_the_inherited_keys(tmp_path):
+    """level / collection described the parent's expression, not this one."""
+    from suep_plot.histdefs import Selection, load_selection_defs
+
+    _yaml(tmp_path / "p" / "selections.yaml", {
+        "good": {"expression": "events.Jet.pt > 5", "level": "object",
+                 "collection": "Jet"},
+        "kept": {"expression": "events.Jet.pt > 9", "collection": "Jet"}})
+    child = _yaml(tmp_path / "c" / "selections.yaml", {
+        "_extends": "../p", "good": "events.met > 5", "new": "events.met > 1"})
+
+    sels = load_selection_defs(child)
+
+    assert sels["good"] == Selection("events.met > 5")
+    assert sels["new"] == Selection("events.met > 1")
+    assert sels["kept"].collection == "Jet"
+
+
+def test_a_weight_that_is_not_an_expression_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="'weight' is an expression"):
+        _region(tmp_path, {"var": "met", "weight": 2})
 
 
 # ── regions ───────────────────────────────────────────────────────

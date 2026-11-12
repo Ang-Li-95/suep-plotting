@@ -493,6 +493,9 @@ def _entry_histogram(name: str, axes: list, rest: dict, selections: list,
                           f"{', '.join(ENTRY_KEYS + AXIS_OVERRIDES)}")
     selections = tuple(selections) + tuple(_as_list(rest.pop("selections", None)))
     weight = rest.pop("weight", None)
+    if weight is not None and not isinstance(weight, str):
+        raise ConfigError(f"ERROR in {where}: histogram '{name}': 'weight' is an "
+                          f"expression or '@<reweight map>', got {weight!r}")
     resolved = [_resolved_axis(var, over, variables, where) for var, over in axes]
     style = variable_display(variables, axes[0][0]) if len(axes) == 1 else {}
     style = {**style, **rest}
@@ -590,11 +593,17 @@ def load_histogram_defs(path: str, variables: dict | None = None) -> dict:
 
 
 def normalize_selection_file(defs: dict, path, axes) -> dict:
-    """A selection may be just its expression: ``name: "<expr>"``."""
+    """A selection may be just its expression: ``name: "<expr>"``.
+
+    That is the whole selection: where it replaces an inherited one, the
+    inherited ``level`` / ``collection`` / ``label`` described the old
+    expression and go with it (``None`` deletes them in the merge).
+    """
     out = {}
+    others = [k for k in Selection.__dataclass_fields__ if k != "expression"]
     for name, cfg in defs.items():
         if isinstance(cfg, str) and not str(name).startswith("_"):
-            cfg = {"expression": cfg}
+            cfg = {"expression": cfg, **{k: None for k in others}}
         elif cfg is not None and not isinstance(cfg, dict) \
                 and not str(name).startswith("_"):
             raise ConfigError(f"ERROR in {path}: selection '{name}' must be an "
