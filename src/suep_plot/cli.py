@@ -314,10 +314,15 @@ def plot(argv=None):
     parser.add_argument("--normalize", action="store_true",
                         help="Draw every sample (signal, background, data) at unit "
                              "area, to compare shapes")
+    parser.add_argument("--normalize-stack", action="store_true",
+                        help="Like --normalize, but the backgrounds stay stacked and "
+                             "the stack as a whole has unit area (use with --lumi, "
+                             "which gives the samples their relative size)")
     parser.add_argument("--log", action="store_true", help="Logarithmic y-axis")
     parser.add_argument("--lumi", type=float, default=None,
                         help="Integrated luminosity [/fb]: shown in the CMS label and "
-                             "used to normalize MC samples by xs * lumi * 1000 / sumw")
+                             "used to normalize MC samples by xs * lumi * 1000 / sumw; "
+                             "samples sharing a 'process:' are then summed into it")
     parser.add_argument("--no-ratio", action="store_true",
                         help="Disable the Data/MC ratio panel")
     parser.add_argument("--formats", default="png,pdf",
@@ -345,7 +350,7 @@ def plot(argv=None):
     failed = plot_all(args.input, output_dir, args.normalize, args.log, args.lumi,
                       config_dir=config_dir, jobs=_auto_jobs(args.jobs),
                       formats=_parse_formats(args.formats), ratio=not args.no_ratio,
-                      save_root=args.save_root)
+                      save_root=args.save_root, unit_stack=args.normalize_stack)
     return 1 if failed else 0
 
 

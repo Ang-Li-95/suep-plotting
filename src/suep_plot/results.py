@@ -208,6 +208,66 @@ def apply_xs_scaling(histograms: dict, sample_defs: dict, sumw: dict, lumi: floa
                 view["variance"][idx] *= f * f
 
 
+def merge_processes(histograms: dict, sample_defs: dict) -> dict:
+    """Sum the samples that share a ``process:`` into one sample, in place.
+
+    The HT or jet-multiplicity bins of one physics process are separate
+    datasets with separate cross sections; once each is scaled to its own
+    xs x lumi (:func:`apply_xs_scaling`) they add up to the process.  The
+    merged sample is named after the process and takes its styling from the
+    first member, with ``process_label`` (if any member gives one) as label.
+    Returns {process: [members]}.
+    """
+    members: dict[str, list[str]] = {}
+    for s, cfg in sample_defs.items():
+        if (cfg or {}).get("process"):
+            members.setdefault(str(cfg["process"]), []).append(s)
+    if not members:
+        return {}
+
+    owner = {s: proc for proc, group in members.items() for s in group}
+    for proc, group in members.items():
+        if proc in sample_defs and proc not in group:
+            raise SystemExit(f"ERROR: process '{proc}' has the name of a sample "
+                             "that is not part of it")
+        kinds = {(bool(sample_defs[s].get("is_data", False)),
+                  sample_defs[s].get("group")) for s in group}
+        if len(kinds) > 1:
+            raise SystemExit(f"ERROR: process '{proc}' mixes samples of different "
+                             f"group / is_data: {', '.join(group)}")
+
+    for name, h in histograms.items():
+        cats = list(h.axes["dataset"])
+        if not any(s in owner for s in cats):
+            continue
+        merged_cats = list(dict.fromkeys(owner.get(s, s) for s in cats))
+        others = [ax for ax in h.axes if ax.name != "dataset"]
+        out = hist.Hist(hist.axis.StrCategory(merged_cats, name="dataset", growth=True),
+                        *others, storage=h.storage_type())
+        view = out.view(flow=True)
+        for s in cats:
+            view[merged_cats.index(owner.get(s, s))] += h[{"dataset": s}].view(flow=True)
+        histograms[name] = out
+
+    for proc, group in members.items():
+        cfg = dict(sample_defs[group[0]])
+        labels = [sample_defs[s]["process_label"] for s in group
+                  if sample_defs[s].get("process_label")]
+        cfg["label"] = labels[0] if labels else proc
+        for key in ("process", "process_label", "xs", "files", "max_files"):
+            cfg.pop(key, None)
+        # Insert where the first member was, so the stack order follows the config.
+        rebuilt = {}
+        for s, c in sample_defs.items():
+            if s == group[0]:
+                rebuilt[proc] = cfg
+            if s not in group:
+                rebuilt[s] = c
+        sample_defs.clear()
+        sample_defs.update(rebuilt)
+    return members
+
+
 def restyle(hist_defs: dict, sample_defs: dict, config_dir) -> None:
     """Re-read plot-time styling from a config set, in place.
 

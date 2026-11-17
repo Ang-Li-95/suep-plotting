@@ -512,3 +512,66 @@ def test_the_comparison_checks_binning_across_signal_and_background():
     assert not compare_sig_bkg.same_edges(one(0, 100), one(0, 200))
     assert not compare_sig_bkg.same_edges(
         one(0, 100), hist.Hist(hist.axis.Regular(4, 0, 100, name="x")))
+
+
+def test_samples_of_one_process_are_summed_after_scaling():
+    """HT bins become one stack entry, each weighted by its own xs / sumw."""
+    from suep_plot.results import merge_processes
+
+    h = make_hist("qcd_lo", [25.0] * 4)
+    h += make_hist("other", [25.0])
+    h += make_hist("qcd_hi", [75.0] * 2)
+    hists = {"h": h}
+    sample_defs = {
+        "qcd_lo": {"xs": 10.0, "process": "qcd", "process_label": "QCD", "color": "b",
+                   "group": "background"},
+        "other": {"xs": 1.0, "group": "background"},
+        "qcd_hi": {"xs": 1.0, "process": "qcd", "color": "r", "group": "background"},
+    }
+    apply_xs_scaling(hists, sample_defs, {"qcd_lo": 4.0, "qcd_hi": 2.0, "other": 1.0},
+                     lumi=0.001)
+    members = merge_processes(hists, sample_defs)
+
+    assert members == {"qcd": ["qcd_lo", "qcd_hi"]}
+    assert list(sample_defs) == ["qcd", "other"]          # where its first bin was
+    assert sample_defs["qcd"]["label"] == "QCD" and sample_defs["qcd"]["color"] == "b"
+    assert "xs" not in sample_defs["qcd"]
+    merged = hists["h"]
+    assert list(merged.axes["dataset"]) == ["qcd", "other"]
+    # 4 events x 10/4 in the low bin, 2 events x 1/2 in the high one
+    assert list(merged[{"dataset": "qcd"}].values()) == pytest.approx([10.0, 1.0])
+    assert list(merged[{"dataset": "qcd"}].variances()) == pytest.approx([25.0, 0.5])
+    assert list(merged[{"dataset": "other"}].values()) == pytest.approx([1.0, 0.0])
+
+
+def test_a_process_cannot_mix_signal_and_background():
+    from suep_plot.results import merge_processes
+
+    sample_defs = {"a": {"process": "p", "group": "background"},
+                   "b": {"process": "p", "group": "signal"}}
+    with pytest.raises(SystemExit, match="mixes"):
+        merge_processes({"h": make_hist("a", [1.0])}, sample_defs)
+
+
+def test_normalize_stack_keeps_the_stack_and_gives_it_unit_area(tmp_path, monkeypatch):
+    from suep_plot import figures
+
+    h = make_hist("a", [10.0] * 30)
+    h += make_hist("b", [60.0] * 10)
+    sample_defs = {"a": {"group": "background"}, "b": {"group": "background"}}
+    drawn = {}
+
+    def histplot(hists, **kwargs):
+        drawn["stack"] = kwargs.get("stack")
+        drawn["areas"] = [x.sum().value for x in hists]
+        drawn["labels"] = kwargs.get("label")
+
+    monkeypatch.setattr(figures.hep, "histplot", histplot)
+    monkeypatch.setattr(figures, "_finish", lambda *a, **k: None)
+    figures.plot_histogram(h, {"label": "x"}, sample_defs, str(tmp_path), "x",
+                           unit_stack=True, formats=("png",))
+
+    assert drawn["stack"] is True
+    # the smaller sample first, i.e. at the bottom of the stack
+    assert drawn["areas"] == pytest.approx([0.25, 0.75])
+    assert drawn["labels"] == ["b", "a"]

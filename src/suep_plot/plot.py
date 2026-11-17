@@ -15,8 +15,8 @@ from .derived import (derived_sources, load_derived_plot_defs, plot_derived,
                       require_sources)
 from .figures import DEFAULT_FORMATS, is_2d_hist, plot_histogram, plot_histogram_2d
 from .gallery import write_gallery
-from .results import (apply_xs_scaling, export_root, merge_results, resolve_inputs,
-                      restyle, write_cutflow)
+from .results import (apply_xs_scaling, export_root, merge_processes, merge_results,
+                      resolve_inputs, restyle, write_cutflow)
 
 
 def _render_task(args) -> tuple[str, str | None]:
@@ -27,7 +27,8 @@ def _render_task(args) -> tuple[str, str | None]:
         if kind == "1d":
             _, _, h, cfg = task
             plot_histogram(h, cfg, common["sample_defs"], common["output_dir"], name,
-                           normalize=common["normalize"], log_y=common["log_y"],
+                           normalize=common["normalize"],
+                           unit_stack=common["unit_stack"], log_y=common["log_y"],
                            lumi=common["lumi"], formats=common["formats"],
                            ratio=common["ratio"])
         elif kind == "2d":
@@ -39,7 +40,8 @@ def _render_task(args) -> tuple[str, str | None]:
             plot_derived(name, cfg, hists, common["sample_defs"], common["output_dir"],
                               log_y=common["log_y"], lumi=common["lumi"],
                               formats=common["formats"],
-                              normalize=common["normalize"], ratio=common["ratio"])
+                              normalize=common["normalize"],
+                              unit_stack=common["unit_stack"], ratio=common["ratio"])
         return name, None
     except Exception as e:  # noqa: BLE001 - reported per plot, run continues
         return name, f"{type(e).__name__}: {e}"
@@ -70,6 +72,7 @@ def plot_all(
     formats: tuple[str, ...] = DEFAULT_FORMATS,
     ratio: bool = True,
     save_root: str | None = None,
+    unit_stack: bool = False,
 ):
     """Plot all histograms from per-sample pickle files.
 
@@ -78,7 +81,9 @@ def plot_all(
     Per-sample histograms are merged before plotting.  When *lumi* is given,
     MC samples are normalized to xs * lumi * 1000 / sumw.  With *jobs* > 1
     figures render in parallel processes.  *save_root* additionally exports
-    every histogram to a ROOT file (after any lumi scaling).
+    every histogram to a ROOT file (after any lumi scaling).  Samples that
+    share a ``process:`` are summed into that process once they are scaled, so
+    only with *lumi*; *unit_stack* draws the background stack at unit area.
 
     If *config_dir* is given, plot-time keys from its histograms.yaml (label,
     blind, rebin, flow, log_x, log_y, log_z ...) and its samples.yaml (label,
@@ -103,6 +108,15 @@ def plot_all(
 
     if lumi is not None:
         apply_xs_scaling(histograms, sample_defs, data.get("sumw", {}), lumi)
+        for proc, group in merge_processes(histograms, sample_defs).items():
+            print(f"  process '{proc}' = {' + '.join(group)}")
+    else:
+        if any((cfg or {}).get("process") for cfg in sample_defs.values()):
+            print("  NOTE: samples with 'process:' are drawn one by one: summing "
+                  "them needs their cross sections, i.e. --lumi")
+        if unit_stack:
+            print("  WARNING: --normalize-stack without --lumi stacks the samples "
+                  "with their raw event weights, not their cross sections")
 
     os.makedirs(output_dir, exist_ok=True)
     write_cutflow(data.get("cutflow", {}), output_dir)
@@ -113,6 +127,7 @@ def plot_all(
         "sample_defs": sample_defs,
         "output_dir": output_dir,
         "normalize": normalize,
+        "unit_stack": unit_stack,
         "log_y": log_y,
         "lumi": lumi,
         "formats": tuple(formats),

@@ -165,6 +165,10 @@ suep-plot $OUT/configs_mds --formats png -j 4  # faster while iterating
 - `--save-root merged.root` also writes every histogram as `<histogram>/<sample>`.
 - `--lumi` scales MC by `xs × lumi × 1000 / sumw`. The MDS sets carry
   placeholder `xs: 1.0` (`suep-plot` warns), so never pass it to them.
+- `--normalize-stack` is `--normalize` with the backgrounds kept stacked: the
+  stack as a whole has unit area, so its composition stays visible. Use it
+  with `--lumi`, which gives the samples their relative size and sums the
+  samples of one `process:` (see configuration.md) into one entry.
 - Exit code 1 if no pickle was found or any figure failed.
 
 `bash $OUT/configs_mds/slurm/merge_and_plot.sh` does the same as

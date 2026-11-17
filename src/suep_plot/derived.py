@@ -157,7 +157,7 @@ def _plot_profile(name, cfg, histograms, sample_defs, output_dir, *,
 
 def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *,
                      log_y=False, lumi=None, formats=DEFAULT_FORMATS,
-                     normalize=False, ratio=True, **_):
+                     normalize=False, unit_stack=False, ratio=True, **_):
     if not require_sources(histograms, [cfg["source"]], name):
         return 0
     h = histograms[cfg["source"]]
@@ -168,8 +168,8 @@ def _plot_projection(name, cfg, histograms, sample_defs, output_dir, *,
     plot_histogram(h.project("dataset", proj_axis),
                    {"label": cfg.get("label_x", h.axes[proj_axis].label)},
                    sample_defs, output_dir, name,
-                   normalize=normalize, log_y=log_y, lumi=lumi, formats=formats,
-                   ratio=ratio)
+                   normalize=normalize, unit_stack=unit_stack, log_y=log_y,
+                   lumi=lumi, formats=formats, ratio=ratio)
     return 1
 
 
@@ -389,10 +389,10 @@ def derived_sources(name: str, cfg: dict) -> list[str] | None:
 
 def plot_derived(name, cfg, histograms, sample_defs, output_dir, *,
                       log_y=False, lumi=None, formats=DEFAULT_FORMATS,
-                      normalize=False, ratio=True) -> int:
+                      normalize=False, unit_stack=False, ratio=True) -> int:
     """Dispatch a single derived-plot definition to its renderer.
 
-    *normalize* and *ratio* reach the renderers that draw ordinary 1D
+    *normalize*, *unit_stack* and *ratio* reach the renderers that draw ordinary 1D
     histograms (the projections); the others ignore them.
     """
     entry = DERIVED_TYPES.get(cfg.get("type", ""))
@@ -401,4 +401,4 @@ def plot_derived(name, cfg, histograms, sample_defs, output_dir, *,
         return 0
     return entry[0](name, cfg, histograms, sample_defs, output_dir,
                     log_y=log_y, lumi=lumi, formats=formats,
-                    normalize=normalize, ratio=ratio)
+                    normalize=normalize, unit_stack=unit_stack, ratio=ratio)

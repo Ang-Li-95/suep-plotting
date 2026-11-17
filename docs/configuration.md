@@ -351,7 +351,17 @@ dy_2mu_50to120:
   scale: 100                   # optional: draw signal x100
   max_files: 1000              # optional: the first N files only
   files_per_job: 25            # optional: suep-submit's shard size for it
+  process: qcd                 # optional: the physics process this dataset is one bin of
+  process_label: QCD multijet  # optional: the label of that process
 ```
+
+`process` is for a process split into HT or jet-multiplicity bins, each a
+dataset with its own `xs`. `suep-plot --lumi` scales every bin by its own
+`xs × lumi / sumw` and then sums the samples sharing a `process` into one
+sample named after it: one stack entry, labelled `process_label`, with the
+colour and group of its first bin. Without `--lumi` the bins cannot be added
+and are drawn one by one. The members of a process must share `group` and
+`is_data`. The cutflow tables stay per dataset.
 
 A directory is walked recursively for `*.root` (over xrootd too). `suep-submit`
 freezes the resolved file list per task at submission time. `group` drives the

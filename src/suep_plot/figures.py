@@ -176,6 +176,7 @@ def plot_histogram(
     name: str,
     *,
     normalize: bool = False,
+    unit_stack: bool = False,
     log_y: bool = False,
     lumi: float | None = None,
     data_label: str = "Data",
@@ -189,6 +190,10 @@ def plot_histogram(
     With *normalize* every sample -- signal, background and data -- is drawn
     at unit area, and the ratio panel compares the shapes: all data over all
     backgrounds, each total at unit area.
+    *unit_stack* is *normalize* with the backgrounds kept as a stack: they are
+    all divided by the integral of their sum, so the stack has unit area and
+    its composition stays visible (meaningful once the samples carry their
+    relative normalization, i.e. with a luminosity).
     Per-histogram config keys honoured at plot time: ``blind``, ``rebin``,
     ``flow: sum``, ``log_x``, ``log_y``.
     """
@@ -201,10 +206,17 @@ def plot_histogram(
         data_samples = []
 
     bkg_hists = [prep_1d(h[{"dataset": s}], hist_cfg) for s in bkg_samples]
+    # Smallest yield at the bottom of the stack: on a log axis a small process
+    # drawn on top of a large one is a sliver nobody can read.  (Stable, so
+    # equal yields keep the config order.)
+    order = sorted(range(len(bkg_samples)), key=lambda i: bkg_hists[i].sum().value)
+    bkg_samples = [bkg_samples[i] for i in order]
+    bkg_hists = [bkg_hists[i] for i in order]
     data_hists = [prep_1d(h[{"dataset": s}], hist_cfg) for s in data_samples]
 
     want_ratio = bool(ratio and data_hists and bkg_hists)
     fig, ax, rax = figure(ratio=want_ratio)
+    normalize = normalize or unit_stack
     ratio_data, ratio_bkg = data_hists, bkg_hists
     if normalize:
         if want_ratio:
@@ -215,7 +227,11 @@ def plot_histogram(
     if bkg_hists:
         bkg_labels = [sample_defs.get(s, {}).get("label", s) for s in bkg_samples]
         bkg_colors = [sample_defs.get(s, {}).get("color", None) for s in bkg_samples]
-        if normalize:
+        if unit_stack:
+            total = _total(bkg_hists).sum().value
+            if total > 0:
+                bkg_hists = [bh * (1.0 / total) for bh in bkg_hists]
+        if normalize and not unit_stack:
             # Stacking unit-area histograms is meaningless, so in shape mode
             # each background is normalized on its own and overlaid as a step,
             # directly comparable with the signal curves below.
