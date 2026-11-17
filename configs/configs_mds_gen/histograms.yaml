@@ -1,135 +1,496 @@
 # ── The gen-level LLP study: all 6 Gen3 signals ───────────────────
-# Extends ../common_gen (the shared truth histograms, selections,
-# clustering-efficiency and matched/unmatched cluster-shape plots) with
-# the LLP shower-shape family: the dR between each LLP's truth-matched
+# configs_mds_signal's truth histograms, selections, clustering-efficiency
+# and matched/unmatched cluster-shape plots, plus the LLP shower-shape family: the dR between each LLP's truth-matched
 # rechits and their centroid, and its dependence on the LLP kinematics.
 
-_extends: ../common_gen
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, SYSU: CSC}
+  - {SYS: dt, SYSU: DT}
 
 regions:
-  csc_rechit:
-    label: CSC rechits
-    objects:
-      matched:
-        cut: csc_rechit_matched
-        label: csc_rechit_matched
-        vars: &csc_rechit_matched
-          - csc_rechit_dr_llp
-  dt_rechit:
-    label: DT rechits
-    objects:
-      matched:
-        cut: dt_rechit_matched
-        label: dt_rechit_matched
-        vars: &dt_rechit_matched
-          - dt_rechit_dr_llp
-  llp:
+  csc:
+    label: CSC clusters
+    evt_vars: [csc_cluster_n]
     objects:
       all:
-        vars: &llp_all
-          - {var: llp_pt, bins: [50, 0, 50], log_y: true}
-          - llp_phi
-          - {var: llp_energy, bins: [50, 0, 100], log_y: true}
-          - {var: llp_decay_absz, bins: [60, 0, 2000], log_y: true}
-          - llp_decay_eta
-          - {name: llp_decay_rz, x: {var: llp_decay_absz, bins: [60, 0, 1500]}, y: {var: llp_decay_r, bins: [60, 0, 900]}}
-          - llp_ctau
-          - llp_llab
-          - llp_betagamma
-          - llp_nhits_csc
-          - llp_nhits_dt
-          - llp_nhits_rpc
-          - llp_nhits_total
-          - {var: llp_pt, name: llp_pt_all_den}
-          - llp_eta
-          - {var: llp_decay_r, log_y: true}
-          - {var: llp_decay_absz, name: llp_absdecayz_all_den}
-          - {name: llp_rz_all_den, x: llp_decay_absz, y: llp_decay_r}
-          - {var: llp_energy, name: llp_energy_all_den}
-          - llp_abseta
-          - llp_opening_angle
-          - {name: llp_opening_angle_vs_betagamma, x: {var: llp_betagamma, bins: [40, 0, 40]}, y: llp_opening_angle}
+        vars:
+        - csc_cluster_size
+        - csc_cluster_eta
+        - csc_cluster_phi
+        - csc_cluster_eta_spread
+        - csc_cluster_phi_spread
+        - csc_cluster_nstation
+        - csc_cluster_time
+        - csc_cluster_nlayer
+        - csc_cluster_station_span
+        - {var: csc_cluster_first_chamber, selections: [csc_cluster_first_not_rpc]}
+        - {var: csc_cluster_first_station, selections: [csc_cluster_first_not_rpc]}
+        - csc_cluster_avg_station
+        - csc_cluster_max_station_frac
+        - csc_cluster_layer_hits_mean
+        - csc_cluster_layer_hits_rms
+        - csc_cluster_layer_hits_relrms
+        - csc_cluster_max_layer_frac
+        - csc_cluster_nzlayer
+        - csc_cluster_zlayer_hits_mean
+        - csc_cluster_zlayer_hits_rms
+        - csc_cluster_zlayer_hits_relrms
+        - csc_cluster_max_zlayer_frac
+        - csc_cluster_r_spread
+        - csc_cluster_z_spread
+        - csc_cluster_dr_muon
+        - csc_cluster_dr_jet
+        - csc_cluster_first_system
+        - csc_cluster_n_rpc_hits
+        - csc_cluster_n_rpc_hits_bx0
+        - csc_cluster_oot_hit_frac
+        - {var: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_bx_median, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_bx_spread, selections: [csc_cluster_has_rpc]}
+        - {name: csc_cluster_rpc_bx_vs_size, x: csc_cluster_size, y: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+        - csc_cluster_rpc_hit_frac
+        - {var: csc_cluster_rpc_out_of_time_frac, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+        - csc_cluster_time_spread
+        - {name: csc_cluster_time_vs_spread, x: csc_cluster_time, y: csc_cluster_time_spread}
+        - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+        - csc_cluster_nmatchedhits
+        - csc_cluster_nmatchedllp
+      iso_both:
+        cut: [csc_cluster_iso_muon, csc_cluster_iso_jet]
+        label: muon+jet-isolated
+        vars: &iso_both_vars
+        - csc_cluster_size
+        - csc_cluster_eta
+        - csc_cluster_phi
+        - csc_cluster_eta_spread
+        - csc_cluster_phi_spread
+        - csc_cluster_nstation
+        - csc_cluster_time
+        - csc_cluster_nlayer
+        - csc_cluster_station_span
+        - {var: csc_cluster_first_chamber, selections: [csc_cluster_first_not_rpc]}
+        - {var: csc_cluster_first_station, selections: [csc_cluster_first_not_rpc]}
+        - csc_cluster_avg_station
+        - csc_cluster_max_station_frac
+        - csc_cluster_layer_hits_mean
+        - csc_cluster_layer_hits_rms
+        - csc_cluster_layer_hits_relrms
+        - csc_cluster_max_layer_frac
+        - csc_cluster_nzlayer
+        - csc_cluster_zlayer_hits_mean
+        - csc_cluster_zlayer_hits_rms
+        - csc_cluster_zlayer_hits_relrms
+        - csc_cluster_max_zlayer_frac
+        - csc_cluster_r_spread
+        - csc_cluster_z_spread
+        - csc_cluster_dr_muon
+        - csc_cluster_dr_jet
+        - csc_cluster_first_system
+        - csc_cluster_n_rpc_hits
+        - csc_cluster_n_rpc_hits_bx0
+        - csc_cluster_oot_hit_frac
+        - {var: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_bx_median, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_bx_spread, selections: [csc_cluster_has_rpc]}
+        - csc_cluster_rpc_hit_frac
+        - {var: csc_cluster_rpc_out_of_time_frac, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+        - csc_cluster_time_spread
+        - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+        - csc_cluster_nmatchedhits
+        - csc_cluster_nmatchedllp
+      iso_jet:
+        cut: csc_cluster_iso_jet
+        label: jet-isolated
+        vars: *iso_both_vars
+      iso_muon:
+        cut: csc_cluster_iso_muon
+        label: muon-isolated
+        vars: *iso_both_vars
+      matched:
+        cut: csc_cluster_matched
+        label: LLP-matched
+        vars: &matched_vars
+        - csc_cluster_size
+        - csc_cluster_eta
+        - csc_cluster_phi
+        - csc_cluster_eta_spread
+        - csc_cluster_phi_spread
+        - csc_cluster_nstation
+        - csc_cluster_time
+        - csc_cluster_nlayer
+        - csc_cluster_station_span
+        - {var: csc_cluster_first_chamber, selections: [csc_cluster_first_not_rpc]}
+        - {var: csc_cluster_first_station, selections: [csc_cluster_first_not_rpc]}
+        - csc_cluster_avg_station
+        - csc_cluster_max_station_frac
+        - csc_cluster_layer_hits_mean
+        - csc_cluster_layer_hits_rms
+        - csc_cluster_layer_hits_relrms
+        - csc_cluster_max_layer_frac
+        - csc_cluster_nzlayer
+        - csc_cluster_zlayer_hits_mean
+        - csc_cluster_zlayer_hits_rms
+        - csc_cluster_zlayer_hits_relrms
+        - csc_cluster_max_zlayer_frac
+        - csc_cluster_r_spread
+        - csc_cluster_z_spread
+        - csc_cluster_dr_muon
+        - csc_cluster_dr_jet
+        - csc_cluster_first_system
+        - csc_cluster_n_rpc_hits
+        - csc_cluster_n_rpc_hits_bx0
+        - csc_cluster_oot_hit_frac
+        - {var: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_bx_median, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_bx_spread, selections: [csc_cluster_has_rpc]}
+        - csc_cluster_rpc_hit_frac
+        - {var: csc_cluster_rpc_out_of_time_frac, selections: [csc_cluster_has_rpc]}
+        - {var: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+        - csc_cluster_time_spread
+        - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+      matched_iso_both:
+        cut: [csc_cluster_matched, csc_cluster_iso_muon, csc_cluster_iso_jet]
+        label: LLP-matched, muon+jet-isolated
+        vars: *matched_vars
+      matched_iso_jet:
+        cut: [csc_cluster_matched, csc_cluster_iso_jet]
+        label: LLP-matched, jet-isolated
+        vars: *matched_vars
+      matched_iso_muon:
+        cut: [csc_cluster_matched, csc_cluster_iso_muon]
+        label: LLP-matched, muon-isolated
+        vars: *matched_vars
+      unmatched:
+        cut: csc_cluster_unmatched
+        label: unmatched
+        vars: *matched_vars
+
+  dt:
+    label: DT clusters
+    evt_vars: [dt_cluster_n]
+    objects:
+      all:
+        vars:
+        - dt_cluster_size
+        - dt_cluster_eta
+        - dt_cluster_phi
+        - dt_cluster_eta_spread
+        - dt_cluster_phi_spread
+        - dt_cluster_nstation
+        - dt_cluster_nlayer
+        - dt_cluster_station_span
+        - {var: dt_cluster_first_chamber, selections: [dt_cluster_first_not_rpc]}
+        - {var: dt_cluster_first_station, selections: [dt_cluster_first_not_rpc]}
+        - dt_cluster_avg_station
+        - dt_cluster_max_station_frac
+        - dt_cluster_layer_hits_mean
+        - dt_cluster_layer_hits_rms
+        - dt_cluster_layer_hits_relrms
+        - dt_cluster_max_layer_frac
+        - dt_cluster_r_spread
+        - dt_cluster_z_spread
+        - dt_cluster_dr_muon
+        - dt_cluster_dr_jet
+        - dt_cluster_first_system
+        - dt_cluster_n_rpc_hits
+        - dt_cluster_n_rpc_hits_bx0
+        - {var: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_bx_median, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_bx_spread, selections: [dt_cluster_has_rpc]}
+        - {name: dt_cluster_rpc_bx_vs_size, x: dt_cluster_size, y: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+        - dt_cluster_rpc_hit_frac
+        - {var: dt_cluster_rpc_out_of_time_frac, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_time_from_bx, selections: [dt_cluster_has_rpc]}
+        - dt_cluster_nmatchedhits
+        - dt_cluster_nmatchedllp
+      iso_both:
+        cut: [dt_cluster_iso_muon, dt_cluster_iso_jet]
+        label: muon+jet-isolated
+        vars: &iso_both_vars_2
+        - dt_cluster_size
+        - dt_cluster_eta
+        - dt_cluster_phi
+        - dt_cluster_eta_spread
+        - dt_cluster_phi_spread
+        - dt_cluster_nstation
+        - dt_cluster_nlayer
+        - dt_cluster_station_span
+        - {var: dt_cluster_first_chamber, selections: [dt_cluster_first_not_rpc]}
+        - {var: dt_cluster_first_station, selections: [dt_cluster_first_not_rpc]}
+        - dt_cluster_avg_station
+        - dt_cluster_max_station_frac
+        - dt_cluster_layer_hits_mean
+        - dt_cluster_layer_hits_rms
+        - dt_cluster_layer_hits_relrms
+        - dt_cluster_max_layer_frac
+        - dt_cluster_r_spread
+        - dt_cluster_z_spread
+        - dt_cluster_dr_muon
+        - dt_cluster_dr_jet
+        - dt_cluster_first_system
+        - dt_cluster_n_rpc_hits
+        - dt_cluster_n_rpc_hits_bx0
+        - {var: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_bx_median, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_bx_spread, selections: [dt_cluster_has_rpc]}
+        - dt_cluster_rpc_hit_frac
+        - {var: dt_cluster_rpc_out_of_time_frac, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_time_from_bx, selections: [dt_cluster_has_rpc]}
+        - dt_cluster_nmatchedhits
+        - dt_cluster_nmatchedllp
+      iso_jet:
+        cut: dt_cluster_iso_jet
+        label: jet-isolated
+        vars: *iso_both_vars_2
+      iso_muon:
+        cut: dt_cluster_iso_muon
+        label: muon-isolated
+        vars: *iso_both_vars_2
+      matched:
+        cut: dt_cluster_matched
+        label: LLP-matched
+        vars: &matched_vars_2
+        - dt_cluster_size
+        - dt_cluster_eta
+        - dt_cluster_phi
+        - dt_cluster_eta_spread
+        - dt_cluster_phi_spread
+        - dt_cluster_nstation
+        - dt_cluster_nlayer
+        - dt_cluster_station_span
+        - {var: dt_cluster_first_chamber, selections: [dt_cluster_first_not_rpc]}
+        - {var: dt_cluster_first_station, selections: [dt_cluster_first_not_rpc]}
+        - dt_cluster_avg_station
+        - dt_cluster_max_station_frac
+        - dt_cluster_layer_hits_mean
+        - dt_cluster_layer_hits_rms
+        - dt_cluster_layer_hits_relrms
+        - dt_cluster_max_layer_frac
+        - dt_cluster_r_spread
+        - dt_cluster_z_spread
+        - dt_cluster_dr_muon
+        - dt_cluster_dr_jet
+        - dt_cluster_first_system
+        - dt_cluster_n_rpc_hits
+        - dt_cluster_n_rpc_hits_bx0
+        - {var: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_bx_median, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_bx_spread, selections: [dt_cluster_has_rpc]}
+        - dt_cluster_rpc_hit_frac
+        - {var: dt_cluster_rpc_out_of_time_frac, selections: [dt_cluster_has_rpc]}
+        - {var: dt_cluster_rpc_time_from_bx, selections: [dt_cluster_has_rpc]}
+      matched_iso_both:
+        cut: [dt_cluster_matched, dt_cluster_iso_muon, dt_cluster_iso_jet]
+        label: LLP-matched, muon+jet-isolated
+        vars: *matched_vars_2
+      matched_iso_jet:
+        cut: [dt_cluster_matched, dt_cluster_iso_jet]
+        label: LLP-matched, jet-isolated
+        vars: *matched_vars_2
+      matched_iso_muon:
+        cut: [dt_cluster_matched, dt_cluster_iso_muon]
+        label: LLP-matched, muon-isolated
+        vars: *matched_vars_2
+      unmatched:
+        cut: dt_cluster_unmatched
+        label: unmatched
+        vars: *matched_vars_2
+
+  event: {label: events, evt_vars: [puppi_met, n_jet_sel_foriso, n_fatjet]}
+
+  llp:
+    label: LLPs
+    evt_vars: [llp_n, llp_n_tracker, llp_n_calo, llp_n_csc_dt, llp_n_csc, llp_n_dt]
+    objects:
+      all:
+        vars:
+        - {var: llp_pt, bins: [50, 0, 50], log_y: true}
+        - llp_phi
+        - {var: llp_energy, bins: [50, 0, 100], log_y: true}
+        - {var: llp_decay_absz, bins: [60, 0, 2000], log_y: true}
+        - llp_decay_eta
+        - {name: llp_decay_rz, x: {var: llp_decay_absz, bins: [60, 0, 1500]}, y: {var: llp_decay_r, bins: [60, 0, 900]}}
+        - llp_ctau
+        - llp_llab
+        - llp_betagamma
+        - llp_nhits_csc
+        - llp_nhits_dt
+        - llp_nhits_rpc
+        - llp_nhits_total
+        - {name: llp_pt_all_den, var: llp_pt}
+        - llp_eta
+        - {var: llp_decay_r, log_y: true}
+        - {name: llp_absdecayz_all_den, var: llp_decay_absz}
+        - {name: llp_rz_all_den, x: llp_decay_absz, y: llp_decay_r}
+        - {name: llp_energy_all_den, var: llp_energy}
+        - llp_abseta
+        - llp_opening_angle
+        - {name: llp_opening_angle_vs_betagamma, x: {var: llp_betagamma, bins: [40, 0, 40]}, y: llp_opening_angle}
+      reco_csc:
+        cut: llp_reco_csc
+        label: reconstructed in CSC
+        vars:
+        - llp_decay_r
+        - llp_decay_absz
+        - {name: llp_rz_all_num_csc, x: llp_decay_absz, y: llp_decay_r}
+        - llp_clusterhitfrac_csc
+      reco_dt:
+        cut: llp_reco_dt
+        label: reconstructed in DT
+        vars:
+        - llp_decay_r
+        - llp_decay_absz
+        - {name: llp_rz_all_num_dt, x: llp_decay_absz, y: llp_decay_r}
+        - llp_clusterhitfrac_dt
+      in_csc:
+        cut: llp_in_csc
+        label: decay in CSC
+        vars:
+        - llp_pt
+        - llp_nhits_csc
+        - llp_eta
+        - llp_decay_r
+        - llp_decay_absz
+        - {name: llp_rz_den_csc, x: llp_decay_absz, y: llp_decay_r}
+        - llp_nrecocluster_csc
+        - llp_energy
+      in_dt:
+        cut: llp_in_dt
+        label: decay in DT
+        vars:
+        - llp_pt
+        - llp_nhits_dt
+        - llp_eta
+        - llp_decay_r
+        - llp_decay_absz
+        - {name: llp_rz_den_dt, x: llp_decay_absz, y: llp_decay_r}
+        - llp_nrecocluster_dt
+        - llp_energy
+      reco:
+        cut: llp_reco_any
+        label: reconstructed
+        vars:
+        - llp_decay_r
+        - llp_decay_absz
+        - {var: llp_pt, bins: [50, 0, 50]}
+        - {var: llp_eta, bins: [50, -5, 5]}
+        - llp_phi
+        - {var: llp_energy, bins: [50, 0, 100]}
+        - {name: llp_matched_decayr, var: llp_decay_r, bins: [40, 0, 800]}
+        - llp_decay_z
+      in_csc_hits10:
+        cut: [llp_in_csc, llp_hits10_csc]
+        label: decay in CSC, >= 10 CSC hits
+        vars:
+        - llp_pt
+        - llp_eta
+        - llp_decay_absz
+        - {name: llp_rz_hits_csc, x: llp_decay_absz, y: llp_decay_r}
+        - llp_energy
+      in_csc_reco:
+        cut: [llp_in_csc, llp_reco_csc]
+        label: decay in CSC, reconstructed
+        vars:
+        - llp_pt
+        - llp_nhits_csc
+        - llp_eta
+        - llp_decay_r
+        - llp_decay_absz
+        - {name: llp_rz_num_csc, x: llp_decay_absz, y: llp_decay_r}
+        - llp_energy
+      in_dt_reco:
+        cut: [llp_in_dt, llp_reco_dt]
+        label: decay in DT, reconstructed
+        vars:
+        - llp_pt
+        - llp_nhits_dt
+        - llp_eta
+        - llp_decay_r
+        - llp_decay_absz
+        - {name: llp_rz_num_dt, x: llp_decay_absz, y: llp_decay_r}
+        - llp_energy
+      in_dt_hits10:
+        cut: [llp_in_dt, llp_hits10_dt]
+        label: decay in DT, >= 10 DT hits
+        vars:
+        - llp_pt
+        - llp_eta
+        - llp_decay_r
+        - {name: llp_rz_hits_dt, x: llp_decay_absz, y: llp_decay_r}
+        - llp_energy
+      in_ms: {cut: llp_in_ms, label: decay in the muon system, vars: [llp_pt, llp_eta, llp_energy]}
+      in_ms_reco:
+        cut: [llp_in_ms, llp_reco_any]
+        label: in the muon system, reconstructed
+        vars: [llp_pt, llp_eta, llp_energy]
       hits2_csc:
         cut: llp_hits2_csc
         label: '>= 2 CSC hits'
-        vars: &llp_hits2_csc
-          - llp_drpair_min_csc
-          - llp_drpair_max_csc
-          - llp_dr50_csc
-          - llp_dr80_csc
-          - {var: llp_dr90_csc, bins: [60, 0, 0.6]}
-          - llp_drmax_csc
-          - {name: llp_dr90_vs_nhits_csc, x: {var: llp_nhits_csc, bins: [30, 0, 150], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}, y: {var: llp_dr90_csc, bins: [60, 0, 0.6]}}
-          - {name: llp_nhits_csc_vs_abseta, x: llp_abseta, y: {var: llp_nhits_csc, bins: [40, 0, 120], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}}
-          - {name: llp_dr90_vs_abseta, x: llp_abseta, y: llp_dr90_csc}
-          - {name: llp_nhits_csc_vs_pt, x: {var: llp_pt, bins: [50, 0, 50]}, y: {var: llp_nhits_csc, bins: [40, 0, 120], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}}
-          - {name: llp_dr90_vs_pt, x: {var: llp_pt, bins: [50, 0, 50]}, y: llp_dr90_csc}
-          - {name: llp_nhits_csc_vs_energy, x: {var: llp_energy, bins: [50, 0, 100]}, y: {var: llp_nhits_csc, bins: [40, 0, 120], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}}
-          - {name: llp_dr90_vs_energy, x: {var: llp_energy, bins: [50, 0, 100]}, y: llp_dr90_csc}
-          - {name: llp_nhits_csc_vs_betagamma, x: {var: llp_betagamma, bins: [40, 0, 40]}, y: {var: llp_nhits_csc, bins: [40, 0, 120], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}}
-          - {name: llp_dr90_vs_betagamma, x: {var: llp_betagamma, bins: [40, 0, 40]}, y: llp_dr90_csc}
-          - {name: llp_dr90_vs_openangle, x: {var: llp_opening_angle, bins: [50, 0, 2.5]}, y: llp_dr90_csc}
+        vars:
+        - llp_drpair_min_csc
+        - llp_drpair_max_csc
+        - llp_dr50_csc
+        - llp_dr80_csc
+        - {var: llp_dr90_csc, bins: [60, 0, 0.6]}
+        - llp_drmax_csc
+        - {name: llp_dr90_vs_nhits_csc, x: {var: llp_nhits_csc, bins: [30, 0, 150], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}, y: {var: llp_dr90_csc, bins: [60, 0, 0.6]}}
+        - {name: llp_nhits_csc_vs_abseta, x: llp_abseta, y: {var: llp_nhits_csc, bins: [40, 0, 120], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}}
+        - {name: llp_dr90_vs_abseta, x: llp_abseta, y: llp_dr90_csc}
+        - {name: llp_nhits_csc_vs_pt, x: {var: llp_pt, bins: [50, 0, 50]}, y: {var: llp_nhits_csc, bins: [40, 0, 120], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}}
+        - {name: llp_dr90_vs_pt, x: {var: llp_pt, bins: [50, 0, 50]}, y: llp_dr90_csc}
+        - {name: llp_nhits_csc_vs_energy, x: {var: llp_energy, bins: [50, 0, 100]}, y: {var: llp_nhits_csc, bins: [40, 0, 120], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}}
+        - {name: llp_dr90_vs_energy, x: {var: llp_energy, bins: [50, 0, 100]}, y: llp_dr90_csc}
+        - {name: llp_nhits_csc_vs_betagamma, x: {var: llp_betagamma, bins: [40, 0, 40]}, y: {var: llp_nhits_csc, bins: [40, 0, 120], label: '$N_{\mathrm{CSC\ rechits}}$ from LLP'}}
+        - {name: llp_dr90_vs_betagamma, x: {var: llp_betagamma, bins: [40, 0, 40]}, y: llp_dr90_csc}
+        - {name: llp_dr90_vs_openangle, x: {var: llp_opening_angle, bins: [50, 0, 2.5]}, y: llp_dr90_csc}
       hits2_dt:
         cut: llp_hits2_dt
         label: '>= 2 DT hits'
-        vars: &llp_hits2_dt
-          - llp_drpair_min_dt
-          - llp_drpair_max_dt
-          - llp_dr50_dt
-          - llp_dr80_dt
-          - llp_dr90_dt
-          - llp_drmax_dt
+        vars: [llp_drpair_min_dt, llp_drpair_max_dt, llp_dr50_dt, llp_dr80_dt, llp_dr90_dt, llp_drmax_dt]
       hits2_rpc:
         cut: llp_hits2_rpc
         label: '>= 2 RPC hits'
-        vars: &llp_hits2_rpc
-          - llp_drpair_min_rpc
-          - llp_drpair_max_rpc
-          - llp_dr50_rpc
-          - llp_dr80_rpc
-          - llp_dr90_rpc
-          - llp_drmax_rpc
+        vars: [llp_drpair_min_rpc, llp_drpair_max_rpc, llp_dr50_rpc, llp_dr80_rpc, llp_dr90_rpc, llp_drmax_rpc]
       hits2_total:
         cut: llp_hits2_total
         label: '>= 2 total hits'
-        vars: &llp_hits2_total
-          - llp_drpair_min_total
-          - llp_drpair_max_total
-          - llp_dr50_total
-          - llp_dr80_total
-          - llp_dr90_total
-          - llp_drmax_total
+        vars: [llp_drpair_min_total, llp_drpair_max_total, llp_dr50_total, llp_dr80_total, llp_dr90_total, llp_drmax_total]
       hits10_csc:
         cut: llp_hits10_csc
         label: '>= 10 CSC hits'
-        vars: &llp_hits10_csc
-          - llp_dr50_csc
-          - llp_dr80_csc
-          - {var: llp_dr90_csc, bins: [60, 0, 0.6]}
+        vars:
+        - llp_dr50_csc
+        - llp_dr80_csc
+        - {var: llp_dr90_csc, bins: [60, 0, 0.6]}
       hits10_dt:
         cut: llp_hits10_dt
         label: '>= 10 DT hits'
-        vars: &llp_hits10_dt
-          - llp_dr50_dt
-          - llp_dr80_dt
-          - llp_dr90_dt
+        vars: [llp_dr50_dt, llp_dr80_dt, llp_dr90_dt]
       hits10_total:
         cut: llp_hits10_total
         label: '>= 10 total hits'
-        vars: &llp_hits10_total
-          - llp_dr50_total
-          - llp_dr80_total
-          - llp_dr90_total
+        vars: [llp_dr50_total, llp_dr80_total, llp_dr90_total]
       plateau_csc:
         cut: [llp_hits2_csc, llp_hits_lt25_csc, llp_abseta_plateau]
         label: '>= 2, < 25 CSC hits, |eta| plateau'
-        vars: &llp_plateau_csc
-          - {name: llp_dr90_vs_betagamma_ctrl, x: {var: llp_betagamma, bins: [40, 0, 40], label: 'LLP $\beta\gamma$ ($1.6<|\eta|<2.2$, $N_{\mathrm{hits}}<25$)'}, y: llp_dr90_csc}
+        vars:
+        - {name: llp_dr90_vs_betagamma_ctrl, x: {var: llp_betagamma, bins: [40, 0, 40], label: 'LLP $\beta\gamma$ ($1.6<|\eta|<2.2$, $N_{\mathrm{hits}}<25$)'}, y: llp_dr90_csc}
+
   rpc_rechit:
     label: RPC rechits
     objects:
-      matched:
-        cut: rpc_rechit_matched
-        label: rpc_rechit_matched
-        vars: &rpc_rechit_matched
-          - rpc_rechit_dr_llp
+      matched: {cut: rpc_rechit_matched, label: rpc_rechit_matched, vars: [rpc_rechit_dr_llp]}
+
+  # Regions written once: per system (csc / dt), or per event region
+  # (all, and the three trigger requirements; evt_sel [] = no requirement).
+  _repeat:
+  - over: systems
+    defs:
+      <SYS>_rechit:
+        label: <SYSU> rechits
+        objects:
+          matched: {cut: <SYS>_rechit_matched, label: <SYS>_rechit_matched, vars: [<SYS>_rechit_dr_llp]}

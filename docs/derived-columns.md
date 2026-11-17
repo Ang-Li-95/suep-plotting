@@ -47,7 +47,7 @@ its default and its validator.
 | `cluster_eps` | `0.4` | DBSCAN eps — the dR radius in eta-phi, all systems |
 | `cluster_min_samples` | `10` | DBSCAN minimum cluster size, CSC and DT (50 = standard MDS analysis) |
 | `rpc_min_samples` | `10` | the same for RPC, which is a sparser system; unused outside `rpc_mode: separate` |
-| `rpc_mode` | `separate` (every study sets `match` through `configs/common/`) | what the RPC rechits are for — see below |
+| `rpc_mode` | `separate` (every study sets `match` in its `columns.yaml`) | what the RPC rechits are for — see below |
 | `match_min_hits` | `10` | cluster ↔ LLP truth match: `matched` := (# rechits sharing one `llpIdx`) ≥ this |
 | `oot_time_cut` | `12.5` | half-width [ns] of the in-time window behind `cluster.ootHitFrac`. 12.5 ns = half a bunch crossing, the standard MDS in-time definition. Only reaches systems with a rechit time, i.e. CSC `Tpeak` |
 | `pair_max_hits` | `2000` | an LLP with more matched rechits than this is strided down before the O(N²) pairwise dR matrix is built (multiplicities are far below the cap in practice) |
@@ -65,7 +65,7 @@ it is what can date a CSC or DT cluster. The barrel wheels (`Region == 0`) sit
 at the DT radii and the endcap disks (`|Region| == 1`) at the CSC z, so each RPC
 rechit pairs with one of the two.
 
-- **`match`** *(what `configs/common/columns.yaml` sets, so every study)* — the clustering is the CSC/DT one and the RPC
+- **`match`** *(what every study's `columns.yaml` sets)* — the clustering is the CSC/DT one and the RPC
   rechits are associated to the finished clusters afterwards (nearest centroid
   within `cluster_eps`). RPC contributes nothing to the DBSCAN density
   estimate, so the cluster variables and the signal region stay those of the
@@ -74,8 +74,8 @@ rechit pairs with one of the two.
   background cluster over `min_samples`.
 - **`separate`** — the historical layout: three independent DBSCAN runs, and
   `events.rpcCluster` alongside the other two. It is the module default, so a
-  set with no `columns.yaml` of its own (and not extending `common`) gets it;
-  no shipped set uses it.  Nothing in `configs/common/` defines an
+  set with no `rpc_mode` in its `columns.yaml` gets it;
+  no shipped set uses it.  No shipped set defines an
   `rpc_cluster_*` histogram, so a set switching back to it needs its own.
 - **`merge`** — the RPC rechits are clustered *together with* the system they
   overlap, so a shower seen by both becomes one cluster. Because they are inside
@@ -101,7 +101,7 @@ is not a parameter — it is an object selection, so it is written where every
 other object selection is written:
 
 ```yaml
-# configs/common/selections.yaml
+# configs/configs_mds/selections.yaml (the same in every study)
 muon_sel_foriso:
   collection: Muon
   expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
@@ -131,7 +131,7 @@ reports how many events contain such an object.
 The step also attaches the **multiplicity** of each prompt collection as an
 event-level column named after the selection — `events.n_muon_sel_foriso`,
 `events.n_jet_sel_foriso`. That is what the `n_jet_sel_foriso` histogram in
-`configs/common/` plots: the count and the isolation come from the same
+the studies' plots: the count and the isolation come from the same
 selection, so retuning the cut moves both and they cannot disagree. (A
 collection absent from the file gets no column, so an expression referencing it
 fails at validation rather than plotting zeros.)
@@ -141,7 +141,7 @@ fails at validation rather than plotting zeros.)
 > attaches every `selections.yaml` mask as `events.<name>`, so a multiplicity is
 > `ak.sum(events.<name>, axis=1)` with no step involved.
 
-Every study inherits the pair from `configs/common/selections.yaml`, so
+Every study defines the same pair in its `selections.yaml`, so
 retuning it there moves them all; a set can still override it for itself.
 `configs_mds`, `configs_mds_signal` and `configs_mds_data` are overlaid on one
 canvas, so they must keep one definition —
@@ -176,8 +176,8 @@ under a pT rescale), so it does not matter whether `jerc` ran first.
 
 ## Steps
 
-`steps:` selects a subset. `configs/common/` enables the four reco steps and
-`configs/common_gen/` adds the four truth ones, so a study inherits the right
+`steps:` selects a subset. Reco-only studies enable the four reco steps and
+the truth studies add the four truth ones, so a study gets the right
 list rather than spelling it out. They always run in this order.
 Omitting a step means the fields it attaches are **absent**, so a config that
 references them fails loudly at expression validation instead of quietly filling

@@ -36,7 +36,7 @@ def test_isolation_selections_keep_clusters_with_no_muon_or_jet():
     from suep_plot.histdefs import load_selection_defs
 
     repo = Path(__file__).resolve().parent.parent / "configs" / "configs_mds_data"
-    # Through the loader: the study inherits these from ../common.
+    # Through the loader, as the study defines them.
     sels = load_selection_defs(repo / "selections.yaml")
     defs = load_histogram_defs(repo / "histograms.yaml")
     use = {k: defs[k] for k in ("csc/all/csc_cluster_size",

@@ -47,9 +47,8 @@ suep-run -c configs/configs_mds ...     # right
 suep-run -c configs ...                 # ERROR: lists the sets with their descriptions
 ```
 
-- `configs/common`, `common_gen` and `common_clustersrc` are **bases**
-  (`abstract: true` in their `set.yaml`), and `suep-run` / `suep-submit`
-  refuse them.
+- A set marked `abstract: true` in its `set.yaml` is a base and
+  `suep-run` / `suep-submit` refuse it (no shipped set is one any more).
 - To see what a set fills, run `suep-config show configs/<set>`. The README
   and the add-plots skill have the table of sets.
 

@@ -1,0 +1,54 @@
+# ── SM backgrounds: QCD, W+jets, Z->nunu, ttbar ───────────────────
+# 22 datasets with real cross sections (../../datasets.yaml), so these runs
+# are plotted with --lumi, which also sums the HT / jet bins of a process into
+# one stack entry (their `process:` in the registry).
+#
+# max_files: the first 1,000 files of each dataset, as in the DY sets.  The
+# xs/sumw weight uses the sumw of the files actually processed, so a partial
+# dataset is normalized correctly.
+_registry: ../../datasets.yaml
+
+qcd_ht100to200:
+  max_files: 1000
+qcd_ht200to400:
+  max_files: 1000
+qcd_ht400to600:
+  max_files: 1000
+qcd_ht600to800:
+  max_files: 1000
+qcd_ht800to1000:
+  max_files: 1000
+qcd_ht1000to1200:
+  max_files: 1000
+qcd_ht1200to1500:
+  max_files: 1000
+qcd_ht1500to2000:
+  max_files: 1000
+qcd_ht2000:
+  max_files: 1000
+wlnu_1j:
+  max_files: 1000
+wlnu_2j:
+  max_files: 1000
+wlnu_3j:
+  max_files: 1000
+wlnu_4j:
+  max_files: 1000
+zvv_ht100to200:
+  max_files: 1000
+zvv_ht200to400:
+  max_files: 1000
+zvv_ht400to800:
+  max_files: 1000
+zvv_ht800to1500:
+  max_files: 1000
+zvv_ht1500to2500:
+  max_files: 1000
+zvv_ht2500:
+  max_files: 1000
+tt_4q:
+  max_files: 1000
+tt_lnu2q:
+  max_files: 1000
+tt_2l2nu:
+  max_files: 1000

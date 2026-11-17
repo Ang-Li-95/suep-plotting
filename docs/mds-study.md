@@ -36,9 +36,9 @@ double count it:
 
 | `rpc_mode` | config sets | what happens |
 | --- | --- | --- |
-| `match` | `configs/common/`, so every study | the DBSCAN is the CSC/DT one and the RPC rechits are **associated afterwards** -- nearest cluster centroid within `cluster_eps` -- so they date a cluster without being able to create one |
+| `match` | every study's `columns.yaml` | the DBSCAN is the CSC/DT one and the RPC rechits are **associated afterwards** -- nearest cluster centroid within `cluster_eps` -- so they date a cluster without being able to create one |
 | `merge` | `configs_mds_rpcmerge`, `configs_mds_rpcmerge_data` | the RPC rechits go **into the DBSCAN** with the system they overlap, so a shower crossing both detectors is one cluster instead of two, and they count towards the per-LLP hit totals |
-| `separate` | none (the module default for a set that does not extend `common`) | three independent DBSCAN runs and a standalone `events.rpcCluster` -- the historical layout |
+| `separate` | none (the module default for a set that does not set `rpc_mode`) | three independent DBSCAN runs and a standalone `events.rpcCluster` -- the historical layout |
 
 `match` is what every study uses because it leaves the cluster variables and
 the signal region exactly those of the standard MDS analysis: RPC contributes
@@ -133,25 +133,24 @@ for unmatched ones, while both means sit at ~0.1.
 
 ---
 
-## Where a cluster comes from: six populations, one set of plots
+## Where a cluster comes from: cluster populations, one set of plots
 
 A DBSCAN cluster in the muon system is not one thing. The search wants to know
 what the signal shower looks like *against each of the things that also make
 clusters*, separately -- a punch-through jet and a cavern-background blob are
-different backgrounds and need not be separated by the same variable. So six
+different backgrounds and need not be separated by the same variable. So the
 populations are filled into the same histograms and overlaid:
 
 | set | sample | the clusters it fills |
 | --- | --- | --- |
 | `configs_mds_src_signal` | Gen3 signal, mDark=2, T=1 **and** T=2 | gen-matched: ≥ `match_min_hits` of the cluster's rechits carry one LLP's `llpIdx` |
-| `configs_mds_src_dy_jet` | DY→2μ | ΔR(cluster, jet) < 0.4 -- punch-through and hadronic-shower tails |
-| `configs_mds_src_dy_muon` | DY→2μ | ΔR(cluster, muon) < 0.4 -- a real muon crossing the chambers, and what it radiates |
-| `configs_mds_src_dy_iso` | DY→2μ | ΔR ≥ 0.4 from **both** -- the leftover population as the simulation has it |
+| `configs_mds_src_dy` | DY→2μ | three cuts in one run: `<sys>_in_jet` ΔR(cluster, jet) < 0.4 -- punch-through and hadronic-shower tails; `<sys>_on_muon` ΔR(cluster, muon) < 0.4 -- a real muon crossing the chambers, and what it radiates; `<sys>_iso` ΔR ≥ 0.4 from **both** -- the leftover population as the simulation has it |
+| `configs_mds_src_bkg` | QCD, W+jets, Z→νν, tt̄ (2024, real cross sections) | the same three cuts as `configs_mds_src_dy` |
 | `configs_mds_src_zerobias` | ZeroBias 2024C | ΔR ≥ 0.4 from **both** -- the same cut in minimum-bias data |
 | `configs_mds_src_cosmics` | Cosmics 2024C | every cluster, no ΔR requirement -- the non-collision control |
 
 The jet and the muon are the ones `jet_sel_foriso` / `muon_sel_foriso` pick
-(the same cuts as everywhere else, from `configs/common/`), and the ΔR is the
+(the same cuts as in every set), and the ΔR is the
 `cluster_isolation` step's `drJet` / `drMuon`. 0.4 is the threshold of the
 `<sys>_cluster_iso_*` cuts, taken as `< 0.4` here and `≥ 0.4` there, so "in a
 jet" and "isolated from jets" partition the clusters with no gap. The in-jet
@@ -164,24 +163,27 @@ noise background. Cosmics cannot have a ΔR requirement: that ntuple has no
 `Jet` and no `Muon` collection, so its set leaves out the two ΔR variables and
 runs `steps: [clusters]`.
 
-**How it is put together.** The population is one named object-level
-selection, `csc_cluster_src` / `dt_cluster_src`, which `common_clustersrc` uses
-as the `src` cut of the `csc` and `dt` regions and each of the six sets
-*defines* in its own `selections.yaml`. So a set is one expression plus one
-sample: the binning, the expressions and the clustering parameters are
-inherited and identical across all six, which makes the curves comparable bin
-for bin. Every histogram is `<sys>/src/<variable>` in all six sets; the
-category is carried by the **sample name**, which is why the samples are
-aliases named after their population (`clusters_llp`, `clusters_dy_in_jet`,
-`clusters_dy_on_muon`, `clusters_dy_iso`, `clusters_zerobias_iso`,
-`clusters_cosmics`). The three DY sets are the same dataset under three cuts;
-only the distinct config names keep them apart. The base defines *no*
-`<sys>_cluster_src` on purpose: a set that forgets stops at startup with
-"unknown selection" instead of filling every cluster.
+**How it is put together.** In the signal, ZeroBias and Cosmics sets the
+population is one named object-level selection, `csc_cluster_src` /
+`dt_cluster_src`, used as the `csc_src` / `dt_src` cuts of the event regions
+and defined in each set's own `selections.yaml`. The DY and SM-background sets
+use three cuts per system instead (`<sys>_in_jet`, `_on_muon`, `_iso`), so one
+run fills all three. Every set is self-contained, so the binning, the
+expressions and the clustering parameters are written out in each: keep them
+identical, or the curves stop being comparable bin for bin. The regions are event selections -- `all` (none), `trig_met`
+(HLT PFMETNoMu120/130/140), `trig_csc` (HLT_CscCluster_Loose) and `trig_dt`
+(HLT_CaloMET60_DTCluster50) -- and each fills the event variables (PUPPI MET,
+leading selected-jet pT, CSC and DT cluster counts) and every CSC and DT
+cluster variable. Every histogram is `<region>/<sys>_src/<variable>` (e.g.
+`trig_met/csc_src/csc_cluster_size`); in `configs_mds_src_dy` and
+`configs_mds_src_bkg` it is `<region>/<sys>_<in_jet|on_muon|iso>/<variable>`.
+Cosmics has no HLT, Jet or PuppiMET and keeps only `all` with the two counts.
+In the one-population sets the category is carried by the **sample name**
+(`clusters_llp`, `clusters_zerobias_iso`, `clusters_cosmics`); in the DY and
+background sets by the cut.
 
-Colours are read at plot time: the five backgrounds take five distinct hues
-(DY-in-jet orange, DY-on-muon purple, DY-isolated brown, ZeroBias black,
-Cosmics green); the signal points share `tab:blue` and differ by linestyle,
+Colours are read at plot time: ZeroBias black, Cosmics green, DY orange, the
+four SM processes one colour each; the signal points share `tab:blue` and differ by linestyle,
 following the registry's convention that colour encodes mDark and linestyle
 encodes T.
 
@@ -192,31 +194,32 @@ QOS follows from `--time`:
 
 ```bash
 OUT=/groups/<group>/<user>/suep_output/clustersrc_gen3_minpts10_dr04
-for s in signal dy_jet dy_muon dy_iso; do
-    suep-submit -c configs/configs_mds_src_$s -o $OUT/$s --time 08:00:00 --files-per-job 5
-done
+suep-submit -c configs/configs_mds_src_signal -o $OUT/signal --time 08:00:00 --files-per-job 5
+suep-submit -c configs/configs_mds_src_dy     -o $OUT/dy     --time 08:00:00 --files-per-job 5
+suep-submit -c configs/configs_mds_src_bkg    -o $OUT/bkg    --time 04:00:00 --files-per-job 25
 suep-submit -c configs/configs_mds_src_zerobias -o $OUT/zerobias --time 08:00:00 --files-per-job 25
 suep-submit -c configs/configs_mds_src_cosmics  -o $OUT/cosmics  --time 24:00:00 --mem 16000 \
     --files-per-job 1
 
-for d in signal dy_jet dy_muon dy_iso zerobias cosmics; do suep-status -o $OUT/$d; done
+for d in signal dy bkg zerobias cosmics; do suep-status -o $OUT/$d; done
 
-python scripts/compare_sig_bkg.py $OUT/signal \
-    $OUT/dy_jet $OUT/dy_muon $OUT/dy_iso $OUT/zerobias $OUT/cosmics $OUT/plots \
-    --sig-cut src --bkg-cut src --tag '' --bkg-tag '' \
-    -c configs/configs_mds_src_signal configs/configs_mds_src_dy_jet \
-       configs/configs_mds_src_dy_muon configs/configs_mds_src_dy_iso \
-       configs/configs_mds_src_zerobias configs/configs_mds_src_cosmics
+# signal vs the one-population sets (one call per system)
+python scripts/compare_sig_bkg.py $OUT/signal $OUT/zerobias $OUT/cosmics $OUT/plots_csc \
+    --sig-cut csc_src --bkg-cut csc_src --tag '' --bkg-tag '' \
+    -c configs/configs_mds_src_signal configs/configs_mds_src_zerobias configs/configs_mds_src_cosmics
+# signal vs one DY population (one call per cut and system)
+python scripts/compare_sig_bkg.py $OUT/signal $OUT/dy $OUT/plots_csc_dy_in_jet \
+    --sig-cut csc_src --bkg-cut csc_in_jet --tag '' \
+    -c configs/configs_mds_src_signal configs/configs_mds_src_dy
 ```
 
+`--bkg-cut` is one cut for every background run, so the DY / background
+populations, which are cuts rather than samples, each need their own call.
 `--tag '' --bkg-tag ''` drop the population tag the legend would otherwise
-append, since here each *sample* is the population. Every figure is unit-area
+append where the *sample* is the population. Every figure is unit-area
 normalized, the gallery is ordered by separation, and `separation.txt` scores
-the signal against **each** of the five backgrounds -- the number the study is
-for. `suep-plot $OUT/signal $OUT/dy_jet ... -o $OUT/plots_raw --normalize`
-gives the same curves through the ordinary plotter if the ranking is not
-wanted. DY is processed three times, once per category -- the price of the
-three populations being three samples.
+the signal against each background. `suep-plot $OUT/bkg --lumi 109.95` (and
+`--normalize-stack`) draws the SM backgrounds stacked by process.
 
 ---
 

@@ -1,1 +1,21 @@
-_extends: ../common_clustersrc
+# ── The RPC-timing profiles ───────────────────────────────────────
+# Mean RPC BX of a cluster against its size: how well the RPC content dates a
+# cluster.  One profile per event region and system, from
+# <region>/<sys>_src/<sys>_cluster_rpc_bx_vs_size (histograms.yaml).
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  profiles:
+  - {REG: all, SYS: csc}
+  - {REG: all, SYS: dt}
+
+# Each template is written once and filled in per axis entry.
+_repeat:
+- over: profiles
+  defs:
+    prof_<SYS>_rpc_bx_vs_size_<REG>:
+      type: profile_x
+      region: <REG>
+      cut: <SYS>_src
+      label_y: $\langle$RPC BX$\rangle$
+      vars: [<SYS>_cluster_rpc_bx_vs_size]

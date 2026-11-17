@@ -3,7 +3,7 @@
 Every config file of a set is loaded through :func:`load_config_file`, so the
 directives mean the same thing in every file:
 
-``_extends: ../common``    inherit the same-named file of another set (or of a
+``_extends: ../other``     inherit the same-named file of another set (or of a
                            list of sets, merged left to right); this file's
                            keys merge over it, and ``name: null`` deletes one
 ``_include: [a.yaml]``     merge in the definitions of the named files

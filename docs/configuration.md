@@ -44,31 +44,41 @@ abstract: true                   # bases only: never run on their own
   `_extends: <parent>` to change only part of the parent's file, or it
   replaces the parent's file entirely (`suep-config check` warns about this).
 - **`description`** -- listed when `-c` names something that is not a set.
-- **`abstract`** -- `common`, `common_gen` and `common_clustersrc` are bases
-  that only exist to be extended; `suep-run` / `suep-submit` refuse them.
+- **`abstract`** -- marks a set that only exists to be extended;
+  `suep-run` / `suep-submit` refuse it. No shipped set uses it any more.
 
-### The bases
+### How the shipped sets are laid out
+
+There are no shared bases: every study set is **self-contained** and states
+all of its histograms, selections and `derive()` settings itself (since
+2026-11-17; the former `common`, `common_gen` and `common_clustersrc` bases
+were expanded into the sets). The only inheritance left is a *variant* of
+another study, which names that study and overrides what differs:
 
 ```
-configs/common/            reco histograms + selections + derived plots,
-  │                        rpc_mode: match, the four reco steps
-  ├── configs_mds/                  _extends ../common      (and nothing else)
-  │     └── configs_mds_minpts50/   set.yaml + columns.yaml (min cluster size 50)
-  ├── configs_mds_data/             + the isolation cuts
-  ├── configs_mds_cosmics/          the cluster plots that need no prompt object
-  ├── common_clustersrc/            every cluster plot cut to one population
-  │     └── configs_mds_src_*/        the six sets define the population
-  └── common_gen/          + LLP collection, truth cuts, efficiency chain,
-        │                    and the four gen steps
-        ├── configs_mds_signal/     _extends ../common_gen  (and nothing else)
-        ├── configs_mds_gen/        + the LLP shower-shape family
-        └── configs_mds_rpcmerge/   configs_mds_signal with rpc_mode: merge
+configs_mds/                  reco cluster plots, inclusive
+  ├── configs_mds_minpts50/   set.yaml + columns.yaml (min cluster size 50)
+  ├── configs_mds_sigonly/    the two signal points only
+  ├── configs_g4compare/      pre/post Geant4 fix
+  └── configs_smoke/          one file, two histograms
+configs_mds_signal/           + LLP collection, truth cuts, efficiency chain
+  └── configs_mds_rpcmerge/   rpc_mode: merge
+configs_mds_data/             + the isolation cuts
+  └── configs_mds_rpcmerge_data/
+configs_mds_src_bkg/          cluster sources: three populations x four event regions
+  └── configs_mds_src_dy/     the same on DY (set.yaml + samples.yaml)
+configs_mds_gen, _cosmics, _objects, _trigger, configs_mds_src_signal,
+  _src_zerobias, _src_cosmics, configs_dy_noise   (standalone)
 ```
 
-`common` carries only the **reco** steps (`jerc, jet_id, clusters,
-cluster_isolation`); `common_gen` adds the four gen ones. A study with no
-gen-level fills does not pay for them, and `events.llp` being absent is what
-makes a stray gen expression fail at startup instead of filling empty.
+What used to be shared is now repeated, so keep it in step by hand when it
+changes: the clustering parameters (`columns.yaml`), the prompt-object and
+isolation selections (`tests/test_isolation_cuts.py` and
+`test_the_overlaid_sets_share_one_prompt_object_definition` guard the ones
+that are overlaid), and the cluster variable lists of sets that are compared.
+Sets with gen-level fills add the four truth steps to `steps:`; a set without
+them does not pay for them, and `events.llp` being absent is what makes a
+stray gen expression fail at startup instead of filling empty.
 
 ---
 

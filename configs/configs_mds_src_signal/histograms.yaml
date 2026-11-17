@@ -1,5 +1,105 @@
 # ── Category 1/6: clusters gen-matched to an LLP ──────────────────
-# The fills and the src population cut come from ../common_clustersrc; what
-# makes this set the signal leg is only what csc_cluster_src / dt_cluster_src
-# mean in its selections.yaml.
-_extends: ../common_clustersrc
+# The same fills as every configs_mds_src_* set (four event regions: all and
+# the three triggers; event variables plus every CSC and DT cluster variable
+# under the <sys>_src cut).  What makes this set the signal leg is only what
+# csc_cluster_src / dt_cluster_src mean in its selections.yaml.
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  event_regions:
+  - {REG: all, REGLABEL: all events, EVTSEL: []}
+  - {REG: trig_met, REGLABEL: MET triggered, EVTSEL: [trig_met]}
+  - {REG: trig_csc, REGLABEL: CSC triggered, EVTSEL: [trig_csc]}
+  - {REG: trig_dt, REGLABEL: DT triggered, EVTSEL: [trig_dt]}
+
+regions:
+  # Regions written once: per system (csc / dt), or per event region
+  # (all, and the three trigger requirements; evt_sel [] = no requirement).
+  _repeat:
+  - over: event_regions
+    defs:
+      <REG>:
+        label: <REGLABEL>
+        evt_sel: <EVTSEL>
+        evt_vars: [puppi_met, lead_jet_pt, csc_cluster_n, dt_cluster_n]
+        objects:
+          csc_src:
+            cut: csc_cluster_src
+            label: CSC clusters
+            vars:
+            - csc_cluster_size
+            - csc_cluster_eta
+            - csc_cluster_phi
+            - csc_cluster_eta_spread
+            - csc_cluster_phi_spread
+            - csc_cluster_nstation
+            - csc_cluster_time
+            - csc_cluster_nlayer
+            - csc_cluster_station_span
+            - csc_cluster_first_chamber
+            - csc_cluster_first_station
+            - csc_cluster_avg_station
+            - csc_cluster_max_station_frac
+            - csc_cluster_layer_hits_mean
+            - csc_cluster_layer_hits_rms
+            - csc_cluster_layer_hits_relrms
+            - csc_cluster_max_layer_frac
+            - csc_cluster_nzlayer
+            - csc_cluster_zlayer_hits_mean
+            - csc_cluster_zlayer_hits_rms
+            - csc_cluster_zlayer_hits_relrms
+            - csc_cluster_max_zlayer_frac
+            - csc_cluster_r_spread
+            - csc_cluster_z_spread
+            - csc_cluster_dr_muon
+            - csc_cluster_dr_jet
+            - {name: csc_cluster_dr_muon_vs_jet, x: csc_cluster_dr_muon, y: csc_cluster_dr_jet}
+            - csc_cluster_first_system
+            - csc_cluster_n_rpc_hits
+            - csc_cluster_n_rpc_hits_bx0
+            - csc_cluster_oot_hit_frac
+            - {var: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+            - {var: csc_cluster_rpc_bx_median, selections: [csc_cluster_has_rpc]}
+            - {var: csc_cluster_rpc_bx_spread, selections: [csc_cluster_has_rpc]}
+            - {name: csc_cluster_rpc_bx_vs_size, x: csc_cluster_size, y: csc_cluster_rpc_bx, selections: [csc_cluster_has_rpc]}
+            - csc_cluster_rpc_hit_frac
+            - {var: csc_cluster_rpc_out_of_time_frac, selections: [csc_cluster_has_rpc]}
+            - {var: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+            - csc_cluster_time_spread
+            - {name: csc_cluster_time_vs_spread, x: csc_cluster_time, y: csc_cluster_time_spread}
+            - {name: csc_cluster_time_vs_rpc_bx_time, x: csc_cluster_time, y: csc_cluster_rpc_time_from_bx, selections: [csc_cluster_has_rpc]}
+          dt_src:
+            cut: dt_cluster_src
+            label: DT clusters
+            vars:
+            - dt_cluster_size
+            - dt_cluster_eta
+            - dt_cluster_phi
+            - dt_cluster_eta_spread
+            - dt_cluster_phi_spread
+            - dt_cluster_nstation
+            - dt_cluster_nlayer
+            - dt_cluster_station_span
+            - dt_cluster_first_chamber
+            - dt_cluster_first_station
+            - dt_cluster_avg_station
+            - dt_cluster_max_station_frac
+            - dt_cluster_layer_hits_mean
+            - dt_cluster_layer_hits_rms
+            - dt_cluster_layer_hits_relrms
+            - dt_cluster_max_layer_frac
+            - dt_cluster_r_spread
+            - dt_cluster_z_spread
+            - dt_cluster_dr_muon
+            - dt_cluster_dr_jet
+            - {name: dt_cluster_dr_muon_vs_jet, x: dt_cluster_dr_muon, y: dt_cluster_dr_jet}
+            - dt_cluster_first_system
+            - dt_cluster_n_rpc_hits
+            - dt_cluster_n_rpc_hits_bx0
+            - {var: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+            - {var: dt_cluster_rpc_bx_median, selections: [dt_cluster_has_rpc]}
+            - {var: dt_cluster_rpc_bx_spread, selections: [dt_cluster_has_rpc]}
+            - {name: dt_cluster_rpc_bx_vs_size, x: dt_cluster_size, y: dt_cluster_rpc_bx, selections: [dt_cluster_has_rpc]}
+            - dt_cluster_rpc_hit_frac
+            - {var: dt_cluster_rpc_out_of_time_frac, selections: [dt_cluster_has_rpc]}
+            - {var: dt_cluster_rpc_time_from_bx, selections: [dt_cluster_has_rpc]}

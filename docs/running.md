@@ -234,7 +234,7 @@ python scripts/dump_config.py configs/*/ -o <dir>     # expanded configs; diff b
 |---|---|
 | `ERROR: no grid proxy` / `the grid proxy ... expires` | Renew it (`voms-proxy-init`, above). `xrootd ... [3010] Operation not permitted` inside a job is the same thing. |
 | `ERROR: ... is not a config set` | `-c` names one set, e.g. `configs/configs_mds`; the message lists them. |
-| `ERROR: ... is a base set` | `common`, `common_gen`, `common_clustersrc` are only extended; pick a set that extends them. |
+| `ERROR: ... is a base set` | the set is `abstract: true` (only extended); pick a runnable set. |
 | `ERROR in <file>: ...` before anything runs | A config mistake, named with its file -- often with "did you mean". `suep-config check` finds them all at once. |
 | `ERROR: config expressions that do not work` | An expression fails on some sample's first events (a typo, or a branch that sample lacks); the list names histogram, sample and expression. |
 | `ERROR: unknown sample(s)` | `-s` takes the names in `samples.yaml`; the message lists them. |

@@ -1,0 +1,42 @@
+# ── The RPC-timing profiles ───────────────────────────────────────
+# Mean RPC BX of a cluster against its size, one profile per event region,
+# system and cluster population (histograms.yaml).
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  profiles:
+  - {REG: all, SYS: csc, CUT: in_jet}
+  - {REG: all, SYS: csc, CUT: on_muon}
+  - {REG: all, SYS: csc, CUT: iso}
+  - {REG: all, SYS: dt, CUT: in_jet}
+  - {REG: all, SYS: dt, CUT: on_muon}
+  - {REG: all, SYS: dt, CUT: iso}
+  - {REG: trig_met, SYS: csc, CUT: in_jet}
+  - {REG: trig_met, SYS: csc, CUT: on_muon}
+  - {REG: trig_met, SYS: csc, CUT: iso}
+  - {REG: trig_met, SYS: dt, CUT: in_jet}
+  - {REG: trig_met, SYS: dt, CUT: on_muon}
+  - {REG: trig_met, SYS: dt, CUT: iso}
+  - {REG: trig_csc, SYS: csc, CUT: in_jet}
+  - {REG: trig_csc, SYS: csc, CUT: on_muon}
+  - {REG: trig_csc, SYS: csc, CUT: iso}
+  - {REG: trig_csc, SYS: dt, CUT: in_jet}
+  - {REG: trig_csc, SYS: dt, CUT: on_muon}
+  - {REG: trig_csc, SYS: dt, CUT: iso}
+  - {REG: trig_dt, SYS: csc, CUT: in_jet}
+  - {REG: trig_dt, SYS: csc, CUT: on_muon}
+  - {REG: trig_dt, SYS: csc, CUT: iso}
+  - {REG: trig_dt, SYS: dt, CUT: in_jet}
+  - {REG: trig_dt, SYS: dt, CUT: on_muon}
+  - {REG: trig_dt, SYS: dt, CUT: iso}
+
+# Each template is written once and filled in per axis entry.
+_repeat:
+- over: profiles
+  defs:
+    prof_<SYS>_rpc_bx_vs_size_<REG>_<CUT>:
+      type: profile_x
+      region: <REG>
+      cut: <SYS>_<CUT>
+      label_y: $\langle$RPC BX$\rangle$
+      vars: [<SYS>_cluster_rpc_bx_vs_size]

@@ -20,7 +20,7 @@ built by `custom/` -- see [docs/derived-columns.md](docs/derived-columns.md).
 | [docs/running.md](docs/running.md) | local runs, Slurm, following and resubmitting, plotting, troubleshooting |
 | [docs/configuration.md](docs/configuration.md) | every config file: the catalog, regions, selections, samples, derived plots, errors |
 | [docs/derived-columns.md](docs/derived-columns.md) | `custom/`: the LLP and cluster collections, `columns.yaml` |
-| [docs/mds-study.md](docs/mds-study.md) | the MDS cluster study: RPC modes, timing, the six cluster populations, event display |
+| [docs/mds-study.md](docs/mds-study.md) | the MDS cluster study: RPC modes, timing, the cluster populations, event display |
 | [docs/known-issues.md](docs/known-issues.md) | clustering memory on dense Cosmics events |
 | [docs/design-notes.md](docs/design-notes.md) | for readers of the code: which module does what, and why it is built this way |
 | [docs/histogram-renames.tsv](docs/histogram-renames.tsv) | old histogram name → new `region/cut/variable` name, per set |
@@ -158,7 +158,6 @@ definition comes from.
 
 | Set | What it fills |
 |---|---|
-| `common`, `common_gen`, `common_clustersrc` | **bases** (not run on their own): reco cluster plots; + LLPs, truth cuts and efficiencies; + one cluster population per set |
 | `configs_mds` | reco-only CSC/DT cluster properties and shower shapes (2 signal points + DY) |
 | `configs_mds_minpts50` | `configs_mds` with the standard MDS min cluster size 50 |
 | `configs_mds_signal` | truth level over the Gen3 signal grid: LLPs, matched/unmatched clusters, efficiency chain |
@@ -166,7 +165,7 @@ definition comes from.
 | `configs_mds_data` | reco cluster plots with isolation cuts, on signal, DY and ZeroBias data |
 | `configs_mds_cosmics` | reco cluster plots on Cosmics (no prompt objects) |
 | `configs_mds_rpcmerge`, `_rpcmerge_data` | the signal / data studies with `rpc_mode: merge` |
-| `configs_mds_src_*` (six) | where a cluster comes from: LLP, DY in a jet / on a muon / isolated, ZeroBias, Cosmics |
+| `configs_mds_src_*` | where a cluster comes from: LLP (`_signal`), DY and SM backgrounds in a jet / on a muon / isolated (`_dy`, `_bkg`), ZeroBias, Cosmics; each in four event regions (all, MET / CSC / DT triggered) |
 | `configs_mds_objects` | prompt objects (MET, jets, leptons) and cluster multiplicities |
 | `configs_mds_trigger` | HLT/L1 MDS trigger efficiencies |
 | `configs_mds_sigonly` | `configs_mds` on the two signal points only |

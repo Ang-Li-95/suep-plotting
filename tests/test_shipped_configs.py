@@ -16,17 +16,36 @@ from suep_plot.checks import validate_config_set
 REPO = Path(__file__).resolve().parents[1]
 
 ALL = sorted(p for p in (REPO / "configs").iterdir() if _is_config_set(str(p)))
-# Bases (abstract: true in set.yaml) are only ever inherited from; on their
-# own they are incomplete on purpose (common_clustersrc leaves the population
-# cut to its children).
 SETS = [p for p in ALL if not read_set_file(p).get("abstract")]
 
 
 def test_the_sets_were_found():
     assert len(SETS) >= 15, "configs/ layout moved? found: " + ", ".join(
         p.name for p in SETS)
-    assert {p.name for p in ALL} - {p.name for p in SETS} == \
-        {"common", "common_gen", "common_clustersrc"}
+
+
+def _parents(config_dir):
+    """Every set a set's files or set.yaml extend."""
+    import yaml
+    out = set()
+    ext = read_set_file(config_dir).get("extends")
+    if ext:
+        out.add(ext)
+    for f in config_dir.glob("*.yaml"):
+        raw = yaml.safe_load(f.read_text()) or {}
+        ext = raw.get("_extends") if isinstance(raw, dict) else None
+        out.update([ext] if isinstance(ext, str) else ext or [])
+    return {(config_dir / e).resolve() for e in out}
+
+
+def test_no_set_relies_on_a_shared_base():
+    """The shared bases are gone (2026-11-17): a set is self-contained or a
+    variant of one runnable study, never an extension of an abstract base."""
+    assert [p.name for p in ALL if read_set_file(p).get("abstract")] == []
+    for config_dir in SETS:
+        for parent in _parents(config_dir):
+            assert not read_set_file(parent).get("abstract"), \
+                f"{config_dir.name} extends the base {parent.name}"
 
 
 @pytest.mark.parametrize("config_dir", SETS, ids=lambda p: p.name)

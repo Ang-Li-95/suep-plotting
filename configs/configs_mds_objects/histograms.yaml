@@ -1,14 +1,12 @@
 # ── Prompt objects, MET and MDS cluster multiplicity on the signal grid ──
-# Standalone rather than `_extends: ../common`: the point of this set is a
-# short, readable list of event-level quantities, and inheriting the ~300
-# cluster shape histograms would bury it.  puppi_met and n_jet_sel_foriso keep
-# ../common's binning so they overlay with the other studies; the cluster
-# counts use half-integer edges instead of ../common's 0..6, which puts each
+# The point of this set is a short, readable list of event-level quantities,
+# not the ~300 cluster shape histograms.  puppi_met and n_jet_sel_foriso keep
+# the catalog binning so they overlay with the other studies; the cluster
+# counts use half-integer edges instead of the catalog's 0..6, which puts each
 # integer count in the middle of a bin rather than on an edge (they are read
-# against the matched counts below, not against ../common).
+# against the matched counts below, not against the other studies).
 #
-# Everything below is *after* JERC: the 'jerc' step (../common/columns.yaml,
-# via columns.yaml) replaces events.Jet.pt in place and rebuilds the Type-1
+# Everything below is *after* JERC: the 'jerc' step (columns.yaml) replaces events.Jet.pt in place and rebuilds the Type-1
 # events.PuppiMET from RawPuppiMET, so no separate "raw" and "corrected"
 # variables exist -- the corrected ones are the only ones there are.
 

@@ -1,0 +1,14 @@
+# ── DY->mumu, all three cluster populations in one run ────────────
+# The population is the cut (<region>/<sys>_<in_jet|on_muon|iso>/<variable>),
+# so the sample is simply the dataset.  max_files as in the former per-cut DY
+# sets: DY is 5,575 files / ~400M events and these are shape comparisons, so
+# the first 1,000 files saturate them.  xs in the registry is a placeholder:
+# plot this set without --lumi.
+_registry: ../../datasets.yaml
+
+clusters_dy:
+  _from: dy_2mu_50to120
+  max_files: 1000
+  label: 'DY$\to\mu\mu$'
+  color: '#f89c20'
+  group: background

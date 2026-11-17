@@ -1,4 +1,60 @@
 # ── The truth study: the full (mDark, T) signal grid ──────────────
-# Everything comes from ../common_gen (which is ../common plus the gen-level
-# histograms, selections and derived plots).
-_extends: ../common_gen
+# The reco cluster fills plus the gen-level ones: the LLP collection, the
+# truth-matched / unmatched cluster splits and the efficiency chain.
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, SYSU: CSC}
+  - {SYS: dt, SYSU: DT}
+
+# ── Prompt objects the cluster isolation is measured against ──────
+# The 'cluster_isolation' step measures dR from every cluster centroid to the
+# closest object passing these and attaches it as cluster.drMuon / drJet (the
+# keys of helpers.ISO_SELECTIONS).  'collection:' names what the per-object
+# mask is over; tightLepVetoId comes from the 'jet_id' step, since 2024
+# NanoAOD no longer stores Jet_jetId.
+muon_sel_foriso:
+  collection: Muon
+  expression: (events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId
+
+jet_sel_foriso:
+  collection: Jet
+  expression: (events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId
+
+# ── The whole muon system, not one subdetector ────────────────────
+# CSC and DT only: the RPC decay volume is the union of the DT volume and an
+# endcap region already inside the CSC one, so it added no fiducial reach.
+llp_in_ms: events.llp.inCSC | events.llp.inDT
+
+llp_reco_any: events.llp.reco
+
+has_llp_in_ms: ak.any(events.llp.inCSC | events.llp.inDT, axis=1)
+
+# Each template is written once and filled in per axis entry.
+_repeat:
+- over: systems
+  defs:
+    # Event-level bookkeeping (cutflow.txt)
+    has_<SYS>_cluster: ak.num(events.<SYS>Cluster) >= 1
+
+    # Cluster isolation from prompt activity.  In events with no muon / jet
+    # at all the field carries the sentinel NO_OBJECT_DR = 999, so those
+    # maximally isolated clusters pass the same comparison with no special
+    # case.
+    <SYS>_cluster_iso_muon: events.<SYS>Cluster.drMuon >= 0.4
+    <SYS>_cluster_iso_jet: events.<SYS>Cluster.drJet >= 0.4
+
+    # RPC content of the cluster: whether it picked up any RPC rechit at all,
+    # and whether its innermost hit came from something other than RPC.
+    <SYS>_cluster_has_rpc: events.<SYS>Cluster.nRPCHits > 0
+    <SYS>_cluster_first_not_rpc: events.<SYS>Cluster.firstSystem != 2
+    llp_in_<SYS>: events.llp.in<SYSU>
+    llp_reco_<SYS>: events.llp.reco<SYSU>
+
+    # Cluster truth-matched to an LLP (>= match_min_hits rechits sharing one
+    # llpIdx), and its complement: the fake / pile-up-like clusters.
+    <SYS>_cluster_matched: events.<SYS>Cluster.matched
+    <SYS>_cluster_unmatched: ~events.<SYS>Cluster.matched
+    has_matched_<SYS>: ak.any(events.<SYS>Cluster.matched, axis=1)
+    llp_hits10_<SYS>: events.llp.nHits<SYSU> >= 10

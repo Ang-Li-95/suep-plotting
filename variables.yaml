@@ -167,6 +167,7 @@ evt_second_csc_cluster_size: {expression: 'ak.fill_none(ak.pad_none(ak.sort(even
 
 # ── Prompt objects and event-level quantities ─────────────────────────
 ht: {expression: 'ak.sum(events.Jet.pt[events.jet_sel_foriso], axis=1)', bins: [50, 0, 1000], label: '$H_T$ [GeV]', log_y: true}
+lead_jet_pt: {expression: 'ak.fill_none(ak.max(events.Jet.pt[events.jet_sel_foriso], axis=1), 0)', bins: [60, 0, 600], label: 'leading jet $p_{T}$ [GeV] (0: no jet)', log_y: true}
 jet_eta: {expression: events.Jet.eta, bins: [50, -5, 5], label: jet $\eta$}
 jet_phi: {expression: events.Jet.phi, bins: [32, -3.2, 3.2], label: jet $\phi$}
 jet_pt: {expression: events.Jet.pt, bins: [60, 0, 600], label: 'jet $p_{T}$ [GeV]', log_y: true}

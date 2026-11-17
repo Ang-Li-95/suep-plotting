@@ -163,3 +163,254 @@ suep_mMed125_mDark2:
   label: SUEP $m_{\mathrm{Med}}$=125, $m_{S}$=2
   color: tab:blue
   group: signal
+
+# ── 2024 SM backgrounds (Summer24 MDS-NanoAOD, private CRAB production) ──
+# QCD / W+jets / Z->nunu / ttbar, used by configs_mds_src_bkg.  Unlike the
+# rest of this file these carry REAL cross sections [pb] (the AN background
+# table), so --lumi is meaningful for them.  Each entry is the dataset's whole
+# directory: a task and its lumi-masked recovery tasks sit side by side under
+# it and are complementary.  process: names the physics process a bin belongs
+# to: suep-plot --lumi sums the bins of one process into a single stack entry
+# (labelled process_label, coloured like its first bin).
+qcd_ht100to200:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-100to200_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 25400000
+  label: 'QCD, $H_T$ 100-200'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+qcd_ht200to400:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-200to400_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 1961000
+  label: 'QCD, $H_T$ 200-400'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+qcd_ht400to600:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-400to600_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 95620
+  label: 'QCD, $H_T$ 400-600'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+qcd_ht600to800:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-600to800_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 13540
+  label: 'QCD, $H_T$ 600-800'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+qcd_ht800to1000:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-800to1000_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 3033
+  label: 'QCD, $H_T$ 800-1000'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+qcd_ht1000to1200:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-1000to1200_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 883.7
+  label: 'QCD, $H_T$ 1000-1200'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+qcd_ht1200to1500:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-1200to1500_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 383.5
+  label: 'QCD, $H_T$ 1200-1500'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+qcd_ht1500to2000:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-1500to2000_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 125.2
+  label: 'QCD, $H_T$ 1500-2000'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+qcd_ht2000:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/QCD-4Jets_Bin-HT-2000_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 26.49
+  label: 'QCD, $H_T$ 2000-$\infty$'
+  color: '#5790fc'
+  group: background
+  process: qcd
+  process_label: 'QCD multijet'
+wlnu_1j:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/WtoLNu-4Jets_Bin-1J_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 9141
+  label: '$W\to\ell\nu$+jets, 1 jet'
+  color: '#f89c20'
+  group: background
+  process: wjets
+  process_label: '$W\to\ell\nu$+jets'
+wlnu_2j:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/WtoLNu-4Jets_Bin-2J_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 2931
+  label: '$W\to\ell\nu$+jets, 2 jet'
+  color: '#f89c20'
+  group: background
+  process: wjets
+  process_label: '$W\to\ell\nu$+jets'
+wlnu_3j:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/WtoLNu-4Jets_Bin-3J_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 864.6
+  label: '$W\to\ell\nu$+jets, 3 jet'
+  color: '#f89c20'
+  group: background
+  process: wjets
+  process_label: '$W\to\ell\nu$+jets'
+wlnu_4j:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/WtoLNu-4Jets_Bin-4J_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 417.8
+  label: '$W\to\ell\nu$+jets, 4 jet'
+  color: '#f89c20'
+  group: background
+  process: wjets
+  process_label: '$W\to\ell\nu$+jets'
+zvv_ht100to200:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/Zto2Nu-4Jets_Bin-HT-100to200_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 273.7
+  label: '$Z\to\nu\nu$+jets, $H_T$ 100-200'
+  color: '#e42536'
+  group: background
+  process: zjets
+  process_label: '$Z\to\nu\nu$+jets'
+zvv_ht200to400:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/Zto2Nu-4Jets_Bin-HT-200to400_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 75.96
+  label: '$Z\to\nu\nu$+jets, $H_T$ 200-400'
+  color: '#e42536'
+  group: background
+  process: zjets
+  process_label: '$Z\to\nu\nu$+jets'
+zvv_ht400to800:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/Zto2Nu-4Jets_Bin-HT-400to800_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 13.19
+  label: '$Z\to\nu\nu$+jets, $H_T$ 400-800'
+  color: '#e42536'
+  group: background
+  process: zjets
+  process_label: '$Z\to\nu\nu$+jets'
+zvv_ht800to1500:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/Zto2Nu-4Jets_Bin-HT-800to1500_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 1.362  # xs given by the user 2026-11-13 (the AN table bins 800-1200 differently)
+  label: '$Z\to\nu\nu$+jets, $H_T$ 800-1500'
+  color: '#e42536'
+  group: background
+  process: zjets
+  process_label: '$Z\to\nu\nu$+jets'
+zvv_ht1500to2500:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/Zto2Nu-4Jets_Bin-HT-1500to2500_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 0.09793  # xs given by the user 2026-11-13 (the AN table bins 1200-2500 differently)
+  label: '$Z\to\nu\nu$+jets, $H_T$ 1500-2500'
+  color: '#e42536'
+  group: background
+  process: zjets
+  process_label: '$Z\to\nu\nu$+jets'
+zvv_ht2500:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/Zto2Nu-4Jets_Bin-HT-2500_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  tree: Events
+  is_data: false
+  xs: 0.006699
+  label: '$Z\to\nu\nu$+jets, $H_T$ 2500-$\infty$'
+  color: '#e42536'
+  group: background
+  process: zjets
+  process_label: '$Z\to\nu\nu$+jets'
+tt_4q:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/TTto4Q_TuneCP5_13p6TeV_powheg-pythia8
+  tree: Events
+  is_data: false
+  xs: 422.1
+  label: '$t\bar{t}$ hadronic'
+  color: '#964a8b'
+  group: background
+  process: ttbar
+  process_label: '$t\bar{t}$'
+tt_lnu2q:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/TTtoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8
+  tree: Events
+  is_data: false
+  xs: 404.6
+  label: '$t\bar{t}$ semi-leptonic'
+  color: '#964a8b'
+  group: background
+  process: ttbar
+  process_label: '$t\bar{t}$'
+tt_2l2nu:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/TTto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8
+  tree: Events
+  is_data: false
+  xs: 96.978
+  label: '$t\bar{t}$ leptonic'
+  color: '#964a8b'
+  group: background
+  process: ttbar
+  process_label: '$t\bar{t}$'

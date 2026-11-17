@@ -46,25 +46,22 @@ suep-config check configs/configs_mds                                     # afte
 
 ## Config sets
 
-Three sets are **bases, not studies**. They are marked `abstract: true` in
-their `set.yaml`, and `suep-run` refuses them. A study extends one of them:
-
-| base | holds |
-|---|---|
-| `common` | the reco-level cluster regions (`csc`, `dt`, cut `all`), their selections and derived plots; `rpc_mode: match`; the reco steps (`jerc, jet_id, clusters, cluster_isolation`) |
-| `common_gen` | `common` plus everything that needs truth: the `llp` region, the matched/unmatched and isolation cuts, the efficiency chain, and the gen steps |
-| `common_clustersrc` | `common` with every per-object cluster histogram cut to one named population (`<sys>_cluster_src`) |
+There are **no shared bases** (since 2026-11-17): every study states all of
+its histograms, selections and `derive()` settings itself, so adding a plot to
+"every study" means adding it to each set that should have it. Variants
+(`configs_mds_minpts50`, `_sigonly`, `_rpcmerge`, `configs_mds_src_dy`, ...)
+extend the one study they vary and override what differs.
 
 | set | purpose |
 |---|---|
-| `configs_mds` | the MDS cluster study, **reco-only** fills; only `_extends: ../common` |
+| `configs_mds` | the MDS cluster study, **reco-only** fills (`csc` / `dt` regions, cut `all`); `rpc_mode: match`; the reco steps |
 | `configs_mds_minpts50` | `configs_mds` with min cluster size 50: `set.yaml` + `columns.yaml` only |
 | `configs_mds_signal` | the same plus **everything truth-dependent**, over the (mDark, T) grid |
 | `configs_mds_gen` | `configs_mds_signal` plus the LLP shower-shape family; it **does** cluster |
 | `configs_mds_data` | reco-only plus isolation cuts, on signal, DY and ZeroBias; no truth steps |
 | `configs_mds_cosmics` | the cluster plots that need no prompt object; `steps: [clusters]` |
-| `configs_mds_src_signal`, `_dy_jet`, `_dy_muon`, `_dy_iso`, `_zerobias`, `_cosmics` | **one study in six sets**: where a cluster comes from. Each set fills one population; they are overlaid as six samples |
-| `configs_mds_objects` | prompt objects (post-JERC PUPPI MET, HT, jets, leptons) and cluster multiplicities; its own histograms and selections (only `columns.yaml` extends `common`) |
+| `configs_mds_src_signal`, `_dy`, `_bkg`, `_zerobias`, `_cosmics` | **one study in five sets**: where a cluster comes from. Regions are event selections (`all`, `trig_met`, `trig_csc`, `trig_dt`) with the event variables; the cuts are the cluster populations per system (`<sys>_src`, or `<sys>_in_jet` / `_on_muon` / `_iso` in `_dy` and `_bkg`) |
+| `configs_mds_objects` | prompt objects (post-JERC PUPPI MET, HT, jets, leptons) and cluster multiplicities; its own histograms and selections |
 | `configs_mds_sigonly`, `configs_mds_trigger`, `configs_g4compare` | the two signal points only; HLT/L1 trigger efficiencies; pre/post Geant4 fix (its inputs are gone from EOS) |
 | `configs_mds_rpcmerge`, `_rpcmerge_data` | the signal / data studies with `rpc_mode: merge` |
 | `configs_smoke` | not a study: one file, two histograms, run by `scripts/smoke_test.sh` |
@@ -375,7 +372,7 @@ the old names.
 - `events.llp` has one entry per gen LLP (SUEPGenPart pdgId 999999) with the
   fields `pt eta phi mass energy decayR decayZ Llab betagamma ctau inCSC inDT
   inRPC nHitsCSC nHitsDT nHitsRPC nHitsTotal recoCSC recoDT recoRPC reco gidx
-  lidx`. It exists only in sets with the gen steps (`common_gen` and below).
+  lidx`. It exists only in sets with the gen steps (`configs_mds_signal`, `_gen`, `_rpcmerge`, `configs_mds_src_signal`).
 - `events.cscCluster` and `events.dtCluster` are DBSCAN clusters of rechits,
   with the fields:
   - `size eta phi x y z r etaSpread phiSpread rSpread zSpread nStation
@@ -387,7 +384,7 @@ the old names.
     *selected* Muon / Jet. The value is 999 (`NO_OBJECT_DR`) when the event
     has none, so isolation is a plain `events.cscCluster.drMuon >= 0.4`.
 - **There is normally no `events.rpcCluster`.** `rpc_mode: match` (the
-  default in `common`) attaches the RPC rechits to the CSC and DT clusters.
+  set in every study) attaches the RPC rechits to the CSC and DT clusters.
   `rpc_mode: separate` creates a third collection, and `merge` clusters the
   RPC rechits together with the CSC / DT ones.
 - **"Selected" for the cluster dR is an ordinary selection.** It is defined in
@@ -442,7 +439,7 @@ given sample really has.
   reweights and derived plots.
 - `docs/derived-columns.md`: `custom/`, with the collections field by field,
   the parameters, `rpc_mode`, and what each step costs.
-- `docs/mds-study.md`: the physics of the MDS cluster study, the six cluster
+- `docs/mds-study.md`: the physics of the MDS cluster study, the cluster
   populations, and the event display.
 - `docs/known-issues.md`: clustering memory grows as N² per event.
 - `docs/histogram-renames.tsv`: old to new histogram names.

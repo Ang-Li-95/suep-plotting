@@ -2,7 +2,7 @@
 # The RPC rechits are clustered *together with* the system they overlap --
 # barrel RPC (Region == 0) with DT, endcap RPC with CSC -- instead of being
 # associated to the finished clusters afterwards, which is the default
-# (rpc_mode: match, ../configs_mds_data -> ../common).
+# (rpc_mode: match, ../configs_mds_data).
 #
 # Both modes produce the same two cluster collections carrying the same RPC
 # fields, so this set compares with configs_mds_data plot for plot.  The
