@@ -172,7 +172,7 @@ run fills all three. Every set is self-contained, so the binning, the
 expressions and the clustering parameters are written out in each: keep them
 identical, or the curves stop being comparable bin for bin. The regions are event selections -- `all` (none), `trig_met`
 (HLT PFMETNoMu120/130/140), `trig_csc` (HLT_CscCluster_Loose) and `trig_dt`
-(HLT_CaloMET60_DTCluster50) -- and each fills the event variables (PUPPI MET,
+(HLT_L1MET_DTCluster50) -- and each fills the event variables (PUPPI MET,
 leading selected-jet pT, CSC and DT cluster counts) and every CSC and DT
 cluster variable. Every histogram is `<region>/<sys>_src/<variable>` (e.g.
 `trig_met/csc_src/csc_cluster_size`); in `configs_mds_src_dy` and

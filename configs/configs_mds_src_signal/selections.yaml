@@ -32,7 +32,7 @@ trig_met:
   label: HLT PFMETNoMu120/130/140
   expression: events.HLT.PFMETNoMu120_PFMHTNoMu120_IDTight | events.HLT.PFMETNoMu130_PFMHTNoMu130_IDTight | events.HLT.PFMETNoMu140_PFMHTNoMu140_IDTight
 
-trig_dt: {label: HLT_CaloMET60_DTCluster50, expression: events.HLT.CaloMET60_DTCluster50}
+trig_dt: {label: HLT_L1MET_DTCluster50, expression: events.HLT.L1MET_DTCluster50}
 
 trig_csc: {label: HLT_CscCluster_Loose, expression: events.HLT.CscCluster_Loose}
 
