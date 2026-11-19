@@ -21,7 +21,8 @@ import mplhep as hep  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from suep_plot.figures import (  # noqa: E402,F401  (re-exported to the scripts)
-    DEFAULT_FORMATS, figure, is_2d_hist, palette, prep_1d, save_figure)
+    DEFAULT_FORMATS, draw_uncertainty_band, figure, is_2d_hist, palette, prep_1d,
+    save_figure)
 # Under other names: this module defines its own cms_label / write_gallery.
 from suep_plot.figures import cms_label as _cms_label  # noqa: E402
 from suep_plot.gallery import write_gallery as _write_gallery  # noqa: E402

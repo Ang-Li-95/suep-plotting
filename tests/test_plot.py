@@ -514,6 +514,55 @@ def test_the_comparison_checks_binning_across_signal_and_background():
         one(0, 100), hist.Hist(hist.axis.Regular(4, 0, 100, name="x")))
 
 
+def _import_compare_sig_bkg():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import compare_sig_bkg
+    return compare_sig_bkg
+
+
+def test_the_comparison_pairs_each_system_with_every_background_cut():
+    """'<SYS>_src' pairs csc_src with the csc cuts and dt_src with the dt ones."""
+    csb = _import_compare_sig_bkg()
+
+    class Args:
+        sig_cut = "<SYS>_src"
+        bkg_cut = ["<SYS>_in_jet", "<SYS>_iso"]
+
+    keys = ["all/csc_src/csc_cluster_size", "trig_dt/dt_src/dt_cluster_size",
+            "all/puppi_met", "all/csc_other/csc_cluster_size"]
+    assert csb._pairs(keys, Args) == [
+        ("all/csc_src/csc_cluster_size",
+         {"<SYS>_in_jet": "all/csc_in_jet/csc_cluster_size",
+          "<SYS>_iso": "all/csc_iso/csc_cluster_size"},
+         "all/csc_cluster_size"),
+        ("trig_dt/dt_src/dt_cluster_size",
+         {"<SYS>_in_jet": "trig_dt/dt_in_jet/dt_cluster_size",
+          "<SYS>_iso": "trig_dt/dt_iso/dt_cluster_size"},
+         "trig_dt/dt_cluster_size"),
+    ]
+    assert csb.cut_label("<SYS>_on_muon") == "on muon"
+
+
+def test_the_summed_background_weights_each_sample_by_xs_over_sumw():
+    csb = _import_compare_sig_bkg()
+
+    h = hist.Hist(hist.axis.StrCategory(["a", "b"], name="dataset"),
+                  hist.axis.Regular(2, 0, 2, name="x"), storage=hist.storage.Weight())
+    h.fill(dataset="a", x=[0.5] * 10)          # a: 10 entries in bin 0
+    h.fill(dataset="b", x=[1.5] * 10)          # b: 10 entries in bin 1
+    bkg_all = {s: {"histograms": {"k": h}, "sumw": {s: 10.0}} for s in "ab"}
+    defs = {"a": {"xs": 3.0}, "b": {"xs": 1.0}}
+
+    out = csb.summed_background(bkg_all, ["a", "b"], "k", {}, defs)
+    assert out.values() == pytest.approx([0.75, 0.25])
+
+    with pytest.raises(SystemExit, match="no xs"):
+        csb.summed_background(bkg_all, ["a", "b"], "k", {}, {"a": {"xs": 3.0}, "b": {}})
+
+
 def test_samples_of_one_process_are_summed_after_scaling():
     """HT bins become one stack entry, each weighted by its own xs / sumw."""
     from suep_plot.results import merge_processes
@@ -575,3 +624,38 @@ def test_normalize_stack_keeps_the_stack_and_gives_it_unit_area(tmp_path, monkey
     # the smaller sample first, i.e. at the bottom of the stack
     assert drawn["areas"] == pytest.approx([0.25, 0.75])
     assert drawn["labels"] == ["b", "a"]
+
+
+def test_the_stack_total_gets_a_hatched_stat_band(tmp_path, monkeypatch):
+    from suep_plot import figures
+
+    h = make_hist("a", [10.0] * 30)
+    h += make_hist("b", [60.0] * 10)
+    sample_defs = {"a": {"group": "background"}, "b": {"group": "background"}}
+    bands = []
+
+    def band(ax, total, **kwargs):
+        bands.append((total.sum().value, total.variances().sum(), kwargs))
+
+    monkeypatch.setattr(figures, "draw_uncertainty_band", band)
+    monkeypatch.setattr(figures, "_finish", lambda *a, **k: None)
+    figures.plot_histogram(h, {"label": "x"}, sample_defs, str(tmp_path), "x",
+                           formats=("png",))
+
+    (area, var, kwargs), = bands
+    assert area == pytest.approx(40.0)          # the stack total, not one sample
+    assert var == pytest.approx(40.0)           # unit weights: sum w^2 = N
+    assert kwargs["hatch"] and kwargs["label"] == figures.STAT_LABEL
+
+
+def test_the_uncertainty_band_spans_one_sigma(monkeypatch):
+    import matplotlib.pyplot as plt
+    from suep_plot import figures
+
+    h = make_hist("a", [10.0] * 4)[{"dataset": "a"}]
+    fig, ax = plt.subplots()
+    figures.draw_uncertainty_band(ax, h, color="red")
+    (poly,) = ax.collections
+    ys = poly.get_paths()[0].vertices[:, 1]
+    assert ys.max() == pytest.approx(4 + 2) and ys.min() == pytest.approx(0.0)
+    plt.close(fig)

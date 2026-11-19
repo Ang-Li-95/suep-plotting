@@ -169,6 +169,10 @@ suep-plot $OUT/configs_mds --formats png -j 4  # faster while iterating
   stack as a whole has unit area, so its composition stays visible. Use it
   with `--lumi`, which gives the samples their relative size and sums the
   samples of one `process:` (see configuration.md) into one entry.
+- MC-stat uncertainties (sqrt of the summed squared weights) are drawn as
+  bands: hatched grey around the top of a background stack ("Stat. unc."),
+  shaded in the curve's colour around each step curve. Data keep error bars.
+  `scripts/compare_sig_bkg.py` draws them the same way, hatched on its fills.
 - Exit code 1 if no pickle was found or any figure failed.
 
 `bash $OUT/configs_mds/slurm/merge_and_plot.sh` does the same as

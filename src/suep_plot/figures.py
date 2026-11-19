@@ -168,6 +168,49 @@ def _total(hists: list[hist.Hist]) -> hist.Hist:
     return out
 
 
+STAT_LABEL = "Stat. unc."
+
+
+def draw_uncertainty_band(ax, h: hist.Hist, *, color="gray", hatch=None,
+                          alpha=0.3, label=None) -> None:
+    """The +-1 sigma MC-stat band (sqrt of the summed squared weights) of *h*.
+
+    Drawn as a step band over the bins: translucent in *color*, or hatched in
+    *color* with no fill when *hatch* is given (the stack total, and filled
+    curves, whose own fill would hide a translucent band).  Shared with
+    scripts/.
+    """
+    edges = h.axes[0].edges
+    val = h.values()
+    err = np.sqrt(h.variances())
+    hi = np.r_[val + err, (val + err)[-1]]
+    lo = np.r_[val - err, (val - err)[-1]]
+    # A bin of one weighted entry has err == val up to rounding, leaving a
+    # ~1e-20 remainder that a log axis would stretch down to: call it zero
+    # (non-positive values do not take part in log autoscaling).
+    lo = np.where(lo > 1e-9 * hi, lo, 0.0)
+    if hatch:
+        ax.fill_between(edges, lo, hi, step="post", facecolor="none", edgecolor=color,
+                        hatch=hatch, linewidth=0, label=label)
+    else:
+        ax.fill_between(edges, lo, hi, step="post", color=color, alpha=alpha,
+                        linewidth=0, label=label)
+
+
+def _step_with_band(ax, h: hist.Hist, label, color, linestyle) -> None:
+    """A step curve with its MC-stat band in the same colour.
+
+    The band is sqrt(sum w^2), not mplhep's default Poisson interval, which
+    draws large upper limits on every empty bin of a weighted histogram.
+    """
+    artists = hep.histplot(h, ax=ax, histtype="step", label=label, color=color,
+                           linewidth=2, linestyle=linestyle, yerr=False)
+    if color is None and artists:
+        # a colourless sample took the next colour of the cycle; match it
+        color = artists[0].stairs.get_edgecolor()
+    draw_uncertainty_band(ax, h, color=color)
+
+
 def plot_histogram(
     h: hist.Hist,
     hist_cfg: dict,
@@ -238,9 +281,7 @@ def plot_histogram(
             bkg_ls = [sample_defs.get(s, {}).get("linestyle", "-") for s in bkg_samples]
             for bh, label, color, ls in zip(bkg_hists, bkg_labels, bkg_colors, bkg_ls):
                 bh = _unit_area(bh)
-                hep.histplot(bh, ax=ax, histtype="step", label=label,
-                             color=color, linewidth=2, linestyle=ls,
-                             yerr=np.sqrt(bh.variances()))
+                _step_with_band(ax, bh, label, color, ls)
         else:
             hep.histplot(
                 bkg_hists,
@@ -252,6 +293,8 @@ def plot_histogram(
                 edgecolor="black",
                 linewidth=0.5,
             )
+            draw_uncertainty_band(ax, _total(bkg_hists), hatch="////",
+                                  label=STAT_LABEL)
 
     # Fill style only for a lone signal; overlaid signals read better as steps.
     solo_signal = not (bkg_samples or data_samples) and len(signal_samples) == 1
@@ -270,13 +313,10 @@ def plot_histogram(
         if solo_signal:
             hep.histplot(sh, ax=ax, histtype="fill", label=label,
                          color=cfg.get("color", "tab:blue"), alpha=0.7, edgecolor="black", linewidth=0.5)
+            draw_uncertainty_band(ax, sh, hatch="////", label=STAT_LABEL)
         else:
-            # sqrt(sum w^2) MC-stat errors; mplhep's default Poisson intervals
-            # draw large upper limits on every empty bin of a weighted hist.
-            hep.histplot(sh, ax=ax, histtype="step", label=label,
-                         color=cfg.get("color", "red"), linewidth=2,
-                         linestyle=cfg.get("linestyle", "-"),
-                         yerr=np.sqrt(sh.variances()))
+            _step_with_band(ax, sh, label, cfg.get("color", "red"),
+                            cfg.get("linestyle", "-"))
 
     for s, dh in zip(data_samples, data_hists):
         cfg = sample_defs.get(s, {})
