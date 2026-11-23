@@ -8,3 +8,6 @@ clusters_zerobias_iso:
   _from: zerobias_2024C
   label: 'ZeroBias: isolated cluster ($\Delta R \geq 0.4$)'
   color: black
+  # Certified (Golden) lumi sections only; the JSON is a copy of the
+  # Cert_Collisions2024_378981_386951_Golden.json DQM publishes.
+  lumi_mask: lumimasks/Cert_Collisions2024_378981_386951_Golden.json

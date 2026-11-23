@@ -164,6 +164,37 @@ def test_a_selection_that_does_not_evaluate_is_fatal():
                  "fine": {"expression": "events.met > 50"}}), "sig")
 
 
+def test_missing_false_turns_an_absent_branch_into_a_failed_cut():
+    """A trigger path the run's menu lacked: False for every event, not an error."""
+    sels = as_selections({
+        "trig": {"expression": "events.HLT.NoSuchPath", "missing": False},
+        "uses_trig": {"expression": "events.trig | (events.met > 50)"},
+    })
+    events = make_events()
+    events = ak.with_field(events, ak.zip({"Other": [True] * len(events)}), "HLT")
+
+    out = attach_selection_columns(events, sels)
+    assert ak.to_list(out.trig) == [False, False, False]
+    # a selection reading it waits for it, then sees the False column
+    assert ak.to_list(out.uses_trig) == [False, True, True]
+
+    defs = {"met_trig": {"expression": "events.met", "bins": 2, "lo": 0, "hi": 200,
+                         "selections": ["trig"]}}
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), sels, out, "s")
+    assert hists["met_trig"][{"dataset": "s"}].sum().value == 0
+
+
+def test_missing_false_forgives_only_an_absent_field():
+    with pytest.raises(FillError, match="ZeroDivisionError"):
+        attach_selection_columns(make_events(), as_selections(
+            {"bad": {"expression": "events.met > (1 / 0)", "missing": False}}))
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="'missing' can only be false"):
+        as_selections({"x": {"expression": "events.met > 0", "missing": True}})
+
+
 def test_selections_may_read_each_other_in_any_order():
     events = attach_selection_columns(make_events(), as_selections({
         "both": {"expression": "events.hard & events.highmet"},

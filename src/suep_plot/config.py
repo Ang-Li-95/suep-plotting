@@ -342,10 +342,11 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
 
 
 # The files a config set is made of.  variables.yaml is optional: a set's own
-# overrides of the global variable catalog (see GLOBAL_VARIABLES).
+# overrides of the global variable catalog (see GLOBAL_VARIABLES); so is
+# overlay.yaml, the ZeroBias overlay of the muon rechits (suep_plot.overlay).
 CONFIG_FILES = ("samples.yaml", "histograms.yaml", "selections.yaml",
                 "corrections.yaml", "reweights.yaml", "derived_plots.yaml",
-                "columns.yaml", "variables.yaml")
+                "columns.yaml", "variables.yaml", "overlay.yaml")
 
 # The variable catalog every set reads: expression, binning and axis title of
 # each variable, written once (next to datasets.yaml at the repo root).

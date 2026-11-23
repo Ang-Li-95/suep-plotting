@@ -198,7 +198,10 @@ def _pairs(sig_keys, args):
             sys_name = _cut_system(cut, args.sig_cut)
             if sys_name is None:
                 continue
-            bkg = {b: f"{region}/{b.replace(SYS, sys_name)}/{leaf}" for b in args.bkg_cut}
+            cuts = list(args.bkg_cut)
+            if getattr(args, "data", None):
+                cuts.append(args.data_cut)
+            bkg = {b: f"{region}/{b.replace(SYS, sys_name)}/{leaf}" for b in cuts}
             out.append((key, bkg, f"{region}/{leaf}"))
         return out
     keys = [k for k in sig_keys if k.endswith(args.suffix)] if args.suffix else sig_keys
@@ -340,6 +343,12 @@ def main():
     p.add_argument("--bkg-colors", nargs="+", default=None,
                    help="colours of the summed background curves, one per --bkg-cut "
                         "(default: the colour cycle)")
+    p.add_argument("--data", nargs="+", default=None, metavar="DATA_OUT",
+                   help="output dir(s) of data runs drawn as points under their own "
+                        "cut (--data-cut), never part of the --bkg-sum: e.g. the "
+                        "ZeroBias clusters next to the summed MC")
+    p.add_argument("--data-cut", default="<SYS>_src",
+                   help="region histograms: the cut of the --data runs")
     p.add_argument("--suffix", default="_matched",
                    help="flat histogram names: signal suffix to pair with the "
                         "background histogram (ignored with --sig-cut)")
@@ -384,8 +393,17 @@ def main():
     if not bkg_names:
         raise SystemExit("background directory contains only signal samples")
 
+    data_all = {}
+    for data_dir in args.data or []:
+        for name, data in style.load_samples(data_dir).items():
+            if name in data_all or name in bkg_all or name in sig_all:
+                raise SystemExit(f"--data sample '{name}' is also an input elsewhere")
+            data_all[name] = data
+    if args.data and not data_all:
+        raise SystemExit(f"no data pickles found in {args.data}")
+
     sample_defs, hist_defs = {}, {}
-    for data in list(sig_all.values()) + list(bkg_all.values()):
+    for data in list(sig_all.values()) + list(bkg_all.values()) + list(data_all.values()):
         sample_defs.update(data.get("samples", {}))
         hist_defs.update(data.get("hist_defs", {}))
     _restyle(sample_defs, hist_defs, args.config_dir)
@@ -439,7 +457,7 @@ def main():
                 cfg["label"] = f"{style.sample_label(sample_defs, sample)}, {cut_label(cut)}"
                 sample_defs[name] = cfg
             curves.append((name, cut, sample))
-    curve_names = [c[0] for c in curves]
+    curve_names = [c[0] for c in curves] + list(data_all)
 
     seps = {}   # {variable: {background curve: separation}}
     for key, bkg_keys, base in pairs:
@@ -462,11 +480,14 @@ def main():
                            for name, cut, sample in curves]
             bkg_slices = collect(bkg_entries, base, hist_cfg, dropped,
                                  sample_of={name: sample for name, _, sample in curves})
+        if data_all and bkg_slices:
+            data_entries = [(n, d, bkg_keys[args.data_cut]) for n, d in data_all.items()]
+            bkg_slices += collect(data_entries, base, hist_cfg, dropped) or []
         if not sig_slices or not bkg_slices:
             continue
         # collect() compares within each side only; the separation is taken
         # bin by bin across the two, so they need the same axis as well.
-        if not same_edges(sig_slices[0][1], bkg_slices[0][1]):
+        if not all(same_edges(sig_slices[0][1], b) for _, b in bkg_slices):
             print(f"  !! signal and background binning differ, skipping {base}")
             continue
         by_bkg = draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest,

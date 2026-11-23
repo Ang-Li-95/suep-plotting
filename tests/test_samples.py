@@ -231,3 +231,39 @@ def test_a_child_override_keeps_what_the_parent_set_over_the_registry(tmp_path):
     assert load_samples(child) == {
         "real": {"files": ["/d"], "label": "custom", "max_files": 3, "color": "red"},
         "other": {"files": ["/o"]}}
+
+
+def test_a_lumi_mask_must_exist_and_sit_on_data(tmp_path):
+    from suep_plot.checks import sample_errors
+
+    good = tmp_path / "golden.json"
+    good.write_text('{"1": [[1, 10]]}')
+    samples = {"data": {"files": ["/d"], "is_data": True, "lumi_mask": str(good)},
+               "mc": {"files": ["/m"], "lumi_mask": str(good)},
+               "typo": {"files": ["/d"], "is_data": True,
+                        "lumi_mask": str(tmp_path / "nope.json")}}
+
+    errors = sample_errors(samples)
+    assert len(errors) == 2
+    assert "'mc': lumi_mask on a sample that is not is_data" in errors[0]
+    assert "'typo': lumi_mask file not found" in errors[1]
+
+
+def test_the_shipped_golden_json_keeps_only_certified_lumi_sections():
+    """The processor's mask, on the copy in lumimasks/."""
+    import json
+
+    import numpy as np
+
+    from suep_plot.inputs import lumi_mask_path
+    from suep_plot.processor import SuepProcessor
+
+    mask = "lumimasks/Cert_Collisions2024_378981_386951_Golden.json"
+    cert = json.loads(lumi_mask_path(mask).read_text())
+    run = sorted(cert)[0]
+    first, last = cert[run][0]
+
+    proc = SuepProcessor({}, {}, {}, {})
+    keep = proc._lumi_mask(mask)(np.array([int(run)] * 3 + [1]),
+                                 np.array([first, last, last + 10_000, 1]))
+    assert list(keep) == [True, True, False, False]

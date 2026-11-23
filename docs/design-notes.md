@@ -23,6 +23,7 @@ package, see [configuration.md](configuration.md) and [running.md](running.md).
 | `plot.py` | `plot_all` (`suep-plot`) |
 | `slurm.py`, `status.py` | submission, completion check, resubmission |
 | `corrections.py`, `reweights.py`, `jme.py` | scale factors, reweights, JEC/JER |
+| `overlay.py`, `overlay_pool.py`, `propagation.py` | `overlay.yaml`: cleaning the simulated muon rechits and adding ZeroBias ones; which ZeroBias event goes with which simulated one; the helix model behind the cleaning |
 | `cli.py`, `configtool.py` | the commands |
 | `custom/` | the MDS derived columns: `columns.py` (pipeline), `clustering.py`, `llp.py`, `helpers.py`, `params.py` |
 
@@ -157,6 +158,63 @@ subtraction is applied here (mean `muonSubtrFactor` about 0.012, a ~1 %
 effect) while the production term closes without it; and for PUPPI the L1
 factor is exactly 1.0, so `pT_L2L3Res - pT_L1` reduces to the correction
 above raw.
+
+## The ZeroBias overlay (`overlay.py`, `overlay_pool.py`, `propagation.py`)
+
+- **Before `derive()`, in the processor.** The overlay changes the rechits
+  the clusters are built from, so it runs on the chunk as read, right after
+  the lumi mask, and `check_expressions` runs it too so expressions on its
+  fields validate. It is an input step like the lumi mask, not a derived
+  column: `derive()` knows nothing about it.
+- **The removed hits stay visible.** `<collection>MC` keeps the input with
+  `cleanKeep`, so what the cleaning removed can be plotted against truth
+  without a second run (`configs_noise_cleaning`).
+- **The propagation is a port, not a rewrite.** `propagation.bend_dphi` keeps
+  the DY noise study's arithmetic in its order and dtypes (float32
+  kinematics, integer charge), and `tests/test_propagation.py` pins it bit for
+  bit against the study's `bend_dphi_z`. The cleaning was validated against
+  the study's numbers; a tidier expression could move a hit across dR 0.4.
+- **One numpy pass per chunk.** The study loops over events with
+  (hits x particles) matrices; `_min_over_pairs` builds every pair of the
+  chunk with `ak.cartesian` and flattens them, so the per-pair formula runs
+  once on plain arrays.
+- **No ZeroBias event twice within a sample, decided up front.** A sample is
+  up to 1000 independent array tasks, chunked, run in any order and
+  resubmitted. Random draws per task would collide: `wlnu_1j` alone is ~48M
+  events against a pool of ~540M certified ones, about 2M repeated pairs. So
+  the pairs are fixed before any task runs (`overlay_pool`):
+  1. per sample, the P pool files are shuffled (seed: the run's seed and the
+     sample name) and cut into one disjoint block of k = P // G files per MC
+     file, so two MC files never share a ZeroBias file;
+  2. MC file g reads its block as a stream s_g: the files in that order, and
+     in each the certified entries, shuffled by a splitmix64 hash of (seed,
+     file, entry);
+  3. MC entry j is paired with s_g[j]. j is the entry number in the MC file,
+     so neither the chunk size nor the task order can change a pair.
+
+  With P = 29,180 and G <= 1000, a block is >= 29 files, ~540k certified
+  events, against <= 57k events in one MC file. Only if a file outgrew its
+  block would s_g wrap around, and those events are flagged `reused`.
+- **The plans are frozen files, not a function of the inputs.** The block
+  assignment depends on the sample's file list, which grows while CRAB
+  delivers. `<run>/overlay/` stores the pool list and every block explicitly
+  (no numpy stream to re-derive, so a numpy upgrade cannot move a pair), is
+  written once with an atomic hard link, and a file not in it is refused.
+- **The seed comes from the clock.** Each new run directory pairs
+  differently (the user's choice); the seed is in `pool.json`, so a run can
+  still be repeated and audited.
+- **Shuffled inside a file, at a cost.** Consecutive entries of a ZeroBias
+  file share lumi sections. Shuffling them means a chunk needs entries from
+  all over the file, so a touched file is read whole (only the rechit,
+  Jet, Muon and event-id branches, in steps of 5000 entries), and a file
+  shared by two chunks may be read twice.
+- **DataClean reuses the set's own definitions.** The ZeroBias prompt objects
+  are the cluster isolation's `jet_sel_foriso` / `muon_sel_foriso`, with the
+  jet ID from the set's `derive()` run with only the `jet_id` step, so "near
+  a jet" means the same for a rechit as for a cluster and nothing is copied.
+- **Merged rechits are plain records.** The simulated half carries NanoEvents
+  parameters the ZeroBias half lacks; concatenated as they are, awkward would
+  make a union type. Both halves are rebuilt from the same field list first.
 
 ## Clustering (`custom/clustering.py`)
 

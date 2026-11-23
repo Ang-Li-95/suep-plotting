@@ -1,0 +1,7 @@
+_extends: ../configs_mds_src_bkg
+
+# ── Where a merged rechit came from (overlay.yaml) ────────────────
+overlay_csc_from_mc: {label: from simulation, expression: ~events.cscRechits.fromZeroBias}
+overlay_csc_from_zb: {label: from ZeroBias, expression: events.cscRechits.fromZeroBias}
+overlay_rpc_from_mc: {label: from simulation, expression: ~events.rpcRecHits.fromZeroBias}
+overlay_rpc_from_zb: {label: from ZeroBias, expression: events.rpcRecHits.fromZeroBias}

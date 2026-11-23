@@ -141,6 +141,7 @@ def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
     """Static checks, then (unless *static*) every expression on one file per sample."""
     from .checks import check_expressions, config_warnings, load_and_validate
     from .inputs import resolve_sample_files, select_samples
+    from .overlay import overlay_preview
 
     rc = 0
     for cdir in config_dirs:
@@ -159,6 +160,7 @@ def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
             if remote:
                 from .slurm import ensure_proxy
                 ensure_proxy(need_seconds=60)
+            first_files = {}
             for name, cfg in chosen.items():
                 try:
                     files = resolve_sample_files(cfg)[:1]
@@ -169,12 +171,23 @@ def check(config_dirs: list[str], static: bool = False, samples=None) -> int:
                 if not files:
                     errors.append(f"[{name}] no input files resolved")
                     continue
+                first_files[name] = files[0]
+            # No run directory here: ZeroBias partners come from a preview.
+            try:
+                overlay = overlay_preview(cs, {
+                    name: f for name, f in first_files.items()
+                    if not chosen[name].get("is_data", False)})
+            except (SystemExit, Exception) as e:  # noqa: BLE001 - reported
+                errors.append(f"overlay.yaml: cannot set up the overlay: {e}")
+                first_files = {}
+            for name, first_file in first_files.items():
+                cfg = chosen[name]
                 errors += [f"[{name}] {p}" for p in check_expressions(
-                    files, cfg.get("tree", "Events"), cs.histograms,
+                    [first_file], cfg.get("tree", "Events"), cs.histograms,
                     cs.selections, cs.corrections, cs.derive_fn,
                     cs.reweighters, cs.settings, sample=name,
                     is_data=cfg.get("is_data", False),
-                    group=cfg.get("group", ""))]
+                    group=cfg.get("group", ""), overlay=overlay)]
                 checked.append(name)
         status = "FAILED" if errors else "OK"
         detail = (f"; expressions evaluated on one file of {len(checked)} sample(s)"
@@ -220,6 +233,7 @@ def fields(config_dir: str, sample: str, n: int = 1000, grep: str | None = None,
     from .configset import load_config_set
     from .fill import prepare_events
     from .inputs import open_events, resolve_sample_files, select_samples
+    from .overlay import overlay_preview
 
     cs = load_config_set(config_dir)
     cfg = select_samples(cs.samples, [sample])[sample]
@@ -231,6 +245,9 @@ def fields(config_dir: str, sample: str, n: int = 1000, grep: str | None = None,
         ensure_proxy(need_seconds=60)
     print(f"{sample}: first {n} events of {files[0]}")
     events = open_events(files[0], cfg.get("tree", "Events"), n)
+    overlay = overlay_preview(cs, {sample: files[0]})
+    if overlay is not None and not cfg.get("is_data", False):
+        events = overlay.apply(events, sample, files[0], 0, len(events))
     events = prepare_events(events, cs.derive_fn, cs.settings,
                             cs.selections, sample)
     pattern = re.compile(grep) if grep else None

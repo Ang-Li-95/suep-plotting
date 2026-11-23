@@ -1,0 +1,36 @@
+# ── The cleaning's decision per rechit, against the truth label ───
+# One region per system.  Each object cut fills the same position variables,
+# so derived_plots.yaml can draw efficiency (hard_kept / hard) and purity
+# (hard_kept / kept) against each of them, as the study's figures do; the
+# integrals of the same histograms are what scripts/compare_cleaning.py
+# compares with the study's summary.
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, SYSU: CSC, VARS: [csc_mc_rechit_eta, csc_mc_rechit_phi, csc_mc_rechit_absz]}
+  - {SYS: dt, SYSU: DT, VARS: [dt_mc_rechit_eta, dt_mc_rechit_phi, dt_mc_rechit_r]}
+  - {SYS: rpc, SYSU: RPC, VARS: [rpc_mc_rechit_eta, rpc_mc_rechit_phi, rpc_mc_rechit_r, rpc_mc_rechit_absz]}
+
+regions:
+  _repeat:
+  - over: systems
+    defs:
+      <SYS>:
+        label: <SYSU> rechits before the cleaning
+        evt_vars: [<SYS>_n_nonhard_kept]
+        objects:
+          all:
+            vars: <VARS>
+          hard:
+            cut: <SYS>_hard
+            vars: <VARS>
+          kept:
+            cut: <SYS>_kept
+            vars: <VARS>
+          hard_kept:
+            cut: <SYS>_hard_kept
+            vars: <VARS>
+          nonhard_kept:
+            cut: <SYS>_nonhard_kept
+            vars: <VARS>

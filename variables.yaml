@@ -30,6 +30,9 @@ csc_cluster_layer_hits_relrms: {expression: events.cscCluster.layerHitsRelRMS, b
 csc_cluster_layer_hits_rms: {expression: events.cscCluster.layerHitsRMS, bins: [40, 0, 80], label: 'CSC cluster RMS($N_{\mathrm{hits}}/\mathrm{chamber}$)', log_y: true}
 csc_cluster_max_layer_frac: {expression: events.cscCluster.maxLayerFrac, bins: [21, 0, 1.05], label: CSC cluster max chamber hit fraction}
 csc_cluster_max_station_frac: {expression: events.cscCluster.maxStationFrac, bins: [21, 0, 1.05], label: CSC cluster max station hit fraction}
+csc_cluster_me1_frac: {expression: events.cscCluster.station1Frac, bins: [21, 0, 1.05], label: CSC cluster hit fraction in ME1}
+csc_cluster_me11_frac: {expression: events.cscCluster.chamber11Frac, bins: [21, 0, 1.05], label: CSC cluster hit fraction in ME1/1}
+csc_cluster_me12_frac: {expression: events.cscCluster.chamber12Frac, bins: [21, 0, 1.05], label: CSC cluster hit fraction in ME1/2}
 csc_cluster_max_zlayer_frac: {expression: events.cscCluster.maxZLayerFrac, bins: [21, 0, 1.05], label: CSC cluster max z-layer hit fraction}
 csc_cluster_n: {expression: ak.num(events.cscCluster), bins: [6, 0, 6], label: '$N_{\mathrm{CSC\ clusters}}$', log_y: true}
 csc_cluster_n_matched: {expression: 'ak.sum(events.cscCluster.matched, axis=1)', bins: [6, -0.5, 5.5], label: '$N_{\mathrm{CSC\ clusters}}$ matched to an LLP', log_y: true}
@@ -73,6 +76,9 @@ dt_cluster_layer_hits_relrms: {expression: events.dtCluster.layerHitsRelRMS, bin
 dt_cluster_layer_hits_rms: {expression: events.dtCluster.layerHitsRMS, bins: [40, 0, 10], label: 'DT cluster RMS($N_{\mathrm{hits}}/\mathrm{layer}$)', log_y: true}
 dt_cluster_max_layer_frac: {expression: events.dtCluster.maxLayerFrac, bins: [21, 0, 1.05], label: DT cluster max layer hit fraction}
 dt_cluster_max_station_frac: {expression: events.dtCluster.maxStationFrac, bins: [21, 0, 1.05], label: DT cluster max station hit fraction}
+dt_cluster_mb1_frac: {expression: events.dtCluster.station1Frac, bins: [21, 0, 1.05], label: DT cluster hit fraction in MB1}
+dt_cluster_mb11_frac: {expression: events.dtCluster.chamber11Frac, bins: [21, 0, 1.05], label: 'DT cluster hit fraction in MB1, |wheel|=1'}
+dt_cluster_mb12_frac: {expression: events.dtCluster.chamber12Frac, bins: [21, 0, 1.05], label: 'DT cluster hit fraction in MB1, |wheel|=2'}
 dt_cluster_n: {expression: ak.num(events.dtCluster), bins: [6, 0, 6], label: '$N_{\mathrm{DT\ clusters}}$', log_y: true}
 dt_cluster_n_matched: {expression: 'ak.sum(events.dtCluster.matched, axis=1)', bins: [6, -0.5, 5.5], label: '$N_{\mathrm{DT\ clusters}}$ matched to an LLP', log_y: true}
 dt_cluster_n_rpc_hits: {expression: events.dtCluster.nRPCHits, bins: [50, 0, 100], label: 'DT cluster $N_{\mathrm{RPC\ hits}}$', log_y: true}

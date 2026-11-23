@@ -30,8 +30,10 @@ from .checks import check_expressions, static_errors
 from .config import fill_sources
 from .configset import load_config_set
 from .corrections import apply_corrections, build_correctors, correction_weights
-from .fill import build_histograms, compile_expr, fill_histograms, prepare_events
-from .inputs import file_specs, resolve_sample_files, select_samples
+from .fill import build_histograms, fill_histograms, prepare_events, selection_mask
+from .inputs import file_specs, lumi_mask_path, resolve_sample_files, select_samples
+from .overlay import overlay_for_run
+from .overlay_pool import load_sample_plan, plan_dir, pool_definition, prepare_plans
 from .reweights import apply_reweights, reweight_weights
 from .status import output_name
 
@@ -62,7 +64,7 @@ class SuepProcessor(processor.ProcessorABC):
     """Fill YAML-defined histograms for one sample chunk."""
 
     def __init__(self, hist_defs, sel_defs, correctors, sample_defs, derive_fn=None,
-                 reweighters=None, settings=None):
+                 reweighters=None, settings=None, overlay=None):
         self.hist_defs = hist_defs
         self.sel_defs = sel_defs
         self.correctors = correctors
@@ -72,12 +74,27 @@ class SuepProcessor(processor.ProcessorABC):
         # The resolved columns.yaml.  Pickled to the workers along with the
         # rest of the processor, so a worker cannot run on other settings.
         self.settings = settings
+        # The set's overlay.Overlay (overlay.yaml), or None.
+        self.overlay = overlay
 
     def process(self, events):
         dataset = events.metadata["dataset"]
         cfg = self.sample_defs.get(dataset, {})
         is_data = cfg.get("is_data", False)
         group = cfg.get("group", "")
+
+        # Certified lumi sections only, before anything is derived: the
+        # clustering of a rejected event would be wasted work.
+        n_read = len(events)
+        if cfg.get("lumi_mask"):
+            events = events[self._lumi_mask(cfg["lumi_mask"])(
+                events.run, events.luminosityBlock)]
+
+        # The muon rechits are rebuilt before anything is derived from them.
+        if self.overlay is not None and not is_data:
+            meta = events.metadata
+            events = self.overlay.apply(events, dataset, meta["filename"],
+                                        meta["entrystart"], meta["entrystop"])
 
         events = prepare_events(events, self.derive_fn, self.settings,
                                 self.sel_defs, dataset)
@@ -111,6 +128,11 @@ class SuepProcessor(processor.ProcessorABC):
                                     named_weights=named_weights, layout=layout)
 
         cutflow = self._cutflow(events, sel_cache, wvec, n)
+        if cfg.get("lumi_mask"):
+            # what the lumi mask removed: 'read' before it, 'total' after
+            cutflow = {"read": {"raw": int(n_read), "wtd": float(n_read)}, **cutflow}
+        if "overlay" in events.fields:
+            cutflow["overlay_zb_reused"] = self._reused_partners(events, wvec)
 
         sumw = 0.0 if is_data else float(ak.sum(events.genWeight))
         return {
@@ -122,6 +144,30 @@ class SuepProcessor(processor.ProcessorABC):
             "layout": {"object": {k for k, v in layout.items() if v},
                        "event": {k for k, v in layout.items() if not v}},
         }
+
+    def _lumi_mask(self, mask: str):
+        """The coffea LumiMask of a certification JSON, built once per worker."""
+        from coffea.lumi_tools import LumiMask
+
+        cache = self.__dict__.setdefault("_lumi_masks", {})
+        if mask not in cache:
+            cache[mask] = LumiMask(str(lumi_mask_path(mask)))
+        lumi_mask = cache[mask]
+
+        def keep(run, lumi):
+            return lumi_mask(np.asarray(run, dtype=np.uint32),
+                             np.asarray(lumi, dtype=np.uint32))
+        return keep
+
+    @staticmethod
+    def _reused_partners(events, wvec):
+        """Events whose ZeroBias partner is used twice (their MC file outgrew
+        its block of ZeroBias files): counted, and warned about."""
+        reused = np.asarray(events.overlay.reused, dtype=bool)
+        if reused.any():
+            print(f"WARNING: overlay: {int(reused.sum())} event(s) of "
+                  f"{events.metadata['filename']} reuse a ZeroBias event")
+        return {"raw": int(reused.sum()), "wtd": float(wvec[reused].sum())}
 
     def _cutflow(self, events, sel_cache, wvec, n):
         """Raw and weighted event counts passing each named selection.
@@ -135,7 +181,7 @@ class SuepProcessor(processor.ProcessorABC):
             if sel is None:
                 # Already evaluated once as a selection column, so this cannot
                 # fail where the fill did not.
-                sel = compile_expr(selection.expression)(events)
+                sel = selection_mask(selection, events)
                 if isinstance(sel, ak.Array):
                     sel = ak.fill_none(sel, False)
             if isinstance(sel, ak.Array) and sel.ndim > 1:
@@ -146,6 +192,33 @@ class SuepProcessor(processor.ProcessorABC):
 
     def postprocess(self, accumulator):
         return accumulator
+
+
+def _prepare_overlay_plans(cs, output_dir: Path, todo, all_files: dict,
+                           make_missing: bool) -> None:
+    """Make (*make_missing*) or require the run's ZeroBias pairing plans.
+
+    Every simulated file about to be processed must be in its sample's plan:
+    a plan is frozen once made, so a file that appeared later is refused here
+    rather than on its first chunk.
+    """
+    if cs.overlay is None or cs.overlay.zerobias is None:
+        return
+    simulated = [(name, files) for name, cfg, files, _, _ in todo
+                 if not cfg.get("is_data", False)]
+    if not simulated:
+        return
+    source = cs.overlay.zerobias
+    if make_missing:
+        prepare_plans(output_dir, source.pool, source.lumi_mask,
+                      {name: all_files[name] for name, _ in simulated})
+    for name, files in simulated:
+        plan = load_sample_plan(plan_dir(output_dir), name)
+        try:
+            for path in files:
+                plan.block_of(path)
+        except ValueError as e:
+            raise SystemExit(f"ERROR: {e}") from None
 
 
 def _inputs_mtime(files: list[str], config_dir: Path,
@@ -230,12 +303,12 @@ def run_all(
 
     remote = (file_list or []) + [s for cfg in sample_defs.values()
                                   for s in file_specs(cfg)]
+    if cs.overlay is not None and cs.overlay.zerobias is not None:
+        remote += file_specs(pool_definition(cs.overlay.zerobias.pool))
     if any("://" in f for f in remote):
         from .slurm import ensure_proxy
         ensure_proxy(need_seconds=60)
 
-    proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
-                         reweighters, settings)
     rw_files = tuple(str(rw.include_path) for rw in reweighters.values()
                      if rw.include_path is not None)
     if workers and workers > 1:
@@ -248,6 +321,7 @@ def run_all(
     print(f"Processing {len(sample_defs)} sample(s), {len(hist_defs)} histogram(s)")
 
     todo = []
+    all_files = {}       # sample -> its whole file list, before --file-range
     for name, cfg in sample_defs.items():
         # A caller-supplied list is already resolved: no directory walk here,
         # so a shard processes exactly the files it was submitted with.
@@ -258,6 +332,7 @@ def run_all(
                 print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
                 continue
             files = resolve_sample_files(cfg)
+            all_files[name] = files
         tree = cfg.get("tree", "Events")
         if not files:
             print(f"  WARNING: no files resolved for '{name}', skipping")
@@ -278,6 +353,14 @@ def run_all(
                 continue
         todo.append((name, cfg, files, tree, out_path))
 
+    # The ZeroBias pairs are fixed before anything is processed: made here for
+    # a direct run, by suep-submit for its array tasks (which get a file_list).
+    _prepare_overlay_plans(cs, output_dir, todo, all_files,
+                           make_missing=file_list is None)
+    overlay = overlay_for_run(cs, output_dir)
+    proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
+                         reweighters, settings, overlay=overlay)
+
     # Every expression on the first file of every sample, before any of them
     # is processed: a failure is fatal in the fill, so better all at once now.
     problems = []
@@ -285,7 +368,7 @@ def run_all(
         problems += [f"  [{name}] {p}" for p in check_expressions(
             files, tree, hist_defs, sel_defs, corr_defs, derive_fn, reweighters,
             settings, sample=name, is_data=cfg.get("is_data", False),
-            group=cfg.get("group", ""))]
+            group=cfg.get("group", ""), overlay=overlay)]
     if problems:
         raise SystemExit("ERROR: config expressions that do not work (checked on "
                          "the first events of each sample's first file):\n"

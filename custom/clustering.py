@@ -324,6 +324,7 @@ _POSITION_FIELDS = ("size", "eta", "phi", "x", "y", "z", "r", "etaSpread",
                     "phiSpread", "rSpread", "zSpread")
 _STATION_FIELDS = ("nStation", "stationSpan", "avgStation", "maxStationFrac")
 _FIRST_HIT_FIELDS = ("firstChamber", "firstStation")
+_INNER_FIELDS = ("station1Frac", "chamber11Frac", "chamber12Frac")
 _TRUTH_FIELDS = ("nMatchedHits", "matchedLLPIdx", "matched", "nMatchedLLP", "hasTruth")
 _TIME_FIELDS = ("time", "timeSpread", "ootHitFrac")
 
@@ -348,7 +349,8 @@ def _unit_fields(unit: str) -> tuple:
 def _cluster_fields(has_time: bool, merged: bool) -> list:
     """The per-cluster scalar fields, in the order of the cluster record."""
     fields = [*_POSITION_FIELDS, *_STATION_FIELDS, *_unit_fields("Layer"),
-              *_unit_fields("ZLayer"), *_FIRST_HIT_FIELDS, *_TRUTH_FIELDS]
+              *_unit_fields("ZLayer"), *_FIRST_HIT_FIELDS, *_INNER_FIELDS,
+              *_TRUTH_FIELDS]
     if has_time:
         fields += _TIME_FIELDS
     if merged:
@@ -392,6 +394,23 @@ def _stations(station) -> dict:
         "avgStation": float(st.mean()),
         "maxStationFrac": float(counts.max() / counts.sum()),
     }
+
+
+def _inner_chambers(station, chamber) -> dict:
+    """Fraction of the hits in station 1 and in its two innermost chambers.
+
+    The chamber codes of :func:`_flat_chamber_code`: 11 / 12 are ME1/1 / ME1/2
+    for CSC and MB1 at |wheel| 1 / 2 for DT.  Takes the cluster's own-system
+    hits only (a merged cluster's RPC hits are left out), so the fractions are
+    of the CSC or DT hits.  A merged cluster of RPC hits alone has none: NaN,
+    as for the RPC timing of a cluster without RPC hits.
+    """
+    n = len(station)
+    if n == 0:
+        return dict.fromkeys(_INNER_FIELDS, float("nan"))
+    return {"station1Frac": float(np.count_nonzero(np.abs(station) == 1) / n),
+            "chamber11Frac": float(np.count_nonzero(chamber == 11) / n),
+            "chamber12Frac": float(np.count_nonzero(chamber == 12) / n)}
 
 
 def _hits_per_unit(keys, unit: str) -> dict:
@@ -489,6 +508,8 @@ def _one_cluster(c: dict, has_truth: bool, has_time: bool, merged: bool,
     row.update(_hits_per_unit(c["zlayerkey"], "ZLayer"))
     first_hit, first = _first_hit(c["dist"], c["chamber"], c["station"])
     row.update(first_hit)
+    own = c["source"] == primary_code if merged else slice(None)
+    row.update(_inner_chambers(c["station"][own], c["chamber"][own]))
     truth, all_idx, all_hits = _truth_match(c["llpidx"], settings["match_min_hits"])
     row.update(truth, hasTruth=has_truth)
     if has_time:

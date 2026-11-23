@@ -47,6 +47,7 @@ def _resolved_columns(config_dir: Path) -> dict:
 
 
 def dump(config_dir: Path) -> dict:
+    from suep_plot.config import load_config_file
     from suep_plot.corrections import load_correction_defs
     from suep_plot.histdefs import (load_histogram_defs, load_selection_defs,
                                     load_variables)
@@ -67,6 +68,7 @@ def dump(config_dir: Path) -> dict:
         "reweights": lambda p: load_reweight_defs(p / "reweights.yaml"),
         "derived_plots": lambda p: load_derived_plot_defs(str(p / "derived_plots.yaml")),
         "columns": lambda p: load_columns_config(p / "columns.yaml"),
+        "overlay": lambda p: load_config_file(p / "overlay.yaml"),
         # The catalog the set sees: the global variables.yaml + its overrides.
         "variables": load_variables,
         # The settings derive() actually runs on, not the YAML that produced

@@ -13,7 +13,8 @@ configs/configs_mds_signal/
 ├── reweights.yaml       # event-/object-level reweighting
 ├── derived_plots.yaml   # efficiencies, ratios, profiles ... at plot time
 ├── columns.yaml         # derive() parameters and steps -- see derived-columns.md
-└── variables.yaml       # optional: this set's overrides of the variable catalog
+├── variables.yaml       # optional: this set's overrides of the variable catalog
+└── overlay.yaml         # optional: rebuild the MC muon rechits (ZeroBias overlay)
 ```
 
 Every file is read by `src/suep_plot/config.py`, so the directives below mean
@@ -66,9 +67,11 @@ configs_mds_signal/           + LLP collection, truth cuts, efficiency chain
 configs_mds_data/             + the isolation cuts
   └── configs_mds_rpcmerge_data/
 configs_mds_src_bkg/          cluster sources: three populations x four event regions
-  └── configs_mds_src_dy/     the same on DY (set.yaml + samples.yaml)
+  ├── configs_mds_src_dy/     the same on DY (set.yaml + samples.yaml)
+  └── configs_mds_src_bkg_zb/ muon rechits overlaid from ZeroBias (+ overlay.yaml, overlay region)
 configs_mds_gen, _cosmics, _objects, _trigger, configs_mds_src_signal,
-  _src_zerobias, _src_cosmics, configs_dy_noise   (standalone)
+  _src_zerobias, _src_cosmics, configs_dy_noise,
+  configs_noise_cleaning      (standalone; the last checks overlay.yaml's cleaning)
 ```
 
 What used to be shared is now repeated, so keep it in step by hand when it
@@ -317,6 +320,18 @@ column:
 has_muon_sel: "ak.any(events.muon_sel_foriso, axis=1)"   # event-level
 ```
 
+A selection that reads a branch some files do not have fails the run, as any
+expression does. The exception is `missing: false`: an absent branch then
+makes the cut False for every event of that file. It exists for trigger
+paths, which NanoAOD writes only for runs whose menu had them:
+
+```yaml
+trig_dt: {expression: events.HLT.L1MET_DTCluster50, missing: false}
+```
+
+Only an absent field is forgiven; any other error still stops the run. An OR
+of several paths fails as a whole when one of them is absent.
+
 ### Selections as columns
 
 Every selection is also attached to `events` as a **column of its own name**,
@@ -364,6 +379,14 @@ dy_2mu_50to120:
   process: qcd                 # optional: the physics process this dataset is one bin of
   process_label: QCD multijet  # optional: the label of that process
 ```
+
+A data sample can carry `lumi_mask: lumimasks/<certification>.json` (a path
+absolute or relative to the repository): only the certified lumi sections are
+processed, cut before the derived columns are computed. Its cutflow then
+starts with `read` (events read) ahead of `total` (events kept). `suep-config
+check` reports a mask that does not exist or sits on a simulated sample.
+`lumimasks/` holds copies of the DQM JSONs, so a run does not follow cvmfs'
+moving `latest` link.
 
 `process` is for a process split into HT or jet-multiplicity bins, each a
 dataset with its own `xs`. `suep-plot --lumi` scales every bin by its own
@@ -533,6 +556,73 @@ eff_trigger:
   numerator: hlt_csccluster_loose/evt_max_csc_cluster_size
   denominator: csc/evt_max_csc_cluster_size
 ```
+
+---
+
+## `overlay.yaml`
+
+Rebuilds the CSC, DT and RPC rechits of every **simulated** sample of the set
+before anything is derived from them (`src/suep_plot/overlay.py`): the
+simulated rechits that look like the hard process are kept, and the rechits
+of a certified ZeroBias event are added in place of the simulated pileup and
+noise. Data samples are untouched, and so is every other collection.
+
+```yaml
+mc_clean:
+  csc_tpeak: [-30, 40]   # ns: kept when -30 < Tpeak < 40
+  rpc_bx: [0, 1]         # kept bunch crossings
+  dr: 0.4                # max dR to a gen jet or a reachable gen muon
+  genjet_pt: 10          # GeV: gen jets above this count
+add_zerobias: true       # false: clean only, add nothing (configs_noise_cleaning)
+zerobias:                # required with add_zerobias: true, an error otherwise
+  pool: zerobias_2024    # the datasets.yaml entry the events are drawn from
+  lumi_mask: lumimasks/Cert_Collisions2024_378981_386951_Golden.json
+  data_clean: {dr: 0.4}  # or false
+```
+
+All keys are required; an unknown key is an error.
+
+**Cleaning (`mc_clean`).** A simulated rechit is kept when it is **in time**
+(CSC `Tpeak` window, RPC `Bx`; DT rechits carry no time and pass) **and**
+within `dr` of a `GenJet` above `genjet_pt` (plain dR to the jet axis) **or**
+of a reachable gen muon. The gen muons are the status-1 muons of
+`SUEPGenPart` (or `GenPart`) that can reach the chambers (|eta| < 2.5; pT > 3
+GeV below |eta| 0.9, pT > 2.5 GeV up to 1.2, p > 2.5 GeV beyond), and their
+phi is bent to each hit with the 3D helix model of the DY noise study
+(`src/suep_plot/propagation.py`). The values above are the study's working
+point (`Generation/DYNoiseStudy/analysis/plot_matching_performance.py`);
+`configs/configs_noise_cleaning` reproduces its efficiency and purity on its
+own premix_truth events (`python scripts/compare_cleaning.py <run_dir>`).
+
+**Picking (`zerobias`).** Every simulated event gets one event of the `pool`
+in a lumi section the `lumi_mask` certifies, and within a sample no ZeroBias
+event is used twice. The pairs are fixed before anything runs, in the run
+directory's `overlay/` (see [running.md](running.md#where-outputs-go) and
+[design-notes.md](design-notes.md#the-zerobias-overlay-overlaypy-overlay_poolpy-propagationpy)
+for how). If a simulated file ever had more events than the ZeroBias files set
+aside for it, its partners would repeat: such events have
+`events.overlay.reused` and are counted in the cutflow as `overlay_zb_reused`.
+
+**DataClean (`data_clean`).** With `{dr: ...}`, the ZeroBias rechits within
+`dr` of that event's own `jet_sel_foriso` jets (plain dR) or `muon_sel_foriso`
+muons (phi bent, as above) are dropped; the set must define both selections
+(with `collection:`). The jet ID they read is computed by the `jet_id` step;
+no JEC is rerun on the ZeroBias jets, so their pT is the stored NanoAOD one.
+
+What the events then hold, per system (`cscRechits`, `dtRecHits`,
+`rpcRecHits`):
+
+| Collection | Content |
+|---|---|
+| `<collection>` | the merged rechits: the kept simulated ones, then the kept ZeroBias ones, each with `fromZeroBias`; what the clustering reads |
+| `<collection>MC` | every simulated rechit as read, with the cleaning's decision `cleanKeep` |
+| `<collection>ZB` | every rechit of the ZeroBias partner, with DataClean's decision `dataCleanKeep` (all True when off) |
+| `overlay` | per event: the partner's `run`, `luminosityBlock`, `event`, and `reused` |
+
+The simulated and ZeroBias rechits must carry the same fields; the signal
+samples' truth fields (`llpIdx`, ...) are therefore refused for now. Not
+overlaid: segments, the HLT MDS clusters and the trigger decisions, which stay
+the simulated ones.
 
 ---
 

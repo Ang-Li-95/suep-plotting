@@ -237,6 +237,8 @@ def submit_jobs(
     output_dir = Path(output_dir).resolve()
 
     from .inputs import load_samples, resolve_sample_files, select_samples
+    from .overlay import load_overlay_config
+    from .overlay_pool import prepare_plans
 
     samples = select_samples(load_samples(config_dir / "samples.yaml"),
                              samples_filter)
@@ -261,12 +263,15 @@ def submit_jobs(
     # Each task is (sample, part, files); part is None when unsplit.
     tasks: list[tuple[str, int | None, list[str]]] = []
     n_files = []
+    simulated_files = {}     # sample -> files, for the overlay's pairing plans
     print("Resolving sample files...")
     for name, cfg in samples.items():
         files = resolve_sample_files(cfg)
         if not files:
             print(f"  WARNING: sample '{name}' has no files, skipping")
             continue
+        if not cfg.get("is_data", False):
+            simulated_files[name] = files
         per_job = files_per_job or cfg.get("files_per_job")
         step = int(per_job) if per_job else len(files)
         shards = [files[i:i + step] for i in range(0, len(files), step)]
@@ -287,6 +292,13 @@ def submit_jobs(
 
     for d in (work_dir, log_dir, list_dir):
         d.mkdir(parents=True, exist_ok=True)
+
+    # The ZeroBias pairs of every task are fixed now, before any task runs:
+    # the tasks only read the plans, so they cannot disagree.
+    overlay = load_overlay_config(config_dir / "overlay.yaml")
+    if overlay is not None and overlay.zerobias is not None and simulated_files:
+        prepare_plans(output_dir, overlay.zerobias.pool, overlay.zerobias.lumi_mask,
+                      simulated_files)
 
     task_list = work_dir / "task_list.txt"
     with open(task_list, "w") as f:

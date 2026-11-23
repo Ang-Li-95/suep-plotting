@@ -578,6 +578,22 @@ def test_first_hit_is_the_one_closest_to_the_interaction_point():
     assert clusters[0].firstStation[0] == 1
 
 
+def test_inner_chamber_fractions_count_station_1_and_its_two_inner_chambers():
+    """station1Frac / chamber11Frac / chamber12Frac: shares of the hits."""
+    hits = [(200.0, 0.0, 600.0, 1, 11),
+            (201.0, 1.0, 610.0, 1, 11),
+            (202.0, 2.0, 700.0, 1, 12),
+            (203.0, 3.0, 800.0, 2, 21)]
+
+    clusters = columns._cluster_system(_csc_rechits(hits), None, eps=0.4,
+                                       min_samples=3, settings=DEFAULTS)
+
+    assert len(clusters[0]) == 1
+    assert clusters[0].station1Frac[0] == pytest.approx(0.75)
+    assert clusters[0].chamber11Frac[0] == pytest.approx(0.5)
+    assert clusters[0].chamber12Frac[0] == pytest.approx(0.25)
+
+
 def test_no_module_holds_settings_of_its_own():
     """The settings travel with the work; no helper reads module state.
 

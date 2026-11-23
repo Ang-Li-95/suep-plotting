@@ -17,6 +17,7 @@ from .config import REPO_ROOT, load_config_file
 from .corrections import load_correction_defs
 from .histdefs import load_histogram_defs, load_selection_defs
 from .inputs import load_samples
+from .overlay import OverlayConfig, load_overlay_config
 from .reweights import build_reweighters, load_reweight_defs
 
 
@@ -33,6 +34,7 @@ class ConfigSet:
     derive_fn: Callable | None    # custom/columns.py's derive()
     settings: object              # the resolved columns.yaml derive() runs on
     validate_fn: Callable | None  # custom/columns.py's validate()
+    overlay: OverlayConfig | None = None  # overlay.yaml; None = no overlay
 
 
 def load_columns_config(path: str) -> dict:
@@ -149,5 +151,14 @@ def load_config_set(config_dir: str | Path, problems: list | None = None,
         problems.append(str(e))
         derive_fn = settings = validate_fn = None
 
+    # Like columns.yaml: a bad overlay.yaml changes what the rechits are.
+    try:
+        overlay = load_overlay_config(config_dir / "overlay.yaml")
+    except SystemExit as e:
+        if problems is None:
+            raise
+        problems.append(str(e))
+        overlay = None
+
     return ConfigSet(config_dir, samples, histograms, selections, corrections,
-                     reweighters, derive_fn, settings, validate_fn)
+                     reweighters, derive_fn, settings, validate_fn, overlay)

@@ -545,6 +545,14 @@ def test_the_comparison_pairs_each_system_with_every_background_cut():
     ]
     assert csb.cut_label("<SYS>_on_muon") == "on muon"
 
+    class WithData(Args):
+        data = ["zerobias_run"]
+        data_cut = "<SYS>_src"
+
+    (_, bkg, _), _ = csb._pairs(keys, WithData)
+    # the data run's histogram under its own cut, next to the MC cuts
+    assert bkg["<SYS>_src"] == "all/csc_src/csc_cluster_size"
+
 
 def test_the_summed_background_weights_each_sample_by_xs_over_sumw():
     csb = _import_compare_sig_bkg()

@@ -52,6 +52,25 @@ def compile_expr(expr: str):
     return _eval
 
 
+def is_missing_branch(exc: BaseException) -> bool:
+    """Whether *exc* is an expression reading a field the events do not have."""
+    return isinstance(exc, AttributeError) and "no field named" in str(exc)
+
+
+def selection_mask(selection, events):
+    """A selection's mask; ``missing: false`` turns an absent branch into False.
+
+    Only an absent field is forgiven -- any other error, or an absent field in
+    a selection without ``missing: false``, still raises.
+    """
+    try:
+        return compile_expr(selection.expression)(events)
+    except AttributeError as e:
+        if selection.missing is False and is_missing_branch(e):
+            return np.zeros(len(events), dtype=bool)
+        raise
+
+
 def is_jagged(arr) -> bool:
     """One entry per object (a jagged array) rather than one per event."""
     return isinstance(arr, ak.Array) and arr.ndim > 1
@@ -82,6 +101,8 @@ def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
         pending.append((name, sel.expression))
     # Selections may read each other's columns: retry what failed until a
     # pass makes no progress, then the first remaining failure is real.
+    # 'missing: false' is honoured only then: before, an absent field may be
+    # a selection column not attached yet.
     while pending:
         failed = []
         for name, expr in pending:
@@ -94,9 +115,15 @@ def attach_selection_columns(events, sel_defs: dict, sample: str = "?"):
                 mask = ak.fill_none(mask, False)
             events = ak.with_field(events, mask, name)
         if len(failed) == len(pending):
-            name, expr, e = failed[0]
-            raise FillError(f"selection '{name}' ({expr!r}) failed on sample "
-                            f"'{sample}': {type(e).__name__}: {e}") from e
+            forgiven = [(n, x, e) for n, x, e in failed
+                        if sel_defs[n].missing is False and is_missing_branch(e)]
+            if not forgiven:
+                name, expr, e = failed[0]
+                raise FillError(f"selection '{name}' ({expr!r}) failed on sample "
+                                f"'{sample}': {type(e).__name__}: {e}") from e
+            for name, _, _ in forgiven:
+                events = ak.with_field(events, np.zeros(len(events), dtype=bool), name)
+            failed = [f for f in failed if f not in forgiven]
         pending = [(n, x) for n, x, _ in failed]
     return events
 
@@ -259,8 +286,14 @@ def fill_histograms(
 
     def selection(sel_name: str):
         if sel_name not in sel_cache:
-            sel = evaluate("selection", sel_name, "expression",
-                           sel_defs[sel_name].expression)
+            try:
+                sel = evaluate("selection", sel_name, "expression",
+                               sel_defs[sel_name].expression)
+            except FillError as e:
+                if not (sel_defs[sel_name].missing is False
+                        and is_missing_branch(e.__cause__)):
+                    raise
+                sel = np.zeros(n_events, dtype=bool)
             if isinstance(sel, ak.Array):
                 sel = ak.fill_none(sel, False)
             level = sel_defs[sel_name].level

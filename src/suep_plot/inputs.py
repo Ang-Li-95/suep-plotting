@@ -167,3 +167,15 @@ def open_events(path: str, tree: str = "Events", n: int = 200):
         return NanoEventsFactory.from_root(
             {path: tree}, mode="eager", schemaclass=NanoAODSchema,
             entry_stop=n).events()
+
+
+def lumi_mask_path(mask: str) -> Path:
+    """A sample's ``lumi_mask:`` as a path: absolute, or relative to the repo.
+
+    The certification JSONs live in ``lumimasks/`` (a copy, so a run does not
+    follow cvmfs' moving ``latest`` link).
+    """
+    from .config import REPO_ROOT
+
+    path = Path(mask)
+    return path if path.is_absolute() else REPO_ROOT / path

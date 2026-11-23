@@ -164,6 +164,105 @@ suep_mMed125_mDark2:
   color: tab:blue
   group: signal
 
+# The ZeroBias pool of the muon-rechit overlay (overlay.yaml, e.g.
+# configs_mds_src_bkg_zb): every 2024 era, C to I.  Era C is the Oct 2026
+# production only -- the Aug one (260810_140025, the zerobias_2024C sample
+# above) covers the same events.  Era E is its task plus the lumi-masked
+# recovery task, which are complementary.  29,180 files; the Golden JSON
+# (applied by overlay.yaml, not here) keeps ~89% of the events.
+zerobias_2024:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024C-2024CDEReprocessing-v1/261021_121149
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024D-2024CDEReprocessing-v1
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024E-2024CDEReprocessing-v1
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024F-PromptReco-v1
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024G-PromptReco-v1
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024H-PromptReco-v1
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024I-PromptReco-v1
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/MDSnano/ZeroBias/MDSnano_Run2024I-PromptReco-v2
+  tree: Events
+  is_data: true
+  label: ZeroBias 2024 (eras C-I)
+  color: black
+  group: data
+
+# Validation of the overlay's MC cleaning (configs_noise_cleaning): the
+# DY noise study's premix_truth samples, exactly the files its
+# analysis/samples.py reads (DY and tt files 0-19, QCD 0-4), so the
+# cleaning can be compared with the study's plot_matching_performance.py
+# event for event.  Each rechit carries truthOrigin (1 = hard process).
+# Listed file by file rather than as directories: the comparison is only
+# meaningful on the same events.
+noise_truth_dy:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_0.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_1.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_2.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_3.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_4.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_5.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_6.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_7.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_8.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_9.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_10.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_11.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_12.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_13.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_14.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_15.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_16.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_17.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_18.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano/premix_truth/dynano_premix_truth_19.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: 'DY$\to\mu\mu$ (premix truth)'
+  color: '#5790fc'
+  group: signal
+noise_truth_tt:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_0.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_1.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_2.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_3.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_4.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_5.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_6.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_7.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_8.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_9.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_10.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_11.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_12.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_13.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_14.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_15.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_16.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_17.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_18.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_TTtoLNu2Q/premix_truth/ttnano_premix_truth_19.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: '$t\bar{t}$ (premix truth)'
+  color: '#e42536'
+  group: signal
+noise_truth_qcd:
+  files:
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_QCD-4Jets_HT-800to1000/premix_truth/qcdnano_premix_truth_0.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_QCD-4Jets_HT-800to1000/premix_truth/qcdnano_premix_truth_1.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_QCD-4Jets_HT-800to1000/premix_truth/qcdnano_premix_truth_2.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_QCD-4Jets_HT-800to1000/premix_truth/qcdnano_premix_truth_3.root
+  - root://eos.grid.vbc.ac.at//eos/vbc/experiments/cms/store/user/lian/DYNoiseStudy/MDSnano_QCD-4Jets_HT-800to1000/premix_truth/qcdnano_premix_truth_4.root
+  tree: Events
+  is_data: false
+  xs: 1.0
+  label: 'QCD $H_T$ 800-1000 (premix truth)'
+  color: '#964a8b'
+  group: signal
+
 # ── 2024 SM backgrounds (Summer24 MDS-NanoAOD, private CRAB production) ──
 # QCD / W+jets / Z->nunu / ttbar, used by configs_mds_src_bkg.  Unlike the
 # rest of this file these carry REAL cross sections [pb] (the AN background

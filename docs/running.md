@@ -210,6 +210,17 @@ deleted after 28 days -- one directory per (config set × clustering), e.g.
 A run directory knows what made it (`run_info.json`, `slurm/`), so it is the
 thing to keep; figures can always be redrawn from it.
 
+A set with a ZeroBias overlay (`overlay.yaml` with `add_zerobias: true`) also
+writes `overlay/` into the run directory before anything is processed:
+`pool.json` (the ZeroBias files, the run's seed, the lumi mask) and one
+`<sample>.json` per simulated sample (which ZeroBias files each MC file draws
+from). They fix every pairing: `suep-submit` makes them and the array tasks
+only read them, so resubmitted tasks get the same partners; a direct
+`suep-run` makes them if they are missing. They are never remade, and an MC
+file not in its sample's plan is refused -- a dataset that grew since needs a
+new output directory, which also draws a new seed and so new pairs. Listing
+the pool (~29k files) takes a minute or two the first time.
+
 ---
 
 ## Checking a change to the framework

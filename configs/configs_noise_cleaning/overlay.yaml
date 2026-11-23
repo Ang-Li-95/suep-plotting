@@ -1,0 +1,11 @@
+# ── The MC cleaning alone, no ZeroBias added ──────────────────────
+# The DY noise study's working point (Generation/DYNoiseStudy/analysis/
+# plot_matching_performance.py): a rechit is kept when it is in time and
+# within dR 0.4 of a GenJet with pT > 10 GeV or of a reachable gen muon whose
+# phi is bent to the hit.  The same values as configs_mds_src_bkg_zb.
+mc_clean:
+  csc_tpeak: [-30, 40]   # ns, -30 < Tpeak < 40
+  rpc_bx: [0, 1]
+  dr: 0.4
+  genjet_pt: 10          # GeV
+add_zerobias: false

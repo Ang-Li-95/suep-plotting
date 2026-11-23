@@ -44,6 +44,9 @@ regions:
             - csc_cluster_first_station
             - csc_cluster_avg_station
             - csc_cluster_max_station_frac
+            - csc_cluster_me1_frac
+            - csc_cluster_me11_frac
+            - csc_cluster_me12_frac
             - csc_cluster_layer_hits_mean
             - csc_cluster_layer_hits_rms
             - csc_cluster_layer_hits_relrms
@@ -96,6 +99,9 @@ regions:
             - dt_cluster_first_station
             - dt_cluster_avg_station
             - dt_cluster_max_station_frac
+            - dt_cluster_mb1_frac
+            - dt_cluster_mb11_frac
+            - dt_cluster_mb12_frac
             - dt_cluster_layer_hits_mean
             - dt_cluster_layer_hits_rms
             - dt_cluster_layer_hits_relrms

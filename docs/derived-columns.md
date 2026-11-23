@@ -249,6 +249,10 @@ proper phi wrap-around.
 - **Where it starts** — `firstChamber` / `firstStation`, the chamber-type code
   and station of the hit closest to the interaction point. A punch-through jet
   starts in an innermost chamber; a genuine displaced shower need not.
+- **Inner-chamber content** — `station1Frac`, `chamber11Frac`, `chamber12Frac`:
+  the fraction of the cluster's own CSC / DT hits (merged RPC hits left out) in
+  station 1, and in chamber code 11 / 12 -- ME1/1 / ME1/2 for CSC, MB1 at
+  |wheel| 1 / 2 for DT.
 - **Timing** — on systems whose rechits carry a time (CSC `Tpeak`): `time`,
   `timeSpread` and `ootHitFrac`, the mean, the RMS and the fraction of hits
   outside ±`oot_time_cut`. The last two are the out-of-time-pile-up handles. DT

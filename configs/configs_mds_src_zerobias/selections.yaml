@@ -34,13 +34,20 @@ jet_sel_foriso:
 # 2024 menu's: there the MHT threshold equals the MET one (PFMETNoMu130 comes
 # with PFMHTNoMu130, not PFMHTNoMu120).  130 and 140 are tighter versions of
 # 120, so the OR is the 120 path in practice; all three are written out.
+#
+# missing: false -- the first 2024C runs (e.g. 379519, 379524) were taken
+# with a menu that had none of these paths, and NanoAOD writes no branch for
+# a path the menu lacks.  Their events count in 'all' and in no trigger
+# region.  (An OR fails as a whole if any one of its paths is absent; in
+# those files all three are.)
 trig_met:
   label: HLT PFMETNoMu120/130/140
   expression: events.HLT.PFMETNoMu120_PFMHTNoMu120_IDTight | events.HLT.PFMETNoMu130_PFMHTNoMu130_IDTight | events.HLT.PFMETNoMu140_PFMHTNoMu140_IDTight
+  missing: false
 
-trig_dt: {label: HLT_L1MET_DTCluster50, expression: events.HLT.L1MET_DTCluster50}
+trig_dt: {label: HLT_L1MET_DTCluster50, expression: events.HLT.L1MET_DTCluster50, missing: false}
 
-trig_csc: {label: HLT_CscCluster_Loose, expression: events.HLT.CscCluster_Loose}
+trig_csc: {label: HLT_CscCluster_Loose, expression: events.HLT.CscCluster_Loose, missing: false}
 
 # Each template is written once and filled in per axis entry.
 _repeat:

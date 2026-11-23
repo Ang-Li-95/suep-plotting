@@ -1,0 +1,39 @@
+_extends: ../configs_mds_src_bkg
+
+# ── What the ZeroBias overlay did ─────────────────────────────────
+# Every histogram of configs_mds_src_bkg, plus this region.  The variables are
+# in this set's variables.yaml.
+regions:
+  overlay:
+    label: ZeroBias overlay
+    evt_vars:
+      - overlay_zb_run
+      - overlay_reused
+      - overlay_csc_n_mc_kept
+      - overlay_csc_n_mc_dropped
+      - overlay_csc_n_zb
+      - overlay_csc_n_zb_dropped
+      - overlay_csc_n_merged
+      - overlay_dt_n_mc_kept
+      - overlay_dt_n_mc_dropped
+      - overlay_dt_n_zb
+      - overlay_dt_n_zb_dropped
+      - overlay_dt_n_merged
+      - overlay_rpc_n_mc_kept
+      - overlay_rpc_n_mc_dropped
+      - overlay_rpc_n_zb
+      - overlay_rpc_n_zb_dropped
+      - overlay_rpc_n_merged
+    objects:
+      csc_from_mc:
+        cut: overlay_csc_from_mc
+        vars: [overlay_csc_rechit_tpeak]
+      csc_from_zb:
+        cut: overlay_csc_from_zb
+        vars: [overlay_csc_rechit_tpeak]
+      rpc_from_mc:
+        cut: overlay_rpc_from_mc
+        vars: [overlay_rpc_rechit_bx]
+      rpc_from_zb:
+        cut: overlay_rpc_from_zb
+        vars: [overlay_rpc_rechit_bx]

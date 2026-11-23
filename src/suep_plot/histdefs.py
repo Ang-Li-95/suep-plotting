@@ -191,10 +191,17 @@ class Selection:
     level: str | None = None
     collection: str | None = None
     label: str | None = None
+    # ``missing: false``: a branch the expression reads that is absent from a
+    # file makes the cut False for every event of it, instead of an error --
+    # for trigger paths, which NanoAOD writes only when the run's menu had them.
+    missing: bool | None = None
 
     def __post_init__(self):
         if not self.expression:
             raise ValueError("no 'expression'")
+        if self.missing not in (None, False):
+            raise ValueError("'missing' can only be false (a missing branch "
+                             f"fails the cut), got {self.missing!r}")
         if self.level is not None and self.level not in SELECTION_LEVELS:
             raise ValueError(f"'level' must be one of {SELECTION_LEVELS}, "
                              f"got {self.level!r}")

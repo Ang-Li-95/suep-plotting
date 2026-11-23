@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .configset import ConfigSet, load_config_set
 from .corrections import concerns as correction_concerns
-from .fill import compile_expr, prepare_events
+from .fill import compile_expr, prepare_events, selection_mask
 from .histdefs import load_histogram_defs
 from .inputs import open_events
 
@@ -65,9 +65,50 @@ def sample_errors(samples: dict) -> list[str]:
     ``dy_2mu_50to12: {max_files: 10}`` (the registry has ``dy_2mu_50to120``)
     is a sample of its own with nothing to read, not an override.
     """
-    return [f"sample '{name}': no 'files' -- not in the registry and not "
-            "defined here (a misspelled name?)"
-            for name, cfg in samples.items() if not (cfg or {}).get("files")]
+    from .inputs import lumi_mask_path
+
+    out = [f"sample '{name}': no 'files' -- not in the registry and not "
+           "defined here (a misspelled name?)"
+           for name, cfg in samples.items() if not (cfg or {}).get("files")]
+    for name, cfg in samples.items():
+        mask = (cfg or {}).get("lumi_mask")
+        if not mask:
+            continue
+        if not cfg.get("is_data", False):
+            out.append(f"sample '{name}': lumi_mask on a sample that is not is_data")
+        if not lumi_mask_path(mask).is_file():
+            out.append(f"sample '{name}': lumi_mask file not found: {lumi_mask_path(mask)}")
+    return out
+
+
+def overlay_errors(cs: ConfigSet) -> list[str]:
+    """What overlay.yaml names that does not exist: the pool, the lumi mask,
+    and (with DataClean) the prompt-object selections."""
+    from .inputs import lumi_mask_path
+    from .overlay import DATA_CLEAN_SELECTIONS
+    from .overlay_pool import pool_definition
+
+    source = cs.overlay.zerobias if cs.overlay is not None else None
+    if source is None:
+        return []
+    errors = []
+    try:
+        pool = pool_definition(source.pool)
+        if not pool.get("is_data", False):
+            errors.append(f"overlay.yaml: the pool '{source.pool}' is not is_data")
+        if not pool.get("files"):
+            errors.append(f"overlay.yaml: the pool '{source.pool}' has no 'files'")
+    except SystemExit as e:
+        errors.append(str(e))
+    if not lumi_mask_path(source.lumi_mask).is_file():
+        errors.append(f"overlay.yaml: lumi_mask not found: {lumi_mask_path(source.lumi_mask)}")
+    if source.data_clean_dr is not None:
+        for name in DATA_CLEAN_SELECTIONS:
+            selection = cs.selections.get(name)
+            if selection is None or not selection.collection:
+                errors.append(f"overlay.yaml: data_clean needs the object selection "
+                              f"'{name}' (with a 'collection:') in selections.yaml")
+    return errors
 
 
 def static_errors(cs: ConfigSet) -> list[str]:
@@ -75,7 +116,8 @@ def static_errors(cs: ConfigSet) -> list[str]:
     return sample_errors(cs.samples) \
         + reference_errors(cs.histograms, cs.selections, cs.reweighters,
                            cs.corrections) \
-        + custom_config_errors(cs)
+        + custom_config_errors(cs) \
+        + overlay_errors(cs)
 
 
 def load_and_validate(config_dir: str | Path) -> tuple[ConfigSet | None, list[str]]:
@@ -105,6 +147,16 @@ def validate_config_set(config_dir: str | Path) -> list[str]:
     return load_and_validate(config_dir)[1]
 
 
+def _read_set_file_or_empty(path: Path) -> dict:
+    """A set's file as loaded (parents followed), or {} if it does not load."""
+    from .config import load_config_file
+
+    try:
+        return load_config_file(path)
+    except SystemExit:
+        return {}
+
+
 def config_warnings(config_dir: str | Path) -> list[str]:
     """Things that work but are probably not what was meant."""
     from .config import CONFIG_FILES, _read, read_set_file
@@ -116,7 +168,10 @@ def config_warnings(config_dir: str | Path) -> list[str]:
     if parent:
         for name in CONFIG_FILES:
             path = config_dir / name
-            if path.exists() and "_extends" not in _read(path):
+            # Only a file the parent set has (itself or by inheritance) can be
+            # replaced by mistake.
+            parent_has_it = bool(_read_set_file_or_empty(config_dir / parent / name))
+            if path.exists() and parent_has_it and "_extends" not in _read(path):
                 warnings.append(
                     f"{name} does not '_extends: {parent}', so it replaces the "
                     f"parent's {name} entirely (set.yaml only supplies files the "
@@ -140,7 +195,8 @@ def config_warnings(config_dir: str | Path) -> list[str]:
 
 def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
                       reweighters=None, settings=None, sample: str = "?",
-                      is_data: bool = False, group: str = "") -> list[str]:
+                      is_data: bool = False, group: str = "",
+                      overlay=None) -> list[str]:
     """Evaluate every expression on the first events of *files*; return the failures.
 
     Each histogram's and selection's expression must evaluate, and an explicit
@@ -150,6 +206,8 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
     this sample is checked: for a data sample (*is_data*) neither the
     ``mc_only`` histograms nor the corrections, and of the corrections and
     reweights the ones whose ``apply_to`` / ``samples`` cover it (*group*).
+    *overlay* is the run's :class:`overlay.Overlay`, applied to simulated
+    samples as the processor does.
     """
     from .fill import (is_jagged, object_selection_on_event_histogram,
                        object_selection_over_other_collection, same_object_counts)
@@ -160,6 +218,11 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
         events = open_events(files[0], tree)
     except Exception as e:  # noqa: BLE001 - reported
         return [f"cannot open {files[0]}: {type(e).__name__}: {e}"]
+    if overlay is not None and not is_data:
+        try:
+            events = overlay.apply(events, sample, files[0], 0, len(events))
+        except Exception as e:  # noqa: BLE001 - reported
+            return [f"overlay failed: {type(e).__name__}: {e}"]
     try:
         events = prepare_events(events, derive_fn, settings, sel_defs, sample)
     except Exception as e:  # noqa: BLE001 - reported
@@ -176,7 +239,15 @@ def check_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=Non
 
     object_level = {}          # object-level selection -> its mask
     for name, selection in sel_defs.items():
-        mask = evaluate(f"selection '{name}'", selection.expression)
+        if selection.missing is False:
+            try:
+                mask = selection_mask(selection, events)
+            except Exception as e:  # noqa: BLE001 - reported
+                bad.append(f"selection '{name}' ({selection.expression!r}): "
+                           f"{type(e).__name__}: {str(e)[:120]}")
+                mask = None
+        else:
+            mask = evaluate(f"selection '{name}'", selection.expression)
         if mask is not None and is_jagged(mask):
             object_level[name] = mask
         level = selection.level
