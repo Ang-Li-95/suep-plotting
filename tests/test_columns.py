@@ -8,9 +8,12 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-columns = pytest.importorskip("custom.columns")
+# A plain import, not importorskip: a missing dependency (numba, sklearn)
+# must fail these tests, not silently skip all of them.
+import custom.columns as columns  # noqa: E402
 
-from suep_plot.processor import load_columns_config  # noqa: E402
+from suep_plot.histdefs import Selection  # noqa: E402
+from suep_plot.configset import load_columns_config  # noqa: E402
 
 # The settings most tests run on; configure() returns them, nothing installs
 # them, so a test that wants different ones just makes its own.
@@ -144,13 +147,15 @@ def _ctx(events, settings=None, selections=None):
 # The prompt-object cuts, written the way selections.yaml writes them: the
 # ordinary events.<Collection> dialect, plus a 'collection:' saying what the
 # per-object mask is over.
-MUON_SEL = {"level": "object", "collection": "Muon",
-            "expression": ("(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4)"
-                           " & events.Muon.looseId")}
-JET_SEL = {"level": "object", "collection": "Jet",
-           "expression": ("(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4)"
-                          " & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1)"
-                          " & events.Jet.tightLepVetoId")}
+MUON_SEL = Selection(
+    level="object", collection="Muon",
+    expression=("(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4)"
+                " & events.Muon.looseId"))
+JET_SEL = Selection(
+    level="object", collection="Jet",
+    expression=("(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4)"
+                " & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1)"
+                " & events.Jet.tightLepVetoId"))
 ISO_SELS = {"muon_sel_foriso": MUON_SEL, "jet_sel_foriso": JET_SEL}
 
 
@@ -174,9 +179,9 @@ def test_selected_objects_needs_no_code_for_a_new_collection():
                            {"pt": 30.0, "eta": 0.2, "phi": 0.9, "cutBased": 1}]])
     events = ak.zip({"Electron": electrons}, depth_limit=1)
 
-    kept = columns._selected_objects(events, "prompt_electron", {
-        "level": "object", "collection": "Electron",
-        "expression": "(events.Electron.pt > 15) & (events.Electron.cutBased >= 3)"})
+    kept = columns._selected_objects(events, "prompt_electron", Selection(
+        level="object", collection="Electron",
+        expression="(events.Electron.pt > 15) & (events.Electron.cutBased >= 3)"))
 
     assert ak.to_list(kept.phi) == [[0.4]]
 
@@ -247,7 +252,7 @@ def test_a_selection_used_to_pick_objects_needs_a_collection():
 
     with pytest.raises(ValueError, match="collection"):
         columns._selected_objects(events, "muon_sel_foriso",
-                                  {"expression": "events.Muon.pt > 10"})
+                                  Selection(expression="events.Muon.pt > 10"))
 
 
 def test_a_broken_expression_names_the_selection_and_the_expression():
@@ -256,8 +261,8 @@ def test_a_broken_expression_names_the_selection_and_the_expression():
 
     with pytest.raises(ValueError, match="muon_sel_foriso"):
         columns._selected_objects(events, "muon_sel_foriso",
-                                  {"collection": "Muon",
-                                   "expression": "events.Muon.noSuchField > 1"})
+                                  Selection(collection="Muon",
+                                            expression="events.Muon.noSuchField > 1"))
 
 
 def test_isolation_reads_its_cuts_from_selections_yaml():
@@ -293,6 +298,35 @@ def test_the_prompt_object_counts_come_from_the_same_selection():
     assert ak.to_list(ctx.events.n_muon_sel_foriso) == [1]
     # No Jet collection here, so no count is invented for it.
     assert "n_jet_sel_foriso" not in ctx.events.fields
+
+
+def test_an_integer_mask_would_index_rather_than_filter():
+    """Why a working-point *index* needs an explicit '>=' in a selection.
+
+    Electron_cutBased / Photon_cutBased / the DeepTau branches are WP indices,
+    not flags.  Left bare in the '&' chain the mask comes out an integer, and
+    awkward then reads it as a list of positions: the selection silently
+    returns the wrong objects and the wrong count instead of failing.  This
+    pins the behaviour that makes that a real trap, so the comment in
+    configs/configs_mds_objects/selections.yaml stays true.
+    """
+    ak = pytest.importorskip("awkward")
+
+    photons = ak.Array([[{"pt": 30.0, "cutBased": 1},     # loose -> keep
+                         {"pt": 40.0, "cutBased": 0},     # fail  -> drop
+                         {"pt": 50.0, "cutBased": 3}]])   # tight -> keep
+    events = ak.zip({"Photon": photons}, depth_limit=1)
+
+    bare = Selection(level="object", collection="Photon",
+                     expression="(events.Photon.pt > 15) & events.Photon.cutBased")
+    wrong = columns._selected_objects(events, "photon_sel", bare)
+    assert ak.to_list(ak.num(wrong)) == [3]               # not 2
+
+    explicit = Selection(
+        level="object", collection="Photon",
+        expression="(events.Photon.pt > 15) & (events.Photon.cutBased >= 1)")
+    right = columns._selected_objects(events, "photon_sel", explicit)
+    assert ak.to_list(right.pt) == [[30.0, 50.0]]
 
 
 def test_a_missing_iso_selection_is_fatal():
@@ -474,7 +508,7 @@ def test_the_overlaid_sets_share_one_prompt_object_definition():
     Retuning the isolation?  Change all three."""
     from pathlib import Path
 
-    from suep_plot.histograms import load_selection_defs
+    from suep_plot.histdefs import load_selection_defs
     from custom.helpers import ISO_SELECTIONS
 
     repo = Path(__file__).resolve().parent.parent
@@ -542,6 +576,22 @@ def test_first_hit_is_the_one_closest_to_the_interaction_point():
     assert len(clusters[0]) == 1
     assert clusters[0].firstChamber[0] == 11
     assert clusters[0].firstStation[0] == 1
+
+
+def test_inner_chamber_fractions_count_station_1_and_its_two_inner_chambers():
+    """station1Frac / chamber11Frac / chamber12Frac: shares of the hits."""
+    hits = [(200.0, 0.0, 600.0, 1, 11),
+            (201.0, 1.0, 610.0, 1, 11),
+            (202.0, 2.0, 700.0, 1, 12),
+            (203.0, 3.0, 800.0, 2, 21)]
+
+    clusters = columns._cluster_system(_csc_rechits(hits), None, eps=0.4,
+                                       min_samples=3, settings=DEFAULTS)
+
+    assert len(clusters[0]) == 1
+    assert clusters[0].station1Frac[0] == pytest.approx(0.75)
+    assert clusters[0].chamber11Frac[0] == pytest.approx(0.5)
+    assert clusters[0].chamber12Frac[0] == pytest.approx(0.25)
 
 
 def test_no_module_holds_settings_of_its_own():

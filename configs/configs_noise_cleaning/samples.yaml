@@ -1,0 +1,10 @@
+# ── The DY noise study's premix_truth samples ─────────────────────
+# The overlay's MC cleaning (overlay.yaml) applied to the exact events the
+# study's plot_matching_performance.py measured, so its efficiency, purity
+# and non-hard rechits per event can be compared number for number
+# (scripts/compare_cleaning.py).  See the registry entries for the file lists.
+_registry: ../../datasets.yaml
+
+noise_truth_dy:
+noise_truth_tt:
+noise_truth_qcd:

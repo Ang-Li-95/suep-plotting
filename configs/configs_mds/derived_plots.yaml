@@ -1,4 +1,20 @@
 # ── Derived plots ─────────────────────────────────────────────────
-# The reco-level ones (the RPC-timing profiles) come from ../common;
-# everything else needs gen information and lives in ../common_gen.
-_extends: ../common
+# Reco-level only: the RPC-timing profiles.  The gen-level derived plots
+# (efficiencies, truth splits) are in configs_mds_signal / configs_mds_gen.
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, SYSU: CSC}
+  - {SYS: dt, SYSU: DT}
+
+# Each template is written once and filled in per axis entry.
+_repeat:
+- over: systems
+  defs:
+    prof_<SYS>_rpc_bx_vs_size:
+      type: profile_x
+      region: <SYS>
+      cut: all
+      label_y: $\langle$RPC BX$\rangle$
+      vars: [<SYS>_cluster_rpc_bx_vs_size]

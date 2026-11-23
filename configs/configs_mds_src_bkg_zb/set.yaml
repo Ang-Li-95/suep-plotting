@@ -1,0 +1,5 @@
+# A variant of configs_mds_src_bkg: the same samples, clusters and histograms,
+# with the muon rechits of every event rebuilt by the ZeroBias overlay
+# (overlay.yaml), plus a region that shows what the overlay did.
+extends: ../configs_mds_src_bkg
+description: "Cluster sources, SM backgrounds with the muon rechits overlaid from ZeroBias 2024"

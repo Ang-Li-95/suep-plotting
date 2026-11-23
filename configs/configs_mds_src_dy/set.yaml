@@ -1,0 +1,7 @@
+# The DY leg of the cluster-source study: the same three populations as the
+# SM-background set (in_jet / on_muon / iso, per system, in each of the four
+# event regions), so every file but samples.yaml is configs_mds_src_bkg's.
+# Replaces the three one-population sets configs_mds_src_dy_jet / _dy_muon /
+# _dy_iso: one run fills all three cuts.
+extends: ../configs_mds_src_bkg
+description: "Cluster sources, DY: in-jet, on-muon and isolated clusters in one run"

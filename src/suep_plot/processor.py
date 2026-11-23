@@ -6,20 +6,18 @@ driven by :class:`coffea.processor.Runner` (one call per sample, keeping the
 per-sample Slurm-array model), which handles file opening, schema application,
 chunking and accumulation.  Event weights are managed with
 :class:`coffea.analysis_tools.Weights`; corrections are registered via
-:mod:`suep_plot.corrections`.
+:mod:`suep_plot.corrections`.  :func:`run_all` is ``suep-run``.
 """
 
 from __future__ import annotations
 
-import importlib
+import os
 import pickle
-import sys
 import time
 from pathlib import Path
 
 import awkward as ak
 import numpy as np
-import yaml
 
 # Applies the scipy shim before coffea.lookup_tools is imported anywhere.
 from . import _compat  # noqa: F401
@@ -28,176 +26,45 @@ from coffea import processor
 from coffea.analysis_tools import Weights
 from coffea.nanoevents import NanoAODSchema
 
-from .config import FILL_CONFIG_FILES, config_sources, load_config_file
-from .corrections import apply_corrections, build_correctors, load_correction_defs
-from .histograms import (
-    _compile_expr,
-    build_histograms,
-    fill_histograms,
-    load_histogram_defs,
-    load_selection_defs,
-)
-from .reweights import apply_reweights, build_reweighters, load_reweight_defs
-
-# MDSNano is a custom NanoAOD flavour; suppress cross-reference warnings for
-# collections without the standard NanoAOD index branches.
-NanoAODSchema.warn_missing_crossrefs = False
+from .checks import check_expressions, static_errors
+from .config import fill_sources
+from .configset import load_config_set
+from .corrections import apply_corrections, build_correctors, correction_weights
+from .fill import build_histograms, fill_histograms, prepare_events, selection_mask
+from .inputs import file_specs, lumi_mask_path, resolve_sample_files, select_samples
+from .overlay import overlay_for_run
+from .overlay_pool import load_sample_plan, plan_dir, pool_definition, prepare_plans
+from .reweights import apply_reweights, reweight_weights
+from .status import output_name
 
 
-def load_samples(path: str) -> dict:
-    """Read a config's ``samples.yaml`` -> {name: cfg}.
+def _write_pickle_atomic(path: Path, payload) -> None:
+    """Write *payload* so that *path* is either the old file or the whole new one.
 
-    Definitions normally come from the shared registry named by ``_registry:``;
-    see :mod:`suep_plot.config` for that and the other config directives.
+    A task killed mid-write leaves only the temporary file (which ends in
+    ``.tmp.<pid>``, so no ``*.pkl`` glob picks it up), never a truncated pickle
+    under the real name.
     """
-    return load_config_file(path)
-
-
-def _split_xrootd_url(url: str) -> tuple[str, str]:
-    """``root://host//eos/dir`` -> (``root://host/``, ``/eos/dir``)."""
-    scheme, rest = url.split("://", 1)
-    host, _, path = rest.partition("/")
-    return f"{scheme}://{host}/", "/" + path.lstrip("/")
-
-
-def _xrootd_listdir(fs, path: str) -> list[str]:
-    """Recursively list ``*.root`` under a remote directory (server paths)."""
-    from XRootD.client.flags import DirListFlags
-
-    status, listing = fs.dirlist(path, DirListFlags.STAT)
-    if not status.ok or listing is None:
-        raise RuntimeError(f"xrootd dirlist failed for {path}: {status.message}")
-
-    out = []
-    for entry in listing:
-        child = f"{path.rstrip('/')}/{entry.name}"
-        if entry.statinfo is not None and entry.statinfo.flags & 2:  # kXR_isDir
-            out.extend(_xrootd_listdir(fs, child))
-        elif entry.name.endswith(".root"):
-            out.append(child)
-    return sorted(out)
-
-
-def _resolve_xrootd(spec: str) -> list[str]:
-    """Expand one xrootd spec: a file passes through, a directory is walked,
-    a trailing wildcard is matched against its parent directory's listing."""
-    import fnmatch
-
-    from XRootD import client
-
-    prefix, path = _split_xrootd_url(spec)
-    if "*" not in path and "?" not in path and path.endswith(".root"):
-        return [spec]
-
-    fs = client.FileSystem(prefix)
-    # Server paths are absolute, so host + path keeps the usual root://host//eos/…
-    if "*" in path or "?" in path:
-        parent, _, pattern = path.rpartition("/")
-        return [prefix + f for f in _xrootd_listdir(fs, parent)
-                if fnmatch.fnmatch(f.rpartition("/")[2], pattern)]
-    return [prefix + f for f in _xrootd_listdir(fs, path)]
-
-
-def _resolve_files(file_specs: list[str]) -> list[str]:
-    """Expand globs / directories / xrootd URLs -> flat list of file paths.
-
-    A spec may be a single file, a glob, or a directory (local or xrootd), in
-    which case it is walked recursively for ``*.root``.
-    """
-    import glob
-    import os
-
-    out = []
-    for spec in file_specs:
-        if "://" in spec:
-            out.extend(_resolve_xrootd(spec))
-        elif "*" in spec or "?" in spec:
-            out.extend(sorted(glob.glob(spec)))
-        elif os.path.isdir(spec):
-            out.extend(sorted(str(p) for p in Path(spec).rglob("*.root")))
-        else:
-            out.append(spec)
-    return out
-
-
-def resolve_sample_files(cfg: dict) -> list[str]:
-    """The files of one sample, honouring an optional ``max_files:`` cap.
-
-    A background sample can be far larger than the comparison needs -- DY is
-    5,575 files against a signal's 25 -- and a normalized shape overlay gains
-    nothing from the tail of it.  ``max_files`` takes the first N of the
-    resolved list, deterministically (the list is sorted), so a capped run is
-    reproducible and can be widened later without redoing what exists.
-    """
-    files = _resolve_files(cfg.get("files") or [])
-    cap = cfg.get("max_files")
-    return files[:int(cap)] if cap else files
-
-
-def load_columns_config(path: str) -> dict:
-    """Read a config's optional ``columns.yaml`` -> settings for ``derive()``.
-
-    Missing file = ``{}`` = the module's own defaults.  The schema is the
-    custom-columns module's business (``parameters`` / ``steps`` for the MDS
-    module); it is only forwarded here.
-    """
-    return load_config_file(path)
-
-
-def _load_custom_columns(columns_cfg: dict | None = None):
-    """Import custom/columns.py if present -> (derive_fn, settings) or (None, None).
-
-    The settings are resolved here, once, and handed to the processor -- which
-    passes them to ``derive()`` and pickles them to its workers, so a worker
-    cannot end up running on settings its parent never chose.  A bad
-    columns.yaml is fatal: it changes what the derived columns *mean*, so it
-    must not degrade to a warning and silently different histograms.
-    """
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    if not (repo_root / "custom" / "columns.py").exists():
-        return None, None
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
     try:
-        mod = importlib.import_module("custom.columns")
-        # columns.py imports its helpers from sibling modules, so reload the
-        # whole package: reloading columns.py alone would re-bind its names to
-        # the already-cached submodules and an edit there would be ignored.
-        # (This is for a live notebook kernel; a fresh suep-run imports once.)
-        # In dependency order -- params.py owns the schema the other modules
-        # import, so it goes first and columns.py last.
-        helpers = sorted(n for n in sys.modules if n.startswith("custom.")
-                         and n not in ("custom.columns", "custom.params"))
-        for name in ["custom.params", *helpers]:
-            if name in sys.modules:
-                importlib.reload(sys.modules[name])
-        importlib.reload(mod)
-    except Exception as e:  # noqa: BLE001
-        print(f"WARNING: could not load custom/columns.py: {e}")
-        return None, None
-
-    derive_fn = getattr(mod, "derive", None)
-    configure = getattr(mod, "configure", None)
-    if configure is None:
-        if columns_cfg:
-            print("WARNING: columns.yaml ignored: custom/columns.py has no configure()")
-        return derive_fn, None
-    try:
-        settings = configure(columns_cfg)
-    except Exception as e:  # noqa: BLE001
-        raise SystemExit(f"ERROR in columns.yaml: {e}")
-    if derive_fn is not None:
-        print("Custom columns: loaded derive()")
-        print(f"                steps  {list(settings.steps)}")
-        print(f"                params {settings.params}")
-    return derive_fn, settings
+        with open(tmp, "wb") as f:
+            pickle.dump(payload, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 class SuepProcessor(processor.ProcessorABC):
     """Fill YAML-defined histograms for one sample chunk."""
 
     def __init__(self, hist_defs, sel_defs, correctors, sample_defs, derive_fn=None,
-                 reweighters=None, settings=None):
+                 reweighters=None, settings=None, overlay=None):
         self.hist_defs = hist_defs
         self.sel_defs = sel_defs
         self.correctors = correctors
@@ -207,6 +74,8 @@ class SuepProcessor(processor.ProcessorABC):
         # The resolved columns.yaml.  Pickled to the workers along with the
         # rest of the processor, so a worker cannot run on other settings.
         self.settings = settings
+        # The set's overlay.Overlay (overlay.yaml), or None.
+        self.overlay = overlay
 
     def process(self, events):
         dataset = events.metadata["dataset"]
@@ -214,8 +83,21 @@ class SuepProcessor(processor.ProcessorABC):
         is_data = cfg.get("is_data", False)
         group = cfg.get("group", "")
 
-        if self.derive_fn is not None:
-            events = self.derive_fn(events, self.settings, self.sel_defs)
+        # Certified lumi sections only, before anything is derived: the
+        # clustering of a rejected event would be wasted work.
+        n_read = len(events)
+        if cfg.get("lumi_mask"):
+            events = events[self._lumi_mask(cfg["lumi_mask"])(
+                events.run, events.luminosityBlock)]
+
+        # The muon rechits are rebuilt before anything is derived from them.
+        if self.overlay is not None and not is_data:
+            meta = events.metadata
+            events = self.overlay.apply(events, dataset, meta["filename"],
+                                        meta["entrystart"], meta["entrystop"])
+
+        events = prepare_events(events, self.derive_fn, self.settings,
+                                self.sel_defs, dataset)
 
         n = len(events)
         weights = Weights(n, storeIndividual=False)
@@ -223,18 +105,34 @@ class SuepProcessor(processor.ProcessorABC):
             weights.add("genWeight", np.ones(n, dtype=np.float64))
         else:
             weights.add("genWeight", np.asarray(events.genWeight, dtype=np.float64))
-            if self.correctors:
-                apply_corrections(self.correctors, events, group, weights)
-        if self.reweighters:
-            apply_reweights(self.reweighters, events, dataset, group, is_data, weights)
+        # Corrections and reweights are for simulation, unless one names this
+        # sample under 'samples:' (config.weight_concerns).
+        apply_corrections(self.correctors, events, dataset, group, is_data, weights)
+        apply_reweights(self.reweighters, events, dataset, group, is_data, weights)
+        # What a histogram's own 'weight: "@name"' refers to, by the same rule.
+        named_weights = {
+            **reweight_weights(self.reweighters, dataset, group, is_data),
+            **correction_weights(self.correctors, dataset, group, is_data)}
 
-        histograms = build_histograms(self.hist_defs, [dataset])
+        # A data sample has no simulation truth: its mc_only histograms are
+        # not built at all, so the plots show the sample as absent from them
+        # rather than as an empty curve.
+        hist_defs = self.hist_defs
+        if is_data:
+            hist_defs = {k: h for k, h in hist_defs.items() if not h.mc_only}
+        histograms = build_histograms(hist_defs, [dataset])
         wvec = weights.weight()
-        sel_cache = fill_histograms(histograms, self.hist_defs, self.sel_defs,
+        layout: dict = {}
+        sel_cache = fill_histograms(histograms, hist_defs, self.sel_defs,
                                     events, dataset, wvec,
-                                    reweighters=self.reweighters)
+                                    named_weights=named_weights, layout=layout)
 
         cutflow = self._cutflow(events, sel_cache, wvec, n)
+        if cfg.get("lumi_mask"):
+            # what the lumi mask removed: 'read' before it, 'total' after
+            cutflow = {"read": {"raw": int(n_read), "wtd": float(n_read)}, **cutflow}
+        if "overlay" in events.fields:
+            cutflow["overlay_zb_reused"] = self._reused_partners(events, wvec)
 
         sumw = 0.0 if is_data else float(ak.sum(events.genWeight))
         return {
@@ -242,7 +140,34 @@ class SuepProcessor(processor.ProcessorABC):
             "sumw": {dataset: sumw},
             "nevents": {dataset: n},
             "cutflow": {dataset: cutflow},
+            # Sets, because coffea accumulates them by union across chunks.
+            "layout": {"object": {k for k, v in layout.items() if v},
+                       "event": {k for k, v in layout.items() if not v}},
         }
+
+    def _lumi_mask(self, mask: str):
+        """The coffea LumiMask of a certification JSON, built once per worker."""
+        from coffea.lumi_tools import LumiMask
+
+        cache = self.__dict__.setdefault("_lumi_masks", {})
+        if mask not in cache:
+            cache[mask] = LumiMask(str(lumi_mask_path(mask)))
+        lumi_mask = cache[mask]
+
+        def keep(run, lumi):
+            return lumi_mask(np.asarray(run, dtype=np.uint32),
+                             np.asarray(lumi, dtype=np.uint32))
+        return keep
+
+    @staticmethod
+    def _reused_partners(events, wvec):
+        """Events whose ZeroBias partner is used twice (their MC file outgrew
+        its block of ZeroBias files): counted, and warned about."""
+        reused = np.asarray(events.overlay.reused, dtype=bool)
+        if reused.any():
+            print(f"WARNING: overlay: {int(reused.sum())} event(s) of "
+                  f"{events.metadata['filename']} reuse a ZeroBias event")
+        return {"raw": int(reused.sum()), "wtd": float(wvec[reused].sum())}
 
     def _cutflow(self, events, sel_cache, wvec, n):
         """Raw and weighted event counts passing each named selection.
@@ -251,13 +176,12 @@ class SuepProcessor(processor.ProcessorABC):
         selections count events with >= 1 passing object.
         """
         cutflow = {"total": {"raw": int(n), "wtd": float(wvec.sum())}}
-        for sname, scfg in self.sel_defs.items():
+        for sname, selection in self.sel_defs.items():
             sel = sel_cache.get(sname)
             if sel is None:
-                try:
-                    sel = _compile_expr(scfg["expression"])(events)
-                except Exception:  # noqa: BLE001 - typos already warned at validation
-                    continue
+                # Already evaluated once as a selection column, so this cannot
+                # fail where the fill did not.
+                sel = selection_mask(selection, events)
                 if isinstance(sel, ak.Array):
                     sel = ak.fill_none(sel, False)
             if isinstance(sel, ak.Array) and sel.ndim > 1:
@@ -270,72 +194,31 @@ class SuepProcessor(processor.ProcessorABC):
         return accumulator
 
 
-def _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs, derive_fn=None,
-                          reweighters=None, settings=None):
-    """Best-effort check: evaluate each expression on a small slice and warn.
+def _prepare_overlay_plans(cs, output_dir: Path, todo, all_files: dict,
+                           make_missing: bool) -> None:
+    """Make (*make_missing*) or require the run's ZeroBias pairing plans.
 
-    Restores clear feedback for typo'd fields, which otherwise silently produce
-    empty histograms.
+    Every simulated file about to be processed must be in its sample's plan:
+    a plan is frozen once made, so a file that appeared later is refused here
+    rather than on its first chunk.
     """
-    from coffea.nanoevents import NanoEventsFactory
-
-    from .histograms import _compile_expr
-
-    if not files:
+    if cs.overlay is None or cs.overlay.zerobias is None:
         return
-    # "virtual" mode reads branches lazily, so validation only touches the
-    # branches the expressions actually use (an eager open materializes every
-    # branch — seconds of wasted I/O on files with PFCand etc.).
-    try:
-        events = NanoEventsFactory.from_root(
-            {files[0]: tree}, mode="virtual", schemaclass=NanoAODSchema,
-            entry_stop=200,
-        ).events()
-    except TypeError:
-        try:
-            events = NanoEventsFactory.from_root(
-                {files[0]: tree}, mode="eager", schemaclass=NanoAODSchema,
-                entry_stop=200,
-            ).events()
-        except Exception as e:  # noqa: BLE001
-            print(f"  (skipped expression validation: {e})")
-            return
-    except Exception as e:  # noqa: BLE001
-        print(f"  (skipped expression validation: {e})")
+    simulated = [(name, files) for name, cfg, files, _, _ in todo
+                 if not cfg.get("is_data", False)]
+    if not simulated:
         return
-
-    if derive_fn is not None:
+    source = cs.overlay.zerobias
+    if make_missing:
+        prepare_plans(output_dir, source.pool, source.lumi_mask,
+                      {name: all_files[name] for name, _ in simulated})
+    for name, files in simulated:
+        plan = load_sample_plan(plan_dir(output_dir), name)
         try:
-            events = derive_fn(events, settings, sel_defs)
-        except Exception as e:  # noqa: BLE001
-            print(f"  (custom derive() failed during validation: {e})")
-
-    bad = []
-    for section, defs in (("histogram", hist_defs), ("selection", sel_defs)):
-        for name, cfg in defs.items():
-            for key in ("expression", "expression_x", "expression_y", "weight"):
-                expr = cfg.get(key)
-                if not expr or expr.startswith("@"):
-                    continue
-                try:
-                    _compile_expr(expr)(events)
-                except Exception as e:  # noqa: BLE001
-                    bad.append(f"    {section} '{name}'.{key}: {type(e).__name__}: {str(e)[:80]}")
-    for name, cfg in corr_defs.items():
-        for expr in cfg.get("inputs", []):
-            try:
-                _compile_expr(expr)(events)
-            except Exception as e:  # noqa: BLE001
-                bad.append(f"    correction '{name}' input '{expr}': {type(e).__name__}: {str(e)[:60]}")
-    for name, rw in (reweighters or {}).items():
-        for expr in rw.exprs:
-            try:
-                _compile_expr(expr)(events)
-            except Exception as e:  # noqa: BLE001
-                bad.append(f"    reweight '{name}' expression '{expr}': {type(e).__name__}: {str(e)[:60]}")
-    if bad:
-        print("WARNING: some config expressions failed to evaluate:")
-        print("\n".join(bad))
+            for path in files:
+                plan.block_of(path)
+        except ValueError as e:
+            raise SystemExit(f"ERROR: {e}") from None
 
 
 def _inputs_mtime(files: list[str], config_dir: Path,
@@ -345,17 +228,7 @@ def _inputs_mtime(files: list[str], config_dir: Path,
     Returns ``None`` when freshness can't be established (remote/missing
     inputs), in which case the sample is always processed.
     """
-    import os
-
-    # Every file the set actually reads, not just the ones in its directory:
-    # a set that _extends a reference set or _includes a shared fragment is
-    # out of date when *those* change too (see config.config_sources).
-    paths = list(config_sources(config_dir, FILL_CONFIG_FILES))
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    # Every module of the custom-columns package, not just columns.py: the
-    # helpers live in sibling files and editing one changes the fills too.
-    paths.extend(sorted((repo_root / "custom").glob("*.py")))
-    paths.extend(Path(p) for p in extra_paths)
+    paths = fill_sources(config_dir) + [Path(p) for p in extra_paths]
 
     newest = 0.0
     for p in paths:
@@ -386,82 +259,56 @@ def run_all(
 
     *file_list* replaces the sample's own ``files:`` with an already-resolved
     list of files, and *part* tags the output pickle as
-    ``<sample>.part<part>.pkl``; ``suep-slurm`` uses the pair to hand each array
-    task a frozen shard of one sample (``suep-plot`` sums the part pickles back
-    into one sample at load time).  *file_range* is the equivalent for a direct
-    ``suep-run``: a ``[start, end)`` slice of the resolved file list.
+    ``<sample>.part<part>.pkl``; ``suep-submit`` uses the pair to hand each
+    array task a frozen shard of one sample (``suep-plot`` sums the part
+    pickles back into one sample at load time).  *file_range* is the
+    equivalent for a direct ``suep-run``: a ``[start, end)`` slice of the
+    resolved file list.
     """
     config_dir = Path(config_dir)
     output_dir = Path(output_dir)
-    sample_defs = load_samples(config_dir / "samples.yaml")
-    hist_defs = load_histogram_defs(config_dir / "histograms.yaml")
-    sel_defs = load_selection_defs(config_dir / "selections.yaml")
-    corr_defs = load_correction_defs(config_dir / "corrections.yaml")
-    rw_defs = load_reweight_defs(config_dir / "reweights.yaml")
-
-    # Reweighting changes physics results: config errors are fatal, not warnings.
-    try:
-        reweighters = build_reweighters(rw_defs, config_dir)
-    except (ValueError, FileNotFoundError, KeyError) as e:
-        raise SystemExit(f"ERROR in reweights.yaml: {e}")
+    cs = load_config_set(config_dir, verbose=True)
+    hist_defs, sel_defs, corr_defs = cs.histograms, cs.selections, cs.corrections
+    reweighters, derive_fn, settings = cs.reweighters, cs.derive_fn, cs.settings
     if reweighters:
         print(f"Loaded {len(reweighters)} reweight(s): {list(reweighters)}")
 
-    unknown_maps = sorted(
-        (hname, hcfg["weight"])
-        for hname, hcfg in hist_defs.items()
-        if str(hcfg.get("weight", "")).startswith("@")
-        and hcfg["weight"][1:] not in reweighters
-    )
-    if unknown_maps:
-        lines = "\n".join(f"  histogram '{h}': unknown reweight map '{m}'"
-                          for h, m in unknown_maps)
-        raise SystemExit(
-            f"ERROR: histograms.yaml references reweight maps not defined in reweights.yaml:\n{lines}"
-        )
-    for hname, hcfg in hist_defs.items():
-        wspec = str(hcfg.get("weight", ""))
-        if wspec.startswith("@") and not reweighters[wspec[1:]].fill_only:
+    errors = static_errors(cs)
+    if errors:
+        raise SystemExit("ERROR in " + str(config_dir) + ":\n"
+                         + "\n".join(f"  {e}" for e in errors))
+    for hname, h in hist_defs.items():
+        wspec = h.weight or ""
+        if not wspec.startswith("@"):
+            continue
+        name = wspec[1:]
+        fill_only = (reweighters[name].fill_only if name in reweighters
+                     else bool(corr_defs[name].get("fill_only")))
+        if not fill_only:
             print(f"WARNING: histogram '{hname}' uses '{wspec}' which is also applied "
-                  f"globally; add 'fill_only: true' to the map to avoid double counting")
+                  f"globally; add 'fill_only: true' to it to avoid double counting")
 
-    unknown_sels = sorted(
-        (hname, sname)
-        for hname, hcfg in hist_defs.items()
-        for sname in hcfg.get("selections", [])
-        if sname not in sel_defs
-    )
-    if unknown_sels:
-        lines = "\n".join(f"  histogram '{h}': unknown selection '{s}'"
-                          for h, s in unknown_sels)
-        raise SystemExit(
-            f"ERROR: histograms.yaml references selections not defined in selections.yaml:\n{lines}"
-        )
-
-    if samples_filter:
-        unknown = [s for s in samples_filter if s not in sample_defs]
-        if unknown:
-            print(f"WARNING: unknown sample(s) ignored: {unknown}")
-        sample_defs = {k: v for k, v in sample_defs.items() if k in samples_filter}
-
-    if not sample_defs:
-        print("No samples to process.")
-        return output_dir
+    sample_defs = select_samples(cs.samples, samples_filter)
 
     correctors = {}
     if corr_defs:
+        # Fatal, like a bad reweight: carrying on without the scale factors
+        # would fill histograms that only look right.
         try:
             correctors = build_correctors(corr_defs)
-            print(f"Loaded {len(correctors)} correction(s): {list(correctors)}")
         except Exception as e:  # noqa: BLE001
-            print(f"WARNING: could not load corrections: {e}")
-            print("         proceeding without corrections")
+            raise SystemExit(f"ERROR: could not load corrections.yaml: "
+                             f"{type(e).__name__}: {e}")
+        print(f"Loaded {len(correctors)} correction(s): {list(correctors)}")
 
-    columns_cfg = load_columns_config(config_dir / "columns.yaml")
-    derive_fn, settings = _load_custom_columns(columns_cfg)
+    remote = (file_list or []) + [s for cfg in sample_defs.values()
+                                  for s in file_specs(cfg)]
+    if cs.overlay is not None and cs.overlay.zerobias is not None:
+        remote += file_specs(pool_definition(cs.overlay.zerobias.pool))
+    if any("://" in f for f in remote):
+        from .slurm import ensure_proxy
+        ensure_proxy(need_seconds=60)
 
-    proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
-                         reweighters, settings)
     rw_files = tuple(str(rw.include_path) for rw in reweighters.values()
                      if rw.include_path is not None)
     if workers and workers > 1:
@@ -473,18 +320,19 @@ def run_all(
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Processing {len(sample_defs)} sample(s), {len(hist_defs)} histogram(s)")
 
-    validated = False
+    todo = []
+    all_files = {}       # sample -> its whole file list, before --file-range
     for name, cfg in sample_defs.items():
         # A caller-supplied list is already resolved: no directory walk here,
         # so a shard processes exactly the files it was submitted with.
         if file_list is not None:
             files = list(file_list)
         else:
-            file_specs = cfg.get("files") or []
-            if not file_specs:
+            if not file_specs(cfg):
                 print(f"  WARNING: sample '{name}' has no 'files' entry, skipping")
                 continue
             files = resolve_sample_files(cfg)
+            all_files[name] = files
         tree = cfg.get("tree", "Events")
         if not files:
             print(f"  WARNING: no files resolved for '{name}', skipping")
@@ -497,19 +345,36 @@ def run_all(
                       f"for '{name}', skipping")
                 continue
 
-        suffix = f".part{part}" if part is not None else ""
-        out_path = output_dir / f"{name}{suffix}.pkl"
+        out_path = output_dir / output_name(name, part)
         if not force and out_path.exists():
             newest = _inputs_mtime(files, config_dir, rw_files)
             if newest is not None and out_path.stat().st_mtime >= newest:
                 print(f"  {name}: up to date, skipping (--force to reprocess)")
                 continue
+        todo.append((name, cfg, files, tree, out_path))
 
-        if not validated:
-            _validate_expressions(files, tree, hist_defs, sel_defs, corr_defs,
-                                  derive_fn, reweighters, settings)
-            validated = True
+    # The ZeroBias pairs are fixed before anything is processed: made here for
+    # a direct run, by suep-submit for its array tasks (which get a file_list).
+    _prepare_overlay_plans(cs, output_dir, todo, all_files,
+                           make_missing=file_list is None)
+    overlay = overlay_for_run(cs, output_dir)
+    proc = SuepProcessor(hist_defs, sel_defs, correctors, sample_defs, derive_fn,
+                         reweighters, settings, overlay=overlay)
 
+    # Every expression on the first file of every sample, before any of them
+    # is processed: a failure is fatal in the fill, so better all at once now.
+    problems = []
+    for name, cfg, files, tree, _ in todo:
+        problems += [f"  [{name}] {p}" for p in check_expressions(
+            files, tree, hist_defs, sel_defs, corr_defs, derive_fn, reweighters,
+            settings, sample=name, is_data=cfg.get("is_data", False),
+            group=cfg.get("group", ""), overlay=overlay)]
+    if problems:
+        raise SystemExit("ERROR: config expressions that do not work (checked on "
+                         "the first events of each sample's first file):\n"
+                         + "\n".join(problems))
+
+    for name, cfg, files, tree, out_path in todo:
         t0 = time.time()
         out = runner({name: files}, proc, treename=tree)
         elapsed = time.time() - t0
@@ -520,14 +385,28 @@ def run_all(
         payload = {
             "histograms": out["histograms"],
             "samples": {name: cfg},
-            "hist_defs": hist_defs,
+            "hist_defs": _with_layout(hist_defs, out.get("layout", {})),
             "sumw": out.get("sumw", {}),
             "nevents": out.get("nevents", {}),
             "cutflow": out.get("cutflow", {}),
         }
-        with open(out_path, "wb") as f:
-            pickle.dump(payload, f)
+        _write_pickle_atomic(out_path, payload)
         print(f"    -> {out_path}")
 
     print(f"Saved sample file(s) to {output_dir}/")
     return output_dir
+
+
+def _with_layout(hist_defs: dict, layout: dict) -> dict:
+    """The definitions in flat form, with ``per_object`` as the fill found it.
+
+    This is what the pickle stores (see ``Histogram.to_dict``), so tools that
+    read the histograms back (``suep-plot``, ``suep-reweight``) need neither
+    the config set nor to re-evaluate anything.  A histogram never filled has
+    no ``per_object``.
+    """
+    per_object = {n: True for n in layout.get("object", ())}
+    per_object.update({n: False for n in layout.get("event", ())})
+    return {name: ({**h.to_dict(), "per_object": per_object[name]}
+                   if name in per_object else h.to_dict())
+            for name, h in hist_defs.items()}

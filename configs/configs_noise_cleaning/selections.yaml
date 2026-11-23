@@ -1,0 +1,28 @@
+# ── What the cleaning kept, against the truth label ───────────────
+# Per rechit of the MC input (<collection>MC, before the cleaning), as in the
+# study's metric_masks(): hard process = truthOrigin == 1 (hits shared by the
+# hard process and pileup count as not hard), kept = the cleaning's decision.
+#   efficiency = hard_kept / hard      purity = hard_kept / kept
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, COLL: cscRechits}
+  - {SYS: dt, COLL: dtRecHits}
+  - {SYS: rpc, COLL: rpcRecHits}
+
+_repeat:
+- over: systems
+  defs:
+    <SYS>_hard:
+      label: hard process
+      expression: events.<COLL>MC.truthOrigin == 1
+    <SYS>_kept:
+      label: kept
+      expression: events.<COLL>MC.cleanKeep
+    <SYS>_hard_kept:
+      label: hard process, kept
+      expression: (events.<COLL>MC.truthOrigin == 1) & events.<COLL>MC.cleanKeep
+    <SYS>_nonhard_kept:
+      label: not hard process, kept
+      expression: (events.<COLL>MC.truthOrigin != 1) & events.<COLL>MC.cleanKeep

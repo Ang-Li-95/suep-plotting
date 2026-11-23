@@ -1,0 +1,63 @@
+# ── What the ZeroBias overlay did, per event ──────────────────────
+# Per system: the simulated rechits the cleaning kept and dropped
+# (<collection>MC.cleanKeep), the ZeroBias event's rechits and the ones
+# DataClean dropped (<collection>ZB.dataCleanKeep), and what the clustering
+# then sees (<collection>).
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, COLL: cscRechits, SYSU: CSC}
+  - {SYS: dt, COLL: dtRecHits, SYSU: DT}
+  - {SYS: rpc, COLL: rpcRecHits, SYSU: RPC}
+
+_repeat:
+- over: systems
+  defs:
+    overlay_<SYS>_n_mc_kept:
+      expression: ak.sum(events.<COLL>MC.cleanKeep, axis=1)
+      bins: [100, 0, 500]
+      label: <SYSU> rechits per event, simulation kept
+      log_y: true
+    overlay_<SYS>_n_mc_dropped:
+      expression: ak.sum(~events.<COLL>MC.cleanKeep, axis=1)
+      bins: [100, 0, 500]
+      label: <SYSU> rechits per event, simulation dropped
+      log_y: true
+    overlay_<SYS>_n_zb:
+      expression: ak.num(events.<COLL>ZB, axis=1)
+      bins: [100, 0, 500]
+      label: <SYSU> rechits per event, ZeroBias
+      log_y: true
+    overlay_<SYS>_n_zb_dropped:
+      expression: ak.sum(~events.<COLL>ZB.dataCleanKeep, axis=1)
+      bins: [100, 0, 500]
+      label: <SYSU> rechits per event, ZeroBias dropped by DataClean
+      log_y: true
+    overlay_<SYS>_n_merged:
+      expression: ak.num(events.<COLL>, axis=1)
+      bins: [100, 0, 500]
+      label: <SYSU> rechits per event after the overlay
+      log_y: true
+
+# Which ZeroBias events were used: the run (the eras should appear in
+# proportion to their files) and whether a partner had to be reused.
+overlay_zb_run:
+  expression: events.overlay.run
+  bins: [81, 378900, 387000]
+  label: ZeroBias partner run
+overlay_reused:
+  expression: 1 * events.overlay.reused
+  bins: [2, -0.5, 1.5]
+  label: ZeroBias partner reused
+
+# Timing of the merged rechits, split by origin with the cuts of the overlay
+# region: the ZeroBias hits are reconstructed under data conditions.
+overlay_csc_rechit_tpeak:
+  expression: events.cscRechits.Tpeak
+  bins: [70, -100, 250]
+  label: CSC rechit $t_{\mathrm{peak}}$ [ns]
+overlay_rpc_rechit_bx:
+  expression: events.rpcRecHits.Bx
+  bins: [9, -4.5, 4.5]
+  label: RPC rechit bunch crossing

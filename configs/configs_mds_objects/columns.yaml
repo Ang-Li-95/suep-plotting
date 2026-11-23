@@ -1,0 +1,43 @@
+# ── derive() settings ─────────────────────────────────────────────
+# The reference clustering and jet calibration, and the four reco steps --
+# nothing more:
+#
+#   jerc               JEC on events.Jet plus the Type-1 PuppiMET rebuilt from
+#                      RawPuppiMET, and JER smearing on MC.  This is what makes
+#                      events.PuppiMET.pt / .phi and events.Jet.pt below the
+#                      post-JERC quantities.
+#   jet_id             events.Jet.tightLepVetoId, which jet_sel_foriso needs
+#                      (2024 NanoAOD no longer stores Jet_jetId).
+#   clusters           events.cscCluster / events.dtCluster, including their
+#                      `matched` flag -- the LLP truth match is done inside the
+#                      clustering from the rechit llpIdx, so the cluster <-> LLP
+#                      counts below need no gen step.
+#   cluster_isolation  attaches events.n_muon_sel_foriso / n_jet_sel_foriso.
+#
+# No llp / llp_hits / llp_reco / llp_shape: this set fills no per-LLP variable,
+# and skipping them is a large saving on the signal grid.
+
+# ── derive() settings: the same clustering in every MDS set ───────
+# The clustering and jet calibration every set is compared against.  Pinned
+# rather than left to the module defaults: the studies are overlaid, so a
+# future change to custom/params.py must not move one of them silently --
+# and since every set now spells them out, keep them identical across sets.
+#
+# The truth steps (llp, llp_hits, llp_reco, llp_shape) run only in sets with
+# gen-level fills: a set without them should not pay for them, and
+# events.llp being absent is what makes a stray gen expression fail at
+# validation instead of filling empty.
+parameters:
+  cluster_eps: 0.4
+  cluster_min_samples: 10
+  match_min_hits: 10
+  jerc: true  # JEC on events.Jet (data too); JER smearing on MC
+  # The RPC rechits are associated to the finished CSC and DT clusters rather
+  # than clustered on their own: they can then date a cluster without being
+  # able to create one, so the cluster variables and the signal region stay
+  # those of the standard MDS analysis.  This is why there is no
+  # events.rpcCluster and no rpc_cluster_* histogram anywhere below.
+  # rpc_min_samples is unused in this mode.
+  rpc_mode: match
+
+steps: [jerc, jet_id, clusters, cluster_isolation]

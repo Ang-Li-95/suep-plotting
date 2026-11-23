@@ -1,0 +1,68 @@
+# ── SM backgrounds: the three cluster populations ─────────────────
+# The same expressions and thresholds as the src cut of configs_mds_src_dy_jet,
+# _dy_muon and _dy_iso (see those for the reasoning), under their own names so
+# one set can hold all three.  in_jet and on_muon overlap (a muon in a jet);
+# iso is the exact complement of their union.
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, SYSU: CSC}
+  - {SYS: dt, SYSU: DT}
+
+# ── Prompt objects the cluster isolation is measured against ──────
+# The 'cluster_isolation' step measures dR from every cluster centroid to the
+# closest object passing these and attaches it as cluster.drMuon / drJet (the
+# keys of helpers.ISO_SELECTIONS).  'collection:' names what the per-object
+# mask is over; tightLepVetoId comes from the 'jet_id' step, since 2024
+# NanoAOD no longer stores Jet_jetId.
+muon_sel_foriso:
+  collection: Muon
+  expression: (events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId
+
+jet_sel_foriso:
+  collection: Jet
+  expression: (events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId
+
+# ── Trigger requirements (event level) ────────────────────────────
+# Used by the trig_* event regions of histograms.yaml.  The MET paths are the
+# 2024 menu's: there the MHT threshold equals the MET one (PFMETNoMu130 comes
+# with PFMHTNoMu130, not PFMHTNoMu120).  130 and 140 are tighter versions of
+# 120, so the OR is the 120 path in practice; all three are written out.
+trig_met:
+  label: HLT PFMETNoMu120/130/140
+  expression: events.HLT.PFMETNoMu120_PFMHTNoMu120_IDTight | events.HLT.PFMETNoMu130_PFMHTNoMu130_IDTight | events.HLT.PFMETNoMu140_PFMHTNoMu140_IDTight
+
+trig_dt: {label: HLT_L1MET_DTCluster50, expression: events.HLT.L1MET_DTCluster50}
+
+trig_csc: {label: HLT_CscCluster_Loose, expression: events.HLT.CscCluster_Loose}
+
+csc_cluster_in_jet: {label: '$\Delta R$(cluster, jet) < 0.4', expression: events.cscCluster.drJet < 0.4}
+
+csc_cluster_on_muon: {label: '$\Delta R$(cluster, muon) < 0.4', expression: events.cscCluster.drMuon < 0.4}
+
+dt_cluster_in_jet: {label: '$\Delta R$(cluster, jet) < 0.4', expression: events.dtCluster.drJet < 0.4}
+
+dt_cluster_on_muon: {label: '$\Delta R$(cluster, muon) < 0.4', expression: events.dtCluster.drMuon < 0.4}
+
+# Each template is written once and filled in per axis entry.
+_repeat:
+- over: systems
+  defs:
+    # Event-level bookkeeping (cutflow.txt)
+    has_<SYS>_cluster: ak.num(events.<SYS>Cluster) >= 1
+
+    # Cluster isolation from prompt activity.  In events with no muon / jet
+    # at all the field carries the sentinel NO_OBJECT_DR = 999, so those
+    # maximally isolated clusters pass the same comparison with no special
+    # case.
+    <SYS>_cluster_iso_muon: events.<SYS>Cluster.drMuon >= 0.4
+    <SYS>_cluster_iso_jet: events.<SYS>Cluster.drJet >= 0.4
+
+    # RPC content of the cluster: whether it picked up any RPC rechit at all,
+    # and whether its innermost hit came from something other than RPC.
+    <SYS>_cluster_has_rpc: events.<SYS>Cluster.nRPCHits > 0
+    <SYS>_cluster_first_not_rpc: events.<SYS>Cluster.firstSystem != 2
+    <SYS>_cluster_iso:
+      label: $\Delta R$(cluster, jet and muon) $\geq$ 0.4
+      expression: (events.<SYS>Cluster.drJet >= 0.4) & (events.<SYS>Cluster.drMuon >= 0.4)

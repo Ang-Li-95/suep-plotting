@@ -62,9 +62,19 @@ def _build_llps(events):
     match = gidx[:, :, None] == dau_mom[:, None, :]
     has_dau = ak.any(match, axis=2)
     first = ak.fill_none(ak.argmax(match, axis=2), 0)
-    dvx = ak.where(has_dau, gp.vx[is_dau][first], np.nan)
-    dvy = ak.where(has_dau, gp.vy[is_dau][first], np.nan)
-    dvz = ak.where(has_dau, gp.vz[is_dau][first], np.nan)
+
+    def of_daughter(field, index, valid):
+        """*field* of the daughter at *index* per LLP; None where not *valid*.
+
+        The index is masked before it is used: an event whose LLPs have no
+        stored daughter at all has an empty daughter list, and index 0 into
+        it is out of range.
+        """
+        return field[is_dau][ak.mask(index, valid)]
+
+    dvx = ak.fill_none(of_daughter(gp.vx, first, has_dau), np.nan)
+    dvy = ak.fill_none(of_daughter(gp.vy, first, has_dau), np.nan)
+    dvz = ak.fill_none(of_daughter(gp.vz, first, has_dau), np.nan)
 
     # Opening angle between the two decay daughters (every LLP has exactly two).
     # Boost-driven: a more boosted LLP decays into a tighter pair, which is what
@@ -74,16 +84,19 @@ def _build_llps(events):
     match2 = match & (dau_local[:, None, :] != first[:, :, None])
     has_two = ak.sum(match, axis=2) >= 2
     second = ak.fill_none(ak.argmax(match2, axis=2), 0)
-    d_eta, d_phi = gp.eta[is_dau], gp.phi[is_dau]
-    t1 = 2 * np.arctan(np.exp(-d_eta[first]))
-    t2 = 2 * np.arctan(np.exp(-d_eta[second]))
-    dphi_d = d_phi[first] - d_phi[second]
-    cos_open = (np.sin(t1) * np.sin(t2) * np.cos(dphi_d)
+    eta1, eta2 = of_daughter(gp.eta, first, has_two), of_daughter(gp.eta, second, has_two)
+    phi1, phi2 = of_daughter(gp.phi, first, has_two), of_daughter(gp.phi, second, has_two)
+    t1 = 2 * np.arctan(np.exp(-eta1))
+    t2 = 2 * np.arctan(np.exp(-eta2))
+    cos_open = (np.sin(t1) * np.sin(t2) * np.cos(phi1 - phi2)
                 + np.cos(t1) * np.cos(t2))
     # np.clip is not a ufunc, so it can't dispatch over the jagged array; clamp
     # with the min/max ufuncs before arccos (guards float round-off past +-1).
+    # The missing entries (fewer than two daughters stored) stay None through
+    # the arithmetic, which therefore runs in the branches' own precision, and
+    # become NaN only at the end.
     cos_open = np.minimum(np.maximum(cos_open, -1.0), 1.0)
-    opening_angle = ak.where(has_two, np.arccos(cos_open), np.nan)
+    opening_angle = ak.fill_none(np.arccos(cos_open), np.nan)
 
     pt, eta, mass = gp.pt[is_llp], gp.eta[is_llp], gp.mass[is_llp]
     decay_r = np.hypot(dvx, dvy)
@@ -163,6 +176,7 @@ def _empty_llps(events, settings):
                    else ["CSC", "DT"])
         f64 += ["clusterHitFrac" + sys for sys in systems]
         i64 += ["nRecoCluster" + sys for sys in systems]
+        i64 += ["matchedClusterIdx" + sys for sys in systems]
         boo += ["reco" + sys for sys in systems] + ["reco"]
     if "llp_shape" in enabled:
         f64 += [f + sys for sys in ("CSC", "DT", "RPC", "Total")
@@ -265,17 +279,11 @@ def _dr_kernel(ev_off, hit_eta, hit_phi, hit_idx, hit_src, keys_flat, llp_off,
                pair_max_hits):
     """Compiled inner loop of :func:`_llp_rechit_dr` (see it for definitions).
 
-    Every array is flat and preallocated by the caller; the five output arrays
-    are written in place.  ``ev_off`` slices the matched-hit arrays per event,
+    Every array is flat and preallocated by the caller; the output arrays are
+    written in place.  ``ev_off`` slices the matched-hit arrays per event,
     ``llp_off`` slices ``keys_flat`` and the output rows per event.
-    ``pair_max_hits`` is passed in as an argument, which it must be: numba
-    would freeze a module-level constant into the cached machine code at the
-    first compile.
-
-    Compiled because the groups are tiny (~3 rechits per LLP): in numpy this
-    loop was ~17x slower, spending almost all of it on per-call dispatch rather
-    than arithmetic.  Results match the numpy version to the last ulp (numpy
-    sums pairwise, this sums in a plain loop).
+    ``pair_max_hits`` must be an argument: numba would freeze a module-level
+    constant into the cached machine code.
     """
     two_pi = 2.0 * np.pi
     for i in range(len(ev_off) - 1):

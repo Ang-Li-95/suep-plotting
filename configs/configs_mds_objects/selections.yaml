@@ -1,0 +1,83 @@
+# ── Prompt-object selections ──────────────────────────────────────
+# This set fills a short, explicit list of event-level object counts, so it
+# carries only the cuts those counts are defined by, not the whole
+# cluster-selection tree.
+#
+# muon_sel_foriso and jet_sel_foriso are the same as in every other MDS set
+# (the 'cluster_isolation' step requires both by name -- see
+# custom/helpers.py:ISO_SELECTIONS).  Keep them in step with the others if
+# those are retuned, or the counts here stop being comparable.
+#
+# Every mask below is also attached to events as a column of its own name, so
+# histograms.yaml counts one with `ak.sum(events.<name>, axis=1)` instead of
+# repeating the cut.  All five are therefore defined here and only here.
+#
+# 'collection:' names the collection the per-object mask is over.  The
+# isolation step needs it to apply the mask; it is carried on the electron /
+# photon / tau cuts too so all five read the same way.
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, SYSU: CSC}
+  - {SYS: dt, SYSU: DT}
+
+muon_sel_foriso:
+  collection: Muon
+  label: muon $p_T > 10$ GeV, $|\eta| < 2.4$, loose ID
+  expression: (events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId
+
+jet_sel_foriso:
+  collection: Jet
+  label: jet $p_T > 20$ GeV, $|\eta| < 2.4$, tight lepton-veto ID
+  expression: (events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId
+
+# ── Electrons, photons, taus ──────────────────────────────────────
+# There is no inherited cut for these, so they are defined here at the same
+# loose, veto-like level as the two above: enough to be a real object, not a
+# signal-selection working point.
+#
+# Note that Electron_cutBased and Photon_cutBased are working-point *indices*,
+# not flags -- electron: 0=fail, 1=veto ... 4=tight; photon: 0=fail, 1=loose,
+# 2=medium, 3=tight -- so a working point has to be an explicit '>=' on the
+# index.  A bare `events.Photon.cutBased` in the chain does not fail: it makes
+# the whole mask an integer, and an integer mask *indexes* the collection
+# instead of filtering it, which silently returns the wrong photons and the
+# wrong count (a fail-and-a-tight photon came back as three photons in test).
+electron_sel:
+  collection: Electron
+  label: electron $p_T > 10$ GeV, $|\eta| < 2.5$, cut-based veto
+  expression: (events.Electron.pt > 10) & (abs(events.Electron.eta) < 2.5) & (events.Electron.cutBased >= 1)
+
+photon_sel:
+  collection: Photon
+  label: photon $p_T > 15$ GeV, $|\eta| < 2.5$, cut-based loose
+  expression: (events.Photon.pt > 15) & (abs(events.Photon.eta) < 2.5) & (events.Photon.cutBased >= 1)
+
+# The DeepTau2018v2p5 branches are working-point indices in the same way
+# (VSjet / VSe: 1=VVVLoose ... 8=VVTight; VSmu: 1=VLoose ... 4=Tight), so
+# '> 0' here is the loosest available point against all three -- VVVLoose vs
+# jets and electrons, VLoose vs muons.
+tau_sel:
+  collection: Tau
+  label: tau $p_T > 20$ GeV, $|\eta| < 2.5$, DeepTau2018v2p5 VVVLoose
+  expression: (events.Tau.pt > 20) & (abs(events.Tau.eta) < 2.5) & (abs(events.Tau.dz) < 0.2) & (events.Tau.idDeepTau2018v2p5VSjet > 0) & (events.Tau.idDeepTau2018v2p5VSe > 0) & (events.Tau.idDeepTau2018v2p5VSmu > 0)
+
+# Each template is written once and filled in per axis entry.
+_repeat:
+- over: systems
+  defs:
+    # ── Selected MDS clusters ─────────────────────────────────────────
+    # What "selected" means for a cluster: isolated from prompt activity, the
+    # standard MDS cluster requirement (the same dR >= 0.4 pair the other sets use
+    # as <SYS>_cluster_iso_muon / _iso_jet).  drMuon / drJet come from the
+    # 'cluster_isolation' step and carry the sentinel 999 in events with no such
+    # object, so a maximally isolated cluster passes without a special case.
+    #
+    # Only CSC and DT: with rpc_mode: match there is no standalone rpcCluster.
+    <SYS>_cluster_sel:
+      label: <SYSU> cluster $\Delta R > 0.4$ from any selected muon and jet
+      expression: (events.<SYS>Cluster.drMuon >= 0.4) & (events.<SYS>Cluster.drJet >= 0.4)
+
+    # ── Event bookkeeping (cutflow.txt) ───────────────────────────────
+    has_<SYS>_cluster: ak.num(events.<SYS>Cluster) >= 1

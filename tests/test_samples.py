@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from suep_plot.config import ConfigError
-from suep_plot.processor import _resolve_files, load_samples
+from suep_plot.inputs import _resolve_files, load_samples
 
 
 def _write(path, obj):
@@ -172,3 +172,98 @@ def test_submit_rejects_unknown_sample(tmp_path):
         submit_jobs(str(cfg_dir), str(tmp_path / "out"), None, None, "01:00:00",
                     "4G", "mds", chunk_size=1000, dry_run=True,
                     samples_filter=["typo"])
+
+
+# ── choosing samples with -s ──────────────────────────────────────
+
+
+def test_an_unknown_sample_is_fatal_and_suggests_the_closest():
+    from suep_plot.inputs import select_samples
+
+    with pytest.raises(SystemExit, match="did you mean 'suep_mDark2_temp1'"):
+        select_samples({"suep_mDark2_temp1": {}, "dy": {}}, ["suep_mDark2_tmp1"])
+
+
+def test_samples_can_be_given_comma_separated():
+    from suep_plot.inputs import select_samples
+
+    assert list(select_samples({"a": {}, "b": {}, "c": {}}, ["c,a"])) == ["a", "c"]
+
+
+def test_a_set_without_samples_is_an_error():
+    from suep_plot.inputs import select_samples
+
+    with pytest.raises(SystemExit, match="no samples"):
+        select_samples({}, None)
+
+
+def test_a_misspelled_from_is_an_error(tmp_path):
+    from suep_plot.config import ConfigError
+
+    _write(tmp_path / "datasets.yaml", {"real": {"files": ["/data/real"]}})
+    path = _write(tmp_path / "samples.yaml", {
+        "_registry": "datasets.yaml", "alias": {"_from": "reel", "label": "x"}})
+
+    with pytest.raises(ConfigError, match="no registry entry 'reel'"):
+        load_samples(path)
+
+
+def test_files_given_as_one_string_is_one_path(tmp_path):
+    """Not a list of its letters."""
+    from suep_plot.inputs import resolve_sample_files
+
+    assert resolve_sample_files({"files": "some.root"}) == ["some.root"]
+
+
+def test_a_child_override_keeps_what_the_parent_set_over_the_registry(tmp_path):
+    """_registry next to _extends used to re-read the pool over the parent."""
+    _write(tmp_path / "pool.yaml",
+           {"real": {"files": ["/d"], "label": "R", "max_files": 9},
+            "other": {"files": ["/o"]}})
+    (tmp_path / "p").mkdir()
+    (tmp_path / "c").mkdir()
+    _write(tmp_path / "p" / "samples.yaml", {
+        "_registry": "../pool.yaml", "real": {"label": "custom", "max_files": 3}})
+    child = _write(tmp_path / "c" / "samples.yaml", {
+        "_extends": "../p", "_registry": "../pool.yaml",
+        "real": {"color": "red"}, "other": None})
+
+    assert load_samples(child) == {
+        "real": {"files": ["/d"], "label": "custom", "max_files": 3, "color": "red"},
+        "other": {"files": ["/o"]}}
+
+
+def test_a_lumi_mask_must_exist_and_sit_on_data(tmp_path):
+    from suep_plot.checks import sample_errors
+
+    good = tmp_path / "golden.json"
+    good.write_text('{"1": [[1, 10]]}')
+    samples = {"data": {"files": ["/d"], "is_data": True, "lumi_mask": str(good)},
+               "mc": {"files": ["/m"], "lumi_mask": str(good)},
+               "typo": {"files": ["/d"], "is_data": True,
+                        "lumi_mask": str(tmp_path / "nope.json")}}
+
+    errors = sample_errors(samples)
+    assert len(errors) == 2
+    assert "'mc': lumi_mask on a sample that is not is_data" in errors[0]
+    assert "'typo': lumi_mask file not found" in errors[1]
+
+
+def test_the_shipped_golden_json_keeps_only_certified_lumi_sections():
+    """The processor's mask, on the copy in lumimasks/."""
+    import json
+
+    import numpy as np
+
+    from suep_plot.inputs import lumi_mask_path
+    from suep_plot.processor import SuepProcessor
+
+    mask = "lumimasks/Cert_Collisions2024_378981_386951_Golden.json"
+    cert = json.loads(lumi_mask_path(mask).read_text())
+    run = sorted(cert)[0]
+    first, last = cert[run][0]
+
+    proc = SuepProcessor({}, {}, {}, {})
+    keep = proc._lumi_mask(mask)(np.array([int(run)] * 3 + [1]),
+                                 np.array([first, last, last + 10_000, 1]))
+    assert list(keep) == [True, True, False, False]

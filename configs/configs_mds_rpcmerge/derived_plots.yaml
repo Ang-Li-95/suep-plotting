@@ -1,1 +1,28 @@
 _extends: ../configs_mds_signal
+
+eff_csc:
+  type: efficiency
+  region: llp
+  numerator: in_csc_reco
+  denominator: in_csc
+  label_y: CSC cluster efficiency (decay in CSC)
+  vars: [llp_decay_r, llp_energy, llp_eta, llp_pt]
+eff_dt:
+  type: efficiency
+  region: llp
+  numerator: in_dt_reco
+  denominator: in_dt
+  label_y: DT cluster efficiency (decay in DT)
+  vars: [llp_decay_absz, llp_energy, llp_eta, llp_pt]
+eff_csc_vs_nhits:
+  label_x: $N_{\mathrm{CSC\ rechits}}$ from LLP in CSC
+  label_y: CSC cluster efficiency (decay in CSC)
+  type: efficiency
+  numerator: llp/in_csc_reco/llp_nhits_csc_rpc
+  denominator: llp/in_csc/llp_nhits_csc_rpc
+eff_dt_vs_nhits:
+  label_x: $N_{\mathrm{DT\ rechits}}$ from LLP in DT
+  label_y: DT cluster efficiency (decay in DT)
+  type: efficiency
+  numerator: llp/in_dt_reco/llp_nhits_dt_rpc
+  denominator: llp/in_dt/llp_nhits_dt_rpc

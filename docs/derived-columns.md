@@ -5,13 +5,17 @@ the DBSCAN clusters of the muon-system rechits — to the NanoEvents array befor
 histograms are filled. The processor calls it once per chunk:
 
 ```python
-events = derive(events, settings)
+events = derive(events, settings, selections)
 ```
 
 `settings` is a `custom.params.Settings`, produced by `configure()` from the
-config set's `columns.yaml`. It is immutable and picklable: the processor
-resolves it once and pickles it to every worker, so nothing below `derive()`
-reads module state and two configurations can run side by side.
+config set's `columns.yaml`; `selections` is the set's `selections.yaml`, which
+the isolation step reads its prompt-object cuts from. `settings` is immutable
+and picklable: the processor resolves it once and pickles it to every worker,
+so nothing below `derive()` reads module state and two configurations can run
+side by side.  Before any input file is opened, `custom.columns.validate()`
+checks that the steps find what they need (e.g. the isolation selections), so
+a set that cannot work fails at startup.
 
 Samples without a `cscRechits` collection pass straight through.
 
@@ -43,7 +47,7 @@ its default and its validator.
 | `cluster_eps` | `0.4` | DBSCAN eps — the dR radius in eta-phi, all systems |
 | `cluster_min_samples` | `10` | DBSCAN minimum cluster size, CSC and DT (50 = standard MDS analysis) |
 | `rpc_min_samples` | `10` | the same for RPC, which is a sparser system; unused outside `rpc_mode: separate` |
-| `rpc_mode` | `match` | what the RPC rechits are for — see below |
+| `rpc_mode` | `separate` (every study sets `match` in its `columns.yaml`) | what the RPC rechits are for — see below |
 | `match_min_hits` | `10` | cluster ↔ LLP truth match: `matched` := (# rechits sharing one `llpIdx`) ≥ this |
 | `oot_time_cut` | `12.5` | half-width [ns] of the in-time window behind `cluster.ootHitFrac`. 12.5 ns = half a bunch crossing, the standard MDS in-time definition. Only reaches systems with a rechit time, i.e. CSC `Tpeak` |
 | `pair_max_hits` | `2000` | an LLP with more matched rechits than this is strided down before the O(N²) pairwise dR matrix is built (multiplicities are far below the cap in practice) |
@@ -61,7 +65,7 @@ it is what can date a CSC or DT cluster. The barrel wheels (`Region == 0`) sit
 at the DT radii and the endcap disks (`|Region| == 1`) at the CSC z, so each RPC
 rechit pairs with one of the two.
 
-- **`match`** *(the default)* — the clustering is the CSC/DT one and the RPC
+- **`match`** *(what every study's `columns.yaml` sets)* — the clustering is the CSC/DT one and the RPC
   rechits are associated to the finished clusters afterwards (nearest centroid
   within `cluster_eps`). RPC contributes nothing to the DBSCAN density
   estimate, so the cluster variables and the signal region stay those of the
@@ -69,9 +73,10 @@ rechit pairs with one of the two.
   BX in data (~19 % at BX 0 in ZeroBias), so merged, RPC noise can push a
   background cluster over `min_samples`.
 - **`separate`** — the historical layout: three independent DBSCAN runs, and
-  `events.rpcCluster` alongside the other two. Only the retired config sets
-  still use it; nothing in `configs/common/` defines an `rpc_cluster_*`
-  histogram, so a set switching back to it needs its own.
+  `events.rpcCluster` alongside the other two. It is the module default, so a
+  set with no `rpc_mode` in its `columns.yaml` gets it;
+  no shipped set uses it.  No shipped set defines an
+  `rpc_cluster_*` histogram, so a set switching back to it needs its own.
 - **`merge`** — the RPC rechits are clustered *together with* the system they
   overlap, so a shower seen by both becomes one cluster. Because they are inside
   the cluster, they also count towards the per-LLP hit totals that define
@@ -96,17 +101,18 @@ is not a parameter — it is an object selection, so it is written where every
 other object selection is written:
 
 ```yaml
-# configs/configs_mds/selections.yaml
+# configs/configs_mds/selections.yaml (the same in every study)
 muon_sel_foriso:
-  level: object
   collection: Muon
   expression: "(events.Muon.pt > 10) & (abs(events.Muon.eta) < 2.4) & events.Muon.looseId"
 
 jet_sel_foriso:
-  level: object
   collection: Jet
   expression: "(events.Jet.pt > 20) & (abs(events.Jet.eta) < 2.4) & (events.Jet.neHEF < 0.8) & (events.Jet.chHEF > 0.1) & events.Jet.tightLepVetoId"
 ```
+
+(They are per-object masks -- one entry per muon / jet -- which the framework
+reads off the expression; no `level:` key is needed.)
 
 The names are fixed — they are the values of `helpers.ISO_SELECTIONS`, which
 pairs each with the cluster field it produces (`drMuon`, `drJet`). The
@@ -124,17 +130,23 @@ reports how many events contain such an object.
 
 The step also attaches the **multiplicity** of each prompt collection as an
 event-level column named after the selection — `events.n_muon_sel_foriso`,
-`events.n_jet_sel_foriso`. That is what the `n_jet_sel_foriso` histogram plots:
-the count and the isolation come from the same selection, so retuning the cut
-moves both and they cannot disagree. (A collection absent from the file gets no
-column, so an expression referencing it fails at validation rather than
-plotting zeros.)
+`events.n_jet_sel_foriso`. That is what the `n_jet_sel_foriso` histogram in
+the studies' plots: the count and the isolation come from the same
+selection, so retuning the cut moves both and they cannot disagree. (A
+collection absent from the file gets no column, so an expression referencing it
+fails at validation rather than plotting zeros.)
 
-Each config set spells the pair out, so a cut can be retuned in one study
-without moving the others. `configs_mds`, `configs_mds_signal` and
-`configs_mds_data` are overlaid on one canvas, though, so when you retune those
-three, retune all three — `test_the_overlaid_sets_share_one_prompt_object_definition`
-fails if they drift apart.
+> For counting **any** selection, not just these two, see
+> [selections as columns](configuration.md#selections-as-columns): the framework
+> attaches every `selections.yaml` mask as `events.<name>`, so a multiplicity is
+> `ak.sum(events.<name>, axis=1)` with no step involved.
+
+Every study defines the same pair in its `selections.yaml`, so
+retuning it there moves them all; a set can still override it for itself.
+`configs_mds`, `configs_mds_signal` and `configs_mds_data` are overlaid on one
+canvas, so they must keep one definition —
+`test_the_overlaid_sets_share_one_prompt_object_definition` fails if they
+drift apart.
 
 > JEC/JER rescale pT and mass but leave eta/phi untouched, so corrections reach
 > the cluster dR only through which jets pass the pT threshold above — which is
@@ -164,8 +176,8 @@ under a pT rescale), so it does not matter whether `jerc` ran first.
 
 ## Steps
 
-`steps:` selects a subset. `configs/common/` enables the four reco steps and
-`configs/common_gen/` adds the four truth ones, so a study inherits the right
+`steps:` selects a subset. Reco-only studies enable the four reco steps and
+the truth studies add the four truth ones, so a study gets the right
 list rather than spelling it out. They always run in this order.
 Omitting a step means the fields it attaches are **absent**, so a config that
 references them fails loudly at expression validation instead of quietly filling
@@ -237,6 +249,10 @@ proper phi wrap-around.
 - **Where it starts** — `firstChamber` / `firstStation`, the chamber-type code
   and station of the hit closest to the interaction point. A punch-through jet
   starts in an innermost chamber; a genuine displaced shower need not.
+- **Inner-chamber content** — `station1Frac`, `chamber11Frac`, `chamber12Frac`:
+  the fraction of the cluster's own CSC / DT hits (merged RPC hits left out) in
+  station 1, and in chamber code 11 / 12 -- ME1/1 / ME1/2 for CSC, MB1 at
+  |wheel| 1 / 2 for DT.
 - **Timing** — on systems whose rechits carry a time (CSC `Tpeak`): `time`,
   `timeSpread` and `ootHitFrac`, the mean, the RMS and the fraction of hits
   outside ±`oot_time_cut`. The last two are the out-of-time-pile-up handles. DT

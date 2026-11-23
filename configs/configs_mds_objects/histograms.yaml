@@ -1,0 +1,52 @@
+# ── Prompt objects, MET and MDS cluster multiplicity on the signal grid ──
+# The point of this set is a short, readable list of event-level quantities,
+# not the ~300 cluster shape histograms.  puppi_met and n_jet_sel_foriso keep
+# the catalog binning so they overlay with the other studies; the cluster
+# counts use half-integer edges instead of the catalog's 0..6, which puts each
+# integer count in the middle of a bin rather than on an edge (they are read
+# against the matched counts below, not against the other studies).
+#
+# Everything below is *after* JERC: the 'jerc' step (columns.yaml) replaces events.Jet.pt in place and rebuilds the Type-1
+# events.PuppiMET from RawPuppiMET, so no separate "raw" and "corrected"
+# variables exist -- the corrected ones are the only ones there are.
+
+# ── PUPPI MET after JERC ──────────────────────────────────────────
+
+regions:
+  csc:
+    label: CSC clusters
+    evt_vars:
+      - {var: csc_cluster_n, bins: [6, -0.5, 5.5]}
+      - mds_cluster_n
+      - csc_cluster_n_matched
+      - mds_cluster_n_matched
+      - max_dphi_cluster_sel
+  dt:
+    label: DT clusters
+    evt_vars:
+      - {var: dt_cluster_n, bins: [6, -0.5, 5.5]}
+      - dt_cluster_n_matched
+  jet:
+    label: jets
+    evt_vars:
+      - ht
+    objects:
+      all:
+        vars: &jet_all
+          - jet_pt
+          - jet_eta
+          - jet_phi
+      sel_foriso:
+        cut: jet_sel_foriso
+        label: jet $p_T > 20$ GeV, $|\eta| < 2.4$, tight lepton-veto ID
+        vars: *jet_all
+  event:
+    label: events
+    evt_vars:
+      - puppi_met
+      - puppi_met_phi
+      - n_jet_sel_foriso_mask
+      - n_muon_sel_foriso
+      - n_electron_sel
+      - n_photon_sel
+      - n_tau_sel

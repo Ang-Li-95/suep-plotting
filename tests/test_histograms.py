@@ -4,7 +4,9 @@ import awkward as ak
 import numpy as np
 import pytest
 
-from suep_plot.histograms import build_histograms, fill_histograms
+from suep_plot.fill import (FillError, compile_expr, attach_selection_columns,
+                            build_histograms, fill_histograms)
+from suep_plot.histdefs import as_histograms, as_selections
 from suep_plot.reweights import Reweighter
 
 
@@ -26,8 +28,8 @@ def totals(h, sample="s"):
 def test_event_level_fill_and_weight():
     events = make_events()
     defs = {"met": {"expression": "events.met", "bins": 10, "lo": 0, "hi": 200}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.array([1.0, 2.0, 3.0]))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.array([1.0, 2.0, 3.0]))
     assert totals(hists["met"]) == pytest.approx(6.0)
 
 
@@ -37,18 +39,18 @@ def test_per_object_fill_with_selections():
                        "per_object": True, "selections": ["good", "highmet"]}}
     sels = {"good": {"expression": "events.Jet.pt > 60", "level": "object"},
             "highmet": {"expression": "events.met > 50"}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, sels, events, "s", np.array([1.0, 1.0, 1.0]))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), events, "s", np.array([1.0, 1.0, 1.0]))
     # events 2 and 3 pass met cut; jets > 60: none in event 2, the 200 in event 3
     assert totals(hists["jet_pt"]) == pytest.approx(1.0)
 
 
 def test_variable_binning_edges():
     defs = {"met": {"expression": "events.met", "edges": [0, 50, 100, 400]}}
-    h = build_histograms(defs, ["s"])["met"]
+    h = build_histograms(as_histograms(defs), ["s"])["met"]
     axis = h.axes["x"]
     assert list(axis.edges) == [0, 50, 100, 400]
-    fill_histograms({"met": h}, defs, {}, make_events(), "s", np.ones(3))
+    fill_histograms({"met": h}, as_histograms(defs), {}, make_events(), "s", np.ones(3))
     assert list(h[{"dataset": "s"}].view().value) == [1.0, 1.0, 1.0]
 
 
@@ -56,8 +58,8 @@ def test_jagged_weight_per_object_fill():
     events = make_events()
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
                        "per_object": True, "weight": "events.Jet.pt / 100.0"}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.ones(3))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(3))
     # each jet weighted by pt/100: 0.5 + 1.0 + 2.0
     assert totals(hists["jet_pt"]) == pytest.approx(3.5)
 
@@ -66,8 +68,8 @@ def test_jagged_weight_event_level_takes_product():
     events = make_events()
     defs = {"met": {"expression": "events.met", "bins": 10, "lo": 0, "hi": 200,
                     "weight": "events.Jet.pt / 100.0"}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.ones(3))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(3))
     # products per event: 0.5*1.0, empty -> 1, 2.0
     assert totals(hists["met"]) == pytest.approx(0.5 + 1.0 + 2.0)
 
@@ -79,8 +81,9 @@ def test_at_map_reference_fill_only():
                           "fill_only": True})
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
                        "per_object": True, "weight": "@m"}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.ones(3), reweighters={"m": rw})
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(3),
+                    named_weights={"m": rw.evaluate})
     # jets with pt < 100 zeroed -> 100 and 200 remain
     assert totals(hists["jet_pt"]) == pytest.approx(2.0)
 
@@ -91,16 +94,646 @@ def test_mismatched_object_weight_raises():
     events = ak.zip({"Jet": jets, "w": other}, depth_limit=1)
     defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
                        "per_object": True, "weight": "events.w"}}
-    hists = build_histograms(defs, ["s"])
+    hists = build_histograms(as_histograms(defs), ["s"])
     with pytest.raises(ValueError, match="object structure"):
-        fill_histograms(hists, defs, {}, events, "s", np.ones(2))
+        fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.ones(2))
 
 
 def test_none_values_dropped_weights_stay_aligned():
     events = make_events()
     defs = {"lead": {"expression": "ak.firsts(events.Jet.pt)",
                      "bins": 4, "lo": 0, "hi": 400}}
-    hists = build_histograms(defs, ["s"])
-    fill_histograms(hists, defs, {}, events, "s", np.array([1.0, 5.0, 2.0]))
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections({}), events, "s", np.array([1.0, 5.0, 2.0]))
     # event 2 has no jets -> None -> dropped; weights 1 and 2 remain
     assert totals(hists["lead"]) == pytest.approx(3.0)
+
+
+# ── Selections as columns ──────────────────────────────────────────
+# Every selections.yaml mask is attached to events under its own name, so a
+# histogram can count what a cut keeps without restating the cut.
+
+def test_a_selection_becomes_a_column_of_its_own_name():
+    events = make_events()
+    sels = {"good_jets": {"level": "object",
+                          "expression": "events.Jet.pt > 60"},
+            "high_met": {"expression": "events.met > 50"}}
+
+    out = attach_selection_columns(events, as_selections(sels))
+
+    assert ak.to_list(out.good_jets) == [[False, True], [], [True]]
+    assert ak.to_list(out.high_met) == [False, True, True]
+
+
+def test_the_column_is_what_a_multiplicity_histogram_fills_from():
+    """The documented idiom: ak.sum(events.<selection>, axis=1).
+
+    This is the whole point of the feature -- the count comes from the cut
+    itself, so the plot cannot disagree with the selection it is named after.
+    """
+    events = make_events()
+    sels = {"good_jets": {"level": "object", "expression": "events.Jet.pt > 60"}}
+    events = attach_selection_columns(events, as_selections(sels))
+
+    defs = {"n_good_jets": {"expression": "ak.sum(events.good_jets, axis=1)",
+                            "bins": 5, "lo": -0.5, "hi": 4.5}}
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), events, "s")
+
+    # 2-jet event has 1 passing, empty event 0, 1-jet event 1.
+    counts = hists["n_good_jets"][{"dataset": "s"}].values()
+    assert list(counts) == [1.0, 2.0, 0.0, 0.0, 0.0]
+
+
+def test_an_object_selection_column_stays_jagged():
+    """ak.sum(axis=1) needs the per-object structure, not an event-level any()."""
+    events = attach_selection_columns(
+        make_events(), as_selections(
+            {"good_jets": {"level": "object", "expression": "events.Jet.pt > 60"}}))
+
+    assert events.good_jets.ndim == 2
+    assert ak.to_list(ak.sum(events.good_jets, axis=1)) == [1, 0, 1]
+
+
+def test_a_selection_that_does_not_evaluate_is_fatal():
+    """A mask silently missing on one sample is a cut silently not applied."""
+    with pytest.raises(FillError, match="selection 'nope'.*sample 'sig'"):
+        attach_selection_columns(
+            make_events(), as_selections(
+                {"nope": {"expression": "events.NoSuchCollection.pt > 0"},
+                 "fine": {"expression": "events.met > 50"}}), "sig")
+
+
+def test_missing_false_turns_an_absent_branch_into_a_failed_cut():
+    """A trigger path the run's menu lacked: False for every event, not an error."""
+    sels = as_selections({
+        "trig": {"expression": "events.HLT.NoSuchPath", "missing": False},
+        "uses_trig": {"expression": "events.trig | (events.met > 50)"},
+    })
+    events = make_events()
+    events = ak.with_field(events, ak.zip({"Other": [True] * len(events)}), "HLT")
+
+    out = attach_selection_columns(events, sels)
+    assert ak.to_list(out.trig) == [False, False, False]
+    # a selection reading it waits for it, then sees the False column
+    assert ak.to_list(out.uses_trig) == [False, True, True]
+
+    defs = {"met_trig": {"expression": "events.met", "bins": 2, "lo": 0, "hi": 200,
+                         "selections": ["trig"]}}
+    hists = build_histograms(as_histograms(defs), ["s"])
+    fill_histograms(hists, as_histograms(defs), sels, out, "s")
+    assert hists["met_trig"][{"dataset": "s"}].sum().value == 0
+
+
+def test_missing_false_forgives_only_an_absent_field():
+    with pytest.raises(FillError, match="ZeroDivisionError"):
+        attach_selection_columns(make_events(), as_selections(
+            {"bad": {"expression": "events.met > (1 / 0)", "missing": False}}))
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="'missing' can only be false"):
+        as_selections({"x": {"expression": "events.met > 0", "missing": True}})
+
+
+def test_selections_may_read_each_other_in_any_order():
+    events = attach_selection_columns(make_events(), as_selections({
+        "both": {"expression": "events.hard & events.highmet"},
+        "hard": {"expression": "ak.any(events.Jet.pt > 60, axis=1)"},
+        "highmet": {"expression": "events.met > 50"},
+    }))
+
+    assert ak.to_list(events.both) == [False, False, True]
+
+
+def test_a_selection_never_shadows_an_existing_field(capsys):
+    """A selection named after a real branch must not redefine it.
+
+    Overwriting events.Jet would silently change what every other expression
+    in the config set means.
+    """
+    events = attach_selection_columns(
+        make_events(), as_selections({"Jet": {"expression": "events.met > 50"}}))
+
+    assert events.Jet.fields == ["pt", "eta"]        # the collection, untouched
+    assert "already a field" in capsys.readouterr().out
+
+
+def test_none_entries_become_false():
+    """A mask with missing values must be usable as a mask.
+
+    ak.firsts on an empty event gives None; left as None it would poison both
+    ak.sum and the object filtering.
+    """
+    events = attach_selection_columns(
+        make_events(),
+        as_selections({"lead_jet_hard": {"expression": "ak.firsts(events.Jet.pt) > 60"}}))
+
+    assert ak.to_list(events.lead_jet_hard) == [False, False, True]
+
+
+# ── Nested scopes in config expressions ────────────────────────────
+# `events`/`ak`/`np` are passed as eval's *globals*, not locals: a name in
+# eval's locals is invisible to a nested scope, so a lambda or comprehension in
+# a config expression used to fail with "NameError: name 'ak' is not defined".
+
+def test_a_lambda_in_an_expression_can_see_the_namespace():
+    """The idiom for reusing an intermediate without repeating its expression."""
+    events = make_events()
+    expr = ("(lambda p: ak.sum(p.a + p.b, axis=1))("
+            "ak.combinations(events.Jet.pt, 2, axis=1, fields=['a', 'b']))")
+
+    # The 2-jet event has one pair (50 + 100); the others have none.
+    assert ak.to_list(compile_expr(expr)(events)) == [150.0, 0.0, 0.0]
+
+
+def test_a_comprehension_in_an_expression_can_see_the_namespace():
+    events = make_events()
+    expr = "ak.concatenate([ak.num(events.Jet), ak.num(events.Jet)], axis=0)"
+    assert ak.to_list(compile_expr(expr)(events)) == [2, 0, 1, 2, 0, 1]
+
+    # A genuine comprehension, which is its own scope.
+    expr = "np.array([len(x) for x in ak.to_list(events.Jet.pt)])"
+    assert list(compile_expr(expr)(events)) == [2, 0, 1]
+
+
+def test_the_builtins_are_still_restricted():
+    """Moving the names to globals must not widen what an expression can reach."""
+    events = make_events()
+    for expr in ("__import__('os').listdir('.')", "open('/etc/passwd')",
+                 "eval('1+1')"):
+        with pytest.raises(NameError):
+            compile_expr(expr)(events)
+
+    # The four that are provided still work.
+    assert compile_expr("max(1, 2)")(events) == 2
+    assert compile_expr("abs(-3)")(events) == 3
+
+
+def test_the_max_dphi_idiom():
+    """The pairwise-dphi expression used by configs_mds_objects.
+
+    Pins two things: the wrap into (-pi, pi], and that an event with fewer than
+    two objects yields None (dropped at fill) rather than a spurious 0.
+    """
+    clusters = ak.Array([
+        [{"phi": 0.1}, {"phi": 3.0}, {"phi": -3.0}],   # widest pair: 0.1 vs -3.0
+        [{"phi": 0.5}],                                 # no pair
+        [],                                             # no pair
+    ])
+    events = ak.zip({"cscCluster": clusters}, depth_limit=1)
+    expr = ("ak.max(abs((np.subtract(*ak.unzip(ak.combinations("
+            "events.cscCluster.phi, 2, axis=1))) + np.pi) % (2 * np.pi) - np.pi), "
+            "axis=1)")
+
+    got = ak.to_list(compile_expr(expr)(events))
+    assert got[0] == pytest.approx(3.1)      # |0.1 - (-3.0)| = 3.1 < pi
+    assert got[1] is None and got[2] is None
+
+    # Never exceeds pi, whatever the inputs.
+    wide = ak.zip({"cscCluster": ak.Array([[{"phi": -3.14}, {"phi": 3.14}]])},
+                  depth_limit=1)
+    assert compile_expr(expr)(wide)[0] == pytest.approx(0.0034, abs=1e-3)
+
+
+# ── per object or per event: read off the expression ──────────────
+
+
+def test_per_object_is_read_off_the_expression():
+    defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400},
+            "njet": {"expression": "ak.num(events.Jet)", "bins": 3, "lo": 0, "hi": 3}}
+    hists = build_histograms(as_histograms(defs), ["s"])
+    layout = {}
+
+    fill_histograms(hists, as_histograms(defs), as_selections({}), make_events(), "s", np.ones(3), layout=layout)
+
+    assert layout == {"jet_pt": True, "njet": False}
+    assert totals(hists["jet_pt"]) == 3          # one entry per jet
+    assert totals(hists["njet"]) == 3            # one entry per event
+
+
+def test_an_object_selection_needs_no_level_key():
+    defs = {"jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
+                       "selections": ["good"]}}
+    sels = {"good": {"expression": "events.Jet.pt > 60"}}
+    hists = build_histograms(as_histograms(defs), ["s"])
+
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), make_events(), "s", np.ones(3))
+
+    assert totals(hists["jet_pt"]) == 2      # the 100 and the 200 GeV jets
+
+
+def test_an_object_selection_on_a_per_event_histogram_is_fatal():
+    defs = {"met": {"expression": "events.met", "bins": 4, "lo": 0, "hi": 400,
+                    "selections": ["good"]}}
+    sels = {"good": {"expression": "events.Jet.pt > 60"}}
+
+    with pytest.raises(FillError, match=r"histogram 'met' fills once per event.*"
+                                        r"\['good'\].*ak\.any\(events\.good, axis=1\)"):
+        fill_histograms(build_histograms(as_histograms(defs), ["s"]), as_histograms(defs),
+                        as_selections(sels), make_events(),
+                        "s", np.ones(3))
+
+
+def test_the_event_level_cut_is_a_selection_of_its_own():
+    defs = {"met": {"expression": "events.met", "bins": 4, "lo": 0, "hi": 400,
+                    "selections": ["has_good"]}}
+    sels = {"good": {"expression": "events.Jet.pt > 60"},
+            "has_good": {"expression": "ak.any(events.good, axis=1)"}}
+    events = attach_selection_columns(make_events(), as_selections(sels))
+    hists = build_histograms(as_histograms(defs), ["s"])
+
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), events, "s", np.ones(3))
+
+    assert totals(hists["met"]) == 2         # events with >= 1 passing jet
+
+
+def test_a_histogram_that_does_not_evaluate_is_fatal_and_named():
+    defs = {"bad": {"expression": "events.NoSuch.pt", "bins": 2, "lo": 0, "hi": 1}}
+
+    with pytest.raises(FillError, match="histogram 'bad'.*sample 's'"):
+        fill_histograms(build_histograms(as_histograms(defs), ["s"]), as_histograms(defs), {}, make_events(), "s",
+                        np.ones(3))
+
+
+def test_a_2d_histogram_mixing_per_object_and_per_event_axes_is_fatal():
+    defs = {"mix": {"expression_x": "events.Jet.pt", "expression_y": "events.met",
+                    "bins_x": 2, "lo_x": 0, "hi_x": 400,
+                    "bins_y": 2, "lo_y": 0, "hi_y": 200}}
+
+    with pytest.raises(FillError, match="both"):
+        fill_histograms(build_histograms(as_histograms(defs), ["s"]), as_histograms(defs), {}, make_events(), "s",
+                        np.ones(3))
+
+
+# ── config files ──────────────────────────────────────────────────
+
+
+def _yaml(path, obj):
+    import yaml
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(obj, sort_keys=False))
+    return path
+
+
+def test_a_selection_can_be_just_its_expression(tmp_path):
+    from suep_plot.histdefs import load_selection_defs
+
+    p = _yaml(tmp_path / "s.yaml", {"highmet": "events.met > 50",
+                                    "good": {"expression": "events.Jet.pt > 60"}})
+
+    sels = load_selection_defs(p)
+    assert (sels["highmet"].expression, sels["good"].expression) == \
+        ("events.met > 50", "events.Jet.pt > 60")
+
+
+# ── the variable catalog ──────────────────────────────────────────
+
+CATALOG = {
+    "met": {"expression": "events.met", "bins": 10, "lo": 0, "hi": 200,
+            "label": "MET", "log_y": True},
+    "jet_pt": {"expression": "events.Jet.pt", "bins": 4, "lo": 0, "hi": 400,
+               "label": "jet pT"},
+    "jet_eta": {"expression": "events.Jet.eta", "edges": [-3, 0, 3],
+                "label": "jet eta"},
+}
+
+
+def _flat(defs):
+    """The definitions in the flat form the pickles store (Histogram.to_dict)."""
+    return {name: h.to_dict() for name, h in defs.items()}
+
+
+def _region(tmp_path, *entries, variables=None):
+    """The histograms of one region whose per-event list is *entries*."""
+    from suep_plot.histdefs import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {"evt_vars": list(entries)}}})
+    return _flat(load_histogram_defs(
+        p, variables=CATALOG if variables is None else variables))
+
+
+def test_an_entry_takes_its_variable_from_the_catalog(tmp_path):
+    defs = _region(tmp_path, "met", {"var": "met", "name": "met_wide",
+                                     "bins": [20, 0, 400], "log_y": False})
+
+    assert defs["r/met"] == {"expression": "events.met", "bins": 10, "lo": 0,
+                             "hi": 200, "label": "MET", "log_y": True,
+                             "selections": [], "annotation": "r"}
+    # What the entry writes wins, key by key.
+    wide = defs["r/met_wide"]
+    assert (wide["bins"], wide["hi"], wide["log_y"]) == (20, 400, False)
+
+
+def test_an_entry_can_move_one_end_of_the_range(tmp_path):
+    met = _region(tmp_path, {"var": "met", "hi": 400})["r/met"]
+
+    assert (met["bins"], met["lo"], met["hi"]) == (10, 0, 400)
+
+
+def test_edges_and_bins_replace_each_other(tmp_path):
+    defs = _region(tmp_path,
+                   {"var": "met", "name": "met_edges", "edges": [0, 50, 200]},
+                   {"var": "jet_eta", "name": "eta_bins", "bins": [6, -3, 3]})
+
+    assert defs["r/met_edges"]["edges"] == [0, 50, 200]
+    assert not {"bins", "lo", "hi"} & set(defs["r/met_edges"])
+    assert defs["r/eta_bins"]["bins"] == 6 and "edges" not in defs["r/eta_bins"]
+
+
+def test_a_2d_entry_retunes_one_axis(tmp_path):
+    defs = _region(tmp_path, {"name": "rz", "x": "met",
+                              "y": {"var": "jet_pt", "bins": [8, 0, 400]},
+                              "log_z": True})
+
+    rz = defs["r/rz"]
+    assert (rz["expression_x"], rz["bins_x"]) == ("events.met", 10)
+    assert (rz["expression_y"], rz["bins_y"], rz["log_z"]) == ("events.Jet.pt", 8, True)
+    assert "log_y" not in rz             # 1D display defaults stay on 1D
+
+
+def test_an_unknown_variable_names_the_closest(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="did you mean jet_pt"):
+        _region(tmp_path, "jet_ptt")
+
+
+def test_an_unknown_axis_key_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="unknown axis key"):
+        _region(tmp_path, {"name": "rz", "x": {"var": "met", "binz": 3}, "y": "jet_pt"})
+
+
+def test_a_variable_without_binning_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="no binning"):
+        _region(tmp_path, "met", variables={"met": {"expression": "events.met"}})
+
+
+@pytest.mark.parametrize("entry", [
+    {"name": "h", "expression": "events.met", "bins": [10, 0, 200]},
+    {"name": "h", "x": {"expression": "events.met", "bins": [10, 0, 200]}, "y": "met"},
+    {"var": "met", "variants": {"m": {"selections": ["good"]}}},
+])
+def test_an_entry_cannot_define_an_expression_or_variants(tmp_path, entry):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="variables.yaml"):
+        _region(tmp_path, entry)
+
+
+def test_per_object_is_not_a_key_of_an_entry(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="'per_object' is not a key"):
+        _region(tmp_path, {"var": "jet_pt", "per_object": True})
+
+
+def test_a_histogram_outside_regions_is_refused(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histdefs import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"met": {"expression": "events.met",
+                                            "bins": [10, 0, 200]}})
+
+    with pytest.raises(ConfigError, match="inside 'regions' only.*met"):
+        load_histogram_defs(p, variables=CATALOG)
+
+
+def test_variant_sets_are_no_longer_a_directive(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histdefs import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"_variant_sets": {"m": {}}})
+
+    with pytest.raises(ConfigError, match="unknown directive"):
+        load_histogram_defs(p, variables=CATALOG)
+
+
+def test_a_selection_given_as_a_string_is_one_selection(tmp_path):
+    from suep_plot.histdefs import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {
+        "evt_sel": "highmet",
+        "objects": {"hard": {"cut": "good", "vars": [
+            {"var": "jet_pt", "selections": "central"}]}}}}})
+
+    assert load_histogram_defs(p, variables=CATALOG)["r/hard/jet_pt"].selections \
+        == ("highmet", "good", "central")
+
+
+def test_a_set_retunes_one_key_of_a_global_variable(tmp_path, monkeypatch):
+    from suep_plot import histdefs
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"met": {"expression": "events.met", "bins": [10, 0, 200],
+                          "label": "MET"}})
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
+    _yaml(tmp_path / "set" / "variables.yaml", {"met": {"bins": [20, 0, 200]}})
+
+    met = histdefs.load_variables(tmp_path / "set")["met"]
+    assert (met["bins"], met["hi"], met["label"]) == (20, 200, "MET")
+
+
+def test_a_variable_with_an_unknown_key_is_reported(tmp_path, monkeypatch):
+    from suep_plot import histdefs
+    from suep_plot.config import ConfigError
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"met": {"expression": "events.met", "bins": [10, 0, 200],
+                          "titel": "MET"}})
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
+
+    with pytest.raises(ConfigError, match="unknown key"):
+        histdefs.load_variables()
+
+
+def test_a_set_level_bins_override_replaces_inherited_edges(tmp_path, monkeypatch):
+    """edges would win over bins if both survived the merge."""
+    from suep_plot import histdefs
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"pt": {"expression": "events.pt", "edges": [0, 1, 5, 50]},
+                  "met": {"expression": "events.met", "bins": [10, 0, 200]}})
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
+    _yaml(tmp_path / "base" / "variables.yaml", {"pt": {"bins": [50, 0, 50]}})
+    _yaml(tmp_path / "set" / "variables.yaml",
+          {"_extends": "../base", "met": {"edges": [0, 50, 200]}})
+
+    catalog = histdefs.load_variables(tmp_path / "set")
+
+    assert catalog["pt"] == {"expression": "events.pt", "bins": 50, "lo": 0, "hi": 50}
+    assert catalog["met"] == {"expression": "events.met", "edges": [0, 50, 200]}
+
+
+def test_a_variable_with_both_binnings_is_reported(tmp_path, monkeypatch):
+    from suep_plot import histdefs
+    from suep_plot.config import ConfigError
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"pt": {"expression": "events.pt", "edges": [0, 1, 5],
+                         "bins": [5, 0, 5]}})
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
+
+    with pytest.raises(ConfigError, match="give one binning"):
+        histdefs.load_variables()
+
+
+def test_an_mc_only_variable_marks_its_histograms(tmp_path):
+    from suep_plot.histdefs import load_histogram_defs
+
+    catalog = {**CATALOG, "npu": {"expression": "events.Pileup.nTrueInt",
+                                  "bins": 10, "lo": 0, "hi": 100, "mc_only": True}}
+    p = _yaml(tmp_path / "h.yaml", {"regions": {"r": {
+        "evt_vars": ["met", "npu", ["met", "npu"]]}}})
+    defs = load_histogram_defs(p, variables=catalog)
+
+    assert [name for name, h in defs.items() if h.mc_only] == ["r/npu", "r/met_vs_npu"]
+    # Not a plot-style key, and it survives the flat form of the pickles.
+    assert "mc_only" not in defs["r/npu"].style
+    assert as_histograms(_flat(defs))["r/npu"].mc_only
+    assert "mc_only" not in _flat(defs)["r/met"]
+
+
+def test_mc_only_is_true_or_false(tmp_path, monkeypatch):
+    from suep_plot import histdefs
+    from suep_plot.config import ConfigError
+
+    glob = _yaml(tmp_path / "variables.yaml",
+                 {"npu": {"expression": "events.npu", "bins": [10, 0, 100],
+                          "mc_only": "yes"}})
+    monkeypatch.setattr(histdefs, "GLOBAL_VARIABLES", glob)
+
+    with pytest.raises(ConfigError, match="'mc_only' is true or false"):
+        histdefs.load_variables()
+
+
+@pytest.mark.parametrize("key, meant", [("selection", "selections"),
+                                        ("wieght", "weight")])
+def test_an_unknown_key_of_an_entry_is_reported(tmp_path, key, meant):
+    """It used to become plot style, and the cut or weight was dropped."""
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match=rf"unknown key.*'{key}' -> '{meant}'"):
+        _region(tmp_path, {"var": "met", key: "highmet"})
+
+
+def test_a_selection_rewritten_as_a_string_drops_the_inherited_keys(tmp_path):
+    """level / collection described the parent's expression, not this one."""
+    from suep_plot.histdefs import Selection, load_selection_defs
+
+    _yaml(tmp_path / "p" / "selections.yaml", {
+        "good": {"expression": "events.Jet.pt > 5", "level": "object",
+                 "collection": "Jet"},
+        "kept": {"expression": "events.Jet.pt > 9", "collection": "Jet"}})
+    child = _yaml(tmp_path / "c" / "selections.yaml", {
+        "_extends": "../p", "good": "events.met > 5", "new": "events.met > 1"})
+
+    sels = load_selection_defs(child)
+
+    assert sels["good"] == Selection("events.met > 5")
+    assert sels["new"] == Selection("events.met > 1")
+    assert sels["kept"].collection == "Jet"
+
+
+def test_a_weight_that_is_not_an_expression_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+
+    with pytest.raises(ConfigError, match="'weight' is an expression"):
+        _region(tmp_path, {"var": "met", "weight": 2})
+
+
+# ── regions ───────────────────────────────────────────────────────
+
+
+def test_regions_expand_to_one_histogram_per_cut_and_variable(tmp_path):
+    from suep_plot.histdefs import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {
+        "jets": {
+            "label": "Jets",
+            "evt_sel": ["highmet"],
+            "evt_vars": ["met"],
+            "objects": {
+                "all": {"vars": ["jet_pt", ["jet_pt", "jet_eta"]]},
+                "central": {"cut": ["central"], "label": "|eta| < 1",
+                            "vars": ["jet_pt", {"var": "jet_pt", "name": "jet_pt_fine",
+                                                "bins": [40, 0, 400]}]},
+            }}}})
+    defs = _flat(load_histogram_defs(p, variables=CATALOG))
+
+    assert sorted(defs) == ["jets/all/jet_pt", "jets/all/jet_pt_vs_jet_eta",
+                            "jets/central/jet_pt", "jets/central/jet_pt_fine",
+                            "jets/met"]
+    assert defs["jets/central/jet_pt"]["selections"] == ["highmet", "central"]
+    assert defs["jets/met"]["selections"] == ["highmet"]
+    assert defs["jets/central/jet_pt"]["annotation"] == "Jets · |eta| < 1"
+    assert defs["jets/all/jet_pt"]["annotation"] == "Jets"
+    assert defs["jets/central/jet_pt_fine"]["bins"] == 40
+    assert defs["jets/all/jet_pt_vs_jet_eta"]["edges_y"] == [-3, 0, 3]
+
+
+def test_a_region_family_is_written_once_with_repeat(tmp_path):
+    from suep_plot.histdefs import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {
+        "_axes": {"systems": [{"SYS": "a"}, {"SYS": "b"}]},
+        "regions": {"_repeat": [{"over": "systems", "defs": {
+            "<SYS>": {"objects": {"all": {"vars": ["jet_pt"]}}}}}]},
+    })
+
+    assert sorted(load_histogram_defs(p, variables=CATALOG)) == \
+        ["a/all/jet_pt", "b/all/jet_pt"]
+
+
+def test_a_child_set_adds_a_cut_to_an_inherited_region(tmp_path):
+    from suep_plot.histdefs import load_histogram_defs
+
+    _yaml(tmp_path / "base" / "histograms.yaml", {"regions": {
+        "jets": {"objects": {"all": {"vars": ["jet_pt"]}}}}})
+    child = _yaml(tmp_path / "child" / "histograms.yaml", {
+        "_extends": "../base",
+        "regions": {"jets": {"objects": {"central": {"cut": "central",
+                                                     "vars": ["jet_pt"]}}}}})
+
+    assert sorted(load_histogram_defs(child, variables=CATALOG)) == \
+        ["jets/all/jet_pt", "jets/central/jet_pt"]
+
+
+def test_a_variable_listed_twice_under_one_cut_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histdefs import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {
+        "jets": {"objects": {"all": {"vars": ["jet_pt", "jet_pt"]}}}}})
+
+    with pytest.raises(ConfigError, match="listed twice"):
+        load_histogram_defs(p, variables=CATALOG)
+
+
+def test_a_misspelled_region_key_is_reported(tmp_path):
+    from suep_plot.config import ConfigError
+    from suep_plot.histdefs import load_histogram_defs
+
+    p = _yaml(tmp_path / "h.yaml", {"regions": {"jets": {"event": ["x"]}}})
+
+    with pytest.raises(ConfigError, match="unknown key"):
+        load_histogram_defs(p, variables=CATALOG)
+
+
+def test_region_histograms_fill_after_both_cuts():
+    from suep_plot.histdefs import expand_regions
+
+    defs = expand_regions({"jets": {"evt_sel": ["highmet"], "objects": {
+        "hard": {"cut": ["good"], "vars": ["jet_pt"]}}}}, CATALOG)
+    sels = {"good": {"expression": "events.Jet.pt > 60"},
+            "highmet": {"expression": "events.met > 50"}}
+    hists = build_histograms(as_histograms(defs), ["s"])
+
+    fill_histograms(hists, as_histograms(defs), as_selections(sels), make_events(), "s", np.ones(3))
+
+    # met > 50: events 2 and 3; jets > 60 there: only the 200 GeV one
+    assert totals(hists["jets/hard/jet_pt"]) == 1

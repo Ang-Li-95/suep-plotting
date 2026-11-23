@@ -1,47 +1,22 @@
 """Jet energy corrections (JEC) and resolution smearing (JER).
 
-JEC/JER rescale the jet four-momentum, so — unlike the weights in
-``corrections.yaml`` / ``reweights.yaml`` — they must run *before* selections
-and histogram fills.  Call :func:`correct_jets` from ``custom/columns.py``::
+JEC/JER rescale the jet four-momentum, so -- unlike the weights in
+``corrections.yaml`` / ``reweights.yaml`` -- they run *before* selections and
+fills: the ``jerc`` step of ``custom/columns.py`` calls :func:`correct_jets`,
+and every expression that touches ``events.Jet`` then sees corrected jets::
 
-    from suep_plot.jme import correct_jets
+    events = correct_jets(events)                       # nominal
+    events = correct_jets(events, variation="jec_up")   # jec_down / jer_up / jer_down
 
-    def derive(events):
-        events = correct_jets(events)                    # 2024 Summer24 MC
-        return events
+The JEC is coffea's :class:`~coffea.jetmet_tools.CorrectedJetsFactory` fed
+the jsonpog payloads; the smearing is the official ``JERSmear`` payload.
+What this module adds is the wiring: the payload tags of an era, the per-jet
+columns the factory reads, picking a variation, rebuilding the Type-1 MET
+from the raw MET (:func:`_rebuild_met`) and re-sorting the jets by pT.
+``pt`` and ``mass`` (and the MET's ``pt`` / ``phi``) are replaced in place.
 
-Every expression that touches ``events.Jet`` (HT, jet pT spectra, selections)
-then automatically uses corrected, smeared jets.  For systematics::
-
-    events = correct_jets(events, variation="jec_up")    # jec_down / jer_up / jer_down
-
-The **JEC** is coffea's own :class:`~coffea.jetmet_tools.CorrectedJetsFactory`,
-fed the jsonpog payloads through coffea's ``correctionlib_adapters``.  The
-**JER smearing** is the official ``JERSmear`` correctionlib payload shipped next
-to this module, which owns the hybrid-vs-stochastic choice and the deterministic
-seeding.  This module is the wiring around the two:
-
-1. resolve the payload tags for the era (``jet_jerc.json.gz``), including the
-   ``*_DATA`` tag whose compound is run-dependent;
-2. build the per-jet columns the factory reads through its ``name_map``:
-   ``pt_raw``/``mass_raw`` (undoing ``rawFactor``), ``event_rho``, ``run``, and
-   ``pt_gen`` -- the gen pT of jets matched within ``dR < 0.2`` and ``3 sigma``,
-   which is what selects the hybrid smearing method per jet;
-3. pick the requested variation out of the factory's output
-   (``JES_Total.up/down``, ``JER.up/down``);
-4. rebuild the Type-1 MET from the **raw** MET (see :func:`_rebuild_met`):
-   subtract the vector sum of ``pT_L2L3Res - pT_L1`` over both jet collections
-   (``Jet`` and ``CorrT1METJet``), muon-subtracted, for jets with corrected
-   pT > 15 GeV, ``|eta| < 5.2`` and EM fraction < 0.9;
-5. re-sort jets by the new pT and drop the helper columns.
-
-``pt`` and ``mass`` (and the MET's ``pt``/``phi``) are replaced in place.
-
-Payloads resolve via :func:`payload_path`: ``$CORRECTIONLIB_DATA`` first, then
-the era's CAT campaign directory (:data:`CAT_METADATA`), then cvmfs
-jsonpog-integration.  The campaign directory matters -- jsonpog's
-``2024_Summer24`` still carries only ``Summer24Prompt24_V1``, while the 2024
-recommendation is ``V5``.
+Payloads resolve through :func:`payload_path`.  The recipe step by step, its
+closure test and the payload choices are in docs/design-notes.md.
 """
 
 from __future__ import annotations
@@ -226,30 +201,14 @@ def _musub_dphi(collection, flat):
 def _rebuild_met(events, met_name, cset, jec_tag, algo, scale, counts):
     """Replace *met_name* with a Type-1 correction rebuilt from the raw MET.
 
-    Two jet collections enter, and both are needed for the sum to be complete:
-    ``Jet`` (raw pT >= 15) and ``CorrT1METJet``, the low-pT jets NanoAOD stores
-    with only the fields a Type-1 rebuild needs.  ``Jet_pt`` starts exactly where
-    ``CorrT1METJet_rawPt`` stops, so together they are the full collection the
-    production MET was built from.
+    Both jet collections enter: ``Jet`` and ``CorrT1METJet``, the low-pT jets
+    NanoAOD stores with only the fields this needs; together they are the
+    collection the production MET was built from.  *scale* is the per-``Jet``
+    factor beyond the nominal JEC (smearing and/or a variation);
+    ``CorrT1METJet`` jets are unsmeared.  Both are projected along
+    ``phi + muonSubtrDeltaPhi``, the axis of the jet with its muon removed.
 
-    *scale* is the per-``Jet`` factor beyond the nominal JEC (smearing and/or a
-    variation); ``CorrT1METJet`` jets are unsmeared, as in the prescription.
-    Both collections are projected along ``phi + muonSubtrDeltaPhi``, the axis of
-    the jet with its muon removed.
-
-    Closure, on 2000 signal events: feeding the *production* jet pT through this
-    same machinery reproduces the production Type-1 term to 0.001 GeV (14.165 vs
-    14.166 GeV mean magnitude), which is what validates the recipe.  Rebuilding
-    with the current calibration instead lands ~6 GeV from the stored PuppiMET,
-    because the JEC has moved since the samples were produced: the stored jets
-    carry a mean correction factor of 1.58 against 1.25 for Summer24Prompt24_V5.
-    That difference is the physics, not a bug -- it is the reason to rebuild
-    rather than to keep the stored value.
-
-    Two notes on fidelity: the muon subtraction is applied here (mean
-    ``muonSubtrFactor`` ~0.012, so a ~1 % effect) while the production term
-    closes without it, and for PUPPI the L1 factor is exactly 1.0, so
-    ``pT_L2L3Res - pT_L1`` reduces to the correction above raw.
+    The closure test and the fidelity notes are in docs/design-notes.md.
     """
     raw_name = RAW_MET.get(met_name)
     if raw_name is None or raw_name not in events.fields:

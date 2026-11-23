@@ -1,18 +1,12 @@
 # Two histograms: one straight from the clustering, one from the isolation --
 # enough to prove the whole chain runs, selections.yaml reaches derive(), and
 # the fills land.
-csc_cluster_size:
-  expression: "events.cscCluster.size"
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 500
-  label: 'CSC cluster $N_{\mathrm{hits}}$'
 
-csc_cluster_dr_muon:
-  expression: "events.cscCluster.drMuon"
-  per_object: true
-  bins: 50
-  lo: 0
-  hi: 5
-  label: 'CSC cluster $\Delta R$(nearest muon)'
+regions:
+  csc:
+    label: CSC clusters
+    objects:
+      all:
+        vars: &csc_all
+          - {var: csc_cluster_size, log_y: null}
+          - {var: csc_cluster_dr_muon, bins: [50, 0, 5], log_y: null}

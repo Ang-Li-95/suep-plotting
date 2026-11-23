@@ -1,69 +1,40 @@
-"""The one YAML reader: ``_extends``, ``_include`` and ``_repeat``.
+"""The one YAML reader: ``_extends``, ``_include``, ``_registry``, ``_repeat``.
 
-Every config file in a config set is loaded through :func:`load_config_file`,
-so the three directives below mean the same thing wherever they appear —
-``histograms.yaml``, ``selections.yaml``, ``samples.yaml``, ``columns.yaml``,
-``corrections.yaml``, ``reweights.yaml`` and ``derived_plots.yaml`` alike.
+Every config file of a set is loaded through :func:`load_config_file`, so the
+directives mean the same thing in every file:
 
-``_extends: ../common`` (or a list, ``[../common, ../common_gen]``)
-    Inherit the same-named file from another config set.  This file's keys are
-    merged over the inherited ones (deeply, for nested mappings), and
-    ``some_name: null`` *deletes* an inherited definition -- or, nested,
-    removes one key of it (``some_hist: {variants: null}``).  With a list the
-    bases are merged left to right and this file merges over the result, so a
-    study can compose ``common`` with ``common_gen`` instead of chaining.
-    Chains are followed too, and a cycle is an error.
+``_extends: ../other``     inherit the same-named file of another set (or of a
+                           list of sets, merged left to right); this file's
+                           keys merge over it, and ``name: null`` deletes one
+``_include: [a.yaml]``     merge in the definitions of the named files
+``_registry: ../x.yaml``   a pool to select from: a name with no value takes
+                           the pool entry, ``{_from: other}`` another's
+``_axes`` / ``_repeat``    expand one template over a list of substitutions
+                           (``<NAME>`` in keys and string values)
+``set.yaml``               ``extends:`` supplies every file the set does not
+                           have; also ``description:`` and ``abstract:``
 
-``_include: [../../datasets.yaml, more.yaml]``
-    Merge in definitions from shared fragment files.  Unlike ``_extends``,
-    which follows the config set, an include names one file directly.
-
-``_registry: ../../datasets.yaml``
-    A *pool to select from* rather than definitions to merge — what
-    ``samples.yaml`` does with the central dataset registry.  A name listed in
-    the file with no value takes the pool entry verbatim, ``name: {...}``
-    takes it with those keys overridden, and ``name: {_from: other, ...}``
-    bases it on pool entry ``other`` so one dataset can appear under several
-    config names.  A file with no ``_registry`` needs every definition spelled
-    out, as before.  (Kept distinct from ``_include`` on purpose: selecting
-    from a pool and merging definitions want opposite meanings for an empty
-    value.)
-
-``_repeat:``
-    Expand one template over a list of substitutions — the per-system
-    (csc/dt/rpc) loop that most of these files are made of::
-
-        _axes:
-          systems: [{SYS: csc, SYSU: CSC}, {SYS: dt, SYSU: DT}]
-
-        _repeat:
-          - over: systems              # or an inline list of mappings
-            defs:
-              llp_in_<SYS>:
-                level: object
-                expression: "events.llp.in<SYSU>"
-
-    ``<NAME>`` is substituted into keys and into every string leaf.  The sigil
-    is angle brackets, not braces, because the labels are full of LaTeX
-    (``$N_{\\mathrm{hits}}$``).  A value that is *exactly* one placeholder takes
-    the substitution's type rather than its text, so ``hi: <HI>`` with
-    ``HI: 500`` stays the integer 500 and ``edges: <EDGES>`` can carry a whole
-    list; a placeholder embedded in surrounding text always interpolates as a
-    string.  A loop that covers only some systems just lists those; there are
-    no conditionals.
-
-Keys starting with ``_`` are directives or reusable fragments, never
-definitions — the convention the configs already used.
+A key starting with ``_`` is a directive, never a definition, and an unknown
+one is an error.  docs/configuration.md is the reference for all of this;
+docs/design-notes.md says why it is built this way.
 """
 
 from __future__ import annotations
 
+import difflib
 import re
 from pathlib import Path
 
 import yaml
 
 DIRECTIVES = ("_extends", "_include", "_registry", "_axes", "_repeat")
+
+# The checkout: configs/, custom/, variables.yaml and datasets.yaml live here,
+# next to src/.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+SET_FILE = "set.yaml"
+SET_KEYS = ("extends", "description", "abstract")
 
 _SUBST = re.compile(r"<([A-Za-z_][A-Za-z0-9_]*)>")
 
@@ -75,8 +46,11 @@ class ConfigError(SystemExit):
 def _read(path: Path) -> dict:
     if not path.exists():
         return {}
-    with open(path) as f:
-        raw = yaml.safe_load(f)
+    try:
+        with open(path) as f:
+            raw = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise ConfigError(f"ERROR in {path}: not valid YAML:\n{e}") from None
     if raw is None:
         return {}
     if not isinstance(raw, dict):
@@ -86,16 +60,74 @@ def _read(path: Path) -> dict:
 
 
 def _merge(base: dict, over: dict) -> dict:
-    """*over* merged onto *base*; ``None`` deletes, nested mappings merge deeply."""
+    """*over* merged onto *base*; ``None`` deletes, nested mappings merge deeply.
+
+    A ``None`` for a key the base does not have is dropped too, never stored:
+    there is nothing to delete, and a stored ``None`` only resurfaces later as
+    an unrelated crash.
+    """
     out = dict(base)
     for key, value in over.items():
-        if value is None and key in out:
-            del out[key]
+        if value is None:
+            out.pop(key, None)
         elif isinstance(value, dict) and isinstance(out.get(key), dict):
             out[key] = _merge(out[key], value)
         else:
             out[key] = value
     return out
+
+
+def name_list(value, where: str, key: str, keep=()):
+    """A config value naming groups or samples -> a list of names.
+
+    A bare string is one name, not a sequence of letters: ``apply_to:
+    background`` must not match by substring (``"" in "background"`` is true,
+    so a sample without a group would be picked up).  Values listed in *keep*
+    (``"all"``, ``None``) pass through unchanged.
+    """
+    if value is None or (isinstance(value, str) and value in keep):
+        return value
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)) and all(isinstance(v, str) for v in value):
+        return list(value)
+    raise ValueError(f"{where}: '{key}' must be a name or a list of names, "
+                     f"got {value!r}")
+
+
+def weight_concerns(samples, apply_to, sample: str, group: str, is_data: bool) -> bool:
+    """Whether a reweight or a correction is meant for a sample.
+
+    One rule for both: simulation only, of the groups in *apply_to* (``"all"``
+    or a list) -- unless *samples* names samples explicitly, which then
+    decides alone and is the only way to reach data.
+    """
+    if samples is not None:
+        return sample in samples
+    return not is_data and (apply_to == "all" or group in apply_to)
+
+
+def read_set_file(config_dir: str | Path) -> dict:
+    """A config set's ``set.yaml`` (``{}`` if it has none), checked."""
+    path = Path(config_dir) / SET_FILE
+    meta = _read(path)
+    unknown = sorted(set(meta) - set(SET_KEYS))
+    if unknown:
+        raise ConfigError(f"ERROR in {path}: unknown key(s) {unknown}; "
+                          f"known: {list(SET_KEYS)}")
+    return meta
+
+
+def _check_directives(raw: dict, path: Path) -> None:
+    known = DIRECTIVES
+    unknown = [k for k in raw if isinstance(k, str) and k.startswith("_")
+               and k not in known]
+    if unknown:
+        hints = [f"'{k}' -> did you mean '{c[0]}'?" for k in unknown
+                 if (c := difflib.get_close_matches(k, known, n=1))]
+        hint = ("\n  " + "\n  ".join(hints)) if hints else ""
+        raise ConfigError(f"ERROR in {path}: unknown directive(s) {unknown}; "
+                          f"known: {', '.join(known)}{hint}")
 
 
 def _substitute(node, values: dict):
@@ -167,15 +199,27 @@ def _expand_repeats(raw: dict, path: Path, inherited_axes: dict):
     return out, axes
 
 
-def _resolve_registry(defs: dict, registry: dict, path: Path) -> dict:
-    """Resolve each entry against the ``_registry`` pool (see the module docs)."""
+def _resolve_registry(defs: dict, registry: dict, path: Path,
+                      inherited: dict | None = None) -> dict:
+    """Resolve each entry against the ``_registry`` pool (see the module docs).
+
+    An entry the file already inherits (*inherited*, through ``_extends``) is
+    not taken from the pool again: its keys here are overrides of the
+    inherited entry, and re-reading the pool would undo the parent's own.
+    """
     out = {}
     for name, cfg in defs.items():
         cfg = dict(cfg or {})
+        explicit = "_from" in cfg
+        if not explicit and name in (inherited or {}):
+            out[name] = cfg
+            continue
         base_name = cfg.pop("_from", name)
         base = registry.get(base_name)
         if base is None:
-            if not cfg:
+            # An entry with keys of its own may be a sample defined right
+            # here -- but not one that says which registry entry it is.
+            if explicit or not cfg:
                 known = ", ".join(sorted(registry)) or "(empty registry)"
                 raise ConfigError(
                     f"ERROR in {path}: '{name}' is not defined here and has no "
@@ -187,28 +231,47 @@ def _resolve_registry(defs: dict, registry: dict, path: Path) -> dict:
 
 
 def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
-                     _seen=None) -> dict:
+                     normalize=None, origins=None, _seen=None) -> dict:
     """Load one config file with ``_extends`` / ``_include`` / ``_repeat`` applied.
 
-    A missing file loads as ``{}``, so an optional config (``columns.yaml``,
-    ``reweights.yaml``) needs no special case at the call site.  Directive keys
-    are consumed here; what comes back is definitions only.
+    A missing file loads as ``{}`` -- or, when its set has a ``set.yaml`` with
+    ``extends:``, as that parent set's file -- so an optional config
+    (``columns.yaml``, ``reweights.yaml``) needs no special case at the call
+    site.
 
-    What comes back is definitions only: ``_``-prefixed keys are directives or
-    reusable fragments, never definitions, so they are stripped.  Pass
-    *with_fragments* to keep them -- ``load_histogram_defs`` does, because
-    ``expand_variants`` reads ``_variant_sets`` off the merged result.
+    What comes back is definitions only: ``_``-prefixed keys are directives,
+    never definitions, so they are stripped.  *with_fragments* keeps them; the
+    loader uses it on the files a file inherits from, to carry their ``_axes``
+    down.
+
+    *normalize* ``(defs, path, axes) -> defs`` rewrites each file's own
+    definitions into canonical form *before* they are merged over what the file
+    inherits, so a shorthand in one file and a partial override in another
+    compose (``bins: [50, 0, 500]`` in the base, ``hi: 800`` in the child).
+    It is applied to every file reached through ``_extends`` / ``_include``,
+    not to a ``_registry`` pool.
 
     Pass a set as *sources* to collect every file that was actually read,
     including the ones reached through ``_extends`` / ``_include`` /
     ``_registry``.  :func:`config_sources` uses it so the up-to-date check can
     see a config a set only inherits -- otherwise editing a shared fragment
     leaves every run that includes it silently "up to date".
+
+    Pass a dict as *origins* to learn which files define each name: it maps
+    every top-level key (and, for mapping values, ``key/subkey``) to the
+    files that set it, base first -- what ``suep-config show`` reports.
     """
     path = Path(path)
     raw = _read(path)
     if sources is not None and path.exists():
         sources.add(path.resolve())
+    if not path.exists() and path.name in CONFIG_FILES:
+        parent = read_set_file(path.parent).get("extends")
+        if parent:
+            raw = {"_extends": parent}
+            if sources is not None:
+                sources.add((path.parent / SET_FILE).resolve())
+    _check_directives(raw, path)
 
     _seen = _seen or []
     resolved = path.resolve()
@@ -229,10 +292,11 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
             raise ConfigError(f"ERROR in {path}: _extends config set not found: "
                               f"{base_dir}")
         merged = _merge(merged, load_config_file(
-            base_path, with_fragments=True, sources=sources, _seen=[*_seen, resolved]))
+            base_path, with_fragments=True, sources=sources, normalize=normalize,
+            origins=origins, _seen=[*_seen, resolved]))
         axes.update(merged.pop("_axes", {}) or {})
 
-    includes = raw.pop("_include", [])
+    includes = raw.pop("_include", None) or []
     if isinstance(includes, str):
         includes = [includes]
     for inc in includes:
@@ -240,7 +304,8 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
         if not inc_path.exists():
             raise ConfigError(f"ERROR in {path}: _include file not found: {inc_path}")
         merged = _merge(merged, load_config_file(
-            inc_path, with_fragments=True, sources=sources, _seen=[*_seen, resolved]))
+            inc_path, with_fragments=True, sources=sources, normalize=normalize,
+            origins=origins, _seen=[*_seen, resolved]))
         axes.update(merged.pop("_axes", {}) or {})
 
     registry_spec = raw.pop("_registry", None)
@@ -258,7 +323,17 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
                                   f"{reg_path}")
             registry.update(load_config_file(reg_path, sources=sources,
                                              _seen=[*_seen, resolved]))
-        defs = _resolve_registry(defs, registry, path)
+        defs = _resolve_registry(defs, registry, path, inherited=merged)
+    if normalize is not None:
+        defs = normalize(defs, path, axes)
+    if origins is not None:
+        for key, value in defs.items():
+            if str(key).startswith("_"):
+                continue
+            origins.setdefault(str(key), []).append(str(path))
+            if isinstance(value, dict):
+                for sub in value:
+                    origins.setdefault(f"{key}/{sub}", []).append(str(path))
 
     out = _merge(merged, defs)
     if not with_fragments:
@@ -266,10 +341,16 @@ def load_config_file(path: str | Path, *, with_fragments=False, sources=None,
     return out
 
 
-# The files a config set is made of.
+# The files a config set is made of.  variables.yaml is optional: a set's own
+# overrides of the global variable catalog (see GLOBAL_VARIABLES); so is
+# overlay.yaml, the ZeroBias overlay of the muon rechits (suep_plot.overlay).
 CONFIG_FILES = ("samples.yaml", "histograms.yaml", "selections.yaml",
                 "corrections.yaml", "reweights.yaml", "derived_plots.yaml",
-                "columns.yaml")
+                "columns.yaml", "variables.yaml", "overlay.yaml")
+
+# The variable catalog every set reads: expression, binning and axis title of
+# each variable, written once (next to datasets.yaml at the repo root).
+GLOBAL_VARIABLES = REPO_ROOT / "variables.yaml"
 
 # The subset that decides what lands in the pickles.  derived_plots.yaml is
 # deliberately absent: it is read by suep-plot only, so editing a profile or an
@@ -296,4 +377,39 @@ def config_sources(config_dir: str | Path, files=CONFIG_FILES) -> set:
             # A broken config is the run's problem, not the freshness check's;
             # whatever was read before it failed still counts.
             pass
+    if "variables.yaml" in files and GLOBAL_VARIABLES.exists():
+        sources.add(GLOBAL_VARIABLES.resolve())
+    if "reweights.yaml" in files:
+        sources |= _reweight_map_files(config_dir)
     return sources
+
+
+def _reweight_map_files(config_dir: Path) -> set:
+    """The ``file:`` maps reweights.yaml names (read as plain YAML, not through
+    :func:`load_config_file`, so they are not among its sources)."""
+    try:
+        defs = load_config_file(config_dir / "reweights.yaml")
+    except SystemExit:
+        return set()
+    out = set()
+    for cfg in defs.values():
+        if isinstance(cfg, dict) and cfg.get("file"):
+            path = Path(cfg["file"])
+            if not path.is_absolute():
+                path = config_dir / path
+            if path.exists():
+                out.add(path.resolve())
+    return out
+
+
+def fill_sources(config_dir: str | Path) -> list:
+    """Every file that decides what a run fills, in a stable order.
+
+    The fill-relevant YAML the set reads (see :func:`config_sources`) and
+    every module of ``custom/`` -- the helpers live in sibling files, and
+    editing one changes the fills as much as editing ``columns.py``.  The
+    up-to-date check compares their mtimes, the resubmission check their
+    hashes.
+    """
+    return sorted(config_sources(config_dir, FILL_CONFIG_FILES)) \
+        + sorted((REPO_ROOT / "custom").glob("*.py"))

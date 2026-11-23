@@ -1,0 +1,26 @@
+# ── Efficiency and purity of the cleaning, as the study draws them ──
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, SYSU: CSC, VARS: [csc_mc_rechit_eta, csc_mc_rechit_phi, csc_mc_rechit_absz]}
+  - {SYS: dt, SYSU: DT, VARS: [dt_mc_rechit_eta, dt_mc_rechit_phi, dt_mc_rechit_r]}
+  - {SYS: rpc, SYSU: RPC, VARS: [rpc_mc_rechit_eta, rpc_mc_rechit_phi, rpc_mc_rechit_r, rpc_mc_rechit_absz]}
+
+_repeat:
+- over: systems
+  defs:
+    <SYS>_efficiency:
+      type: efficiency
+      region: <SYS>
+      numerator: hard_kept
+      denominator: hard
+      label_y: <SYSU> cleaning efficiency (kept / hard process)
+      vars: <VARS>
+    <SYS>_purity:
+      type: efficiency
+      region: <SYS>
+      numerator: hard_kept
+      denominator: kept
+      label_y: <SYSU> cleaning purity (hard process / kept)
+      vars: <VARS>

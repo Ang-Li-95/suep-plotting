@@ -1,0 +1,21 @@
+# ── ZeroBias overlay of the muon rechits ──────────────────────────
+# Every simulated event keeps only its hard-process-like CSC/DT/RPC rechits
+# and gets those of a certified ZeroBias 2024 event instead of the simulated
+# pileup and noise.  See docs/configuration.md, "overlay.yaml".
+#
+# The cleaning is the DY noise study's working point, the same values as
+# configs_noise_cleaning, where it reproduces the study's efficiency and
+# purity exactly: in time, and within dR 0.4 of a GenJet above 10 GeV or of a
+# reachable gen muon (phi bent to the hit).
+mc_clean:
+  csc_tpeak: [-30, 40]   # ns, -30 < Tpeak < 40
+  rpc_bx: [0, 1]
+  dr: 0.4
+  genjet_pt: 10          # GeV
+add_zerobias: true
+zerobias:
+  pool: zerobias_2024    # datasets.yaml: eras C-I, 29,180 files
+  lumi_mask: lumimasks/Cert_Collisions2024_378981_386951_Golden.json
+  # DataClean: drop the ZeroBias rechits within dR 0.4 of that event's own
+  # jet_sel_foriso jets and muon_sel_foriso muons; 'false' keeps them all.
+  data_clean: {dr: 0.4}

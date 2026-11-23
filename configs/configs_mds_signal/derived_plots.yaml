@@ -1,4 +1,390 @@
 # ── The truth study: the full (mDark, T) signal grid ──────────────
-# Everything comes from ../common_gen (which is ../common plus the gen-level
-# histograms, selections and derived plots).
-_extends: ../common_gen
+# The reco cluster fills plus the gen-level ones: the LLP collection, the
+# truth-matched / unmatched cluster splits and the efficiency chain.
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, SYSU: CSC}
+  - {SYS: dt, SYSU: DT}
+
+eff_any_vs_decayr_all:
+  type: efficiency
+  region: llp
+  numerator: reco
+  denominator: all
+  label_y: MDS acc. $\times$ eff. (all LLPs)
+  vars: [llp_decay_r]
+
+eff_any:
+  type: efficiency
+  region: llp
+  numerator: in_ms_reco
+  denominator: in_ms
+  label_y: MDS efficiency (decay in muon system)
+  vars: [llp_energy, llp_eta, llp_pt]
+
+eff_csc_hits_vs_absdecayz:
+  type: efficiency
+  region: llp
+  numerator: in_csc_hits10
+  denominator: in_csc
+  label_y: 'Reconstructable: $\geq$10 CSC hits / fiducial'
+  spans:
+  - {hi: 623, label: ME1/1, lo: 582}
+  - {hi: 719, label: 'ME1/2,3', lo: 678}
+  - {hi: 847, label: ME2, lo: 810}
+  - {hi: 954, label: ME3, lo: 917}
+  - {hi: 1044, label: ME4, lo: 1006}
+  vars: [llp_decay_absz]
+
+eff_csc_reco_vs_absdecayz:
+  type: efficiency
+  region: llp
+  numerator: in_csc_reco
+  denominator: in_csc_hits10
+  label_y: 'Reconstructed: matched cluster / reconstructable'
+  spans:
+  - {hi: 623, label: ME1/1, lo: 582}
+  - {hi: 719, label: 'ME1/2,3', lo: 678}
+  - {hi: 847, label: ME2, lo: 810}
+  - {hi: 954, label: ME3, lo: 917}
+  - {hi: 1044, label: ME4, lo: 1006}
+  vars: [llp_decay_absz]
+
+eff_csc_vs_absdecayz:
+  type: efficiency
+  region: llp
+  numerator: in_csc_reco
+  denominator: in_csc
+  label_y: CSC cluster efficiency (decay in CSC)
+  spans:
+  - {hi: 623, label: ME1/1, lo: 582}
+  - {hi: 719, label: 'ME1/2,3', lo: 678}
+  - {hi: 847, label: ME2, lo: 810}
+  - {hi: 954, label: ME3, lo: 917}
+  - {hi: 1044, label: ME4, lo: 1006}
+  vars: [llp_decay_absz]
+
+eff_csc:
+  type: efficiency
+  region: llp
+  numerator: in_csc_reco
+  denominator: in_csc
+  label_y: CSC cluster efficiency (decay in CSC)
+  vars: [llp_decay_r, llp_energy, llp_eta, llp_nhits_csc, llp_pt]
+
+eff_csc_vs_decayr_all:
+  type: efficiency
+  region: llp
+  numerator: reco_csc
+  denominator: all
+  label_y: CSC acc. $\times$ eff. (all LLPs)
+  vars: [llp_decay_r]
+
+eff_dt_fid_vs_decayr:
+  type: efficiency
+  region: llp
+  numerator: in_dt
+  denominator: all
+  label_y: 'Fiducial: decay in DT / all LLPs'
+  spans:
+  - {hi: 465, label: MB1, lo: 418}
+  - {hi: 544, label: MB2, lo: 499}
+  - {hi: 653, label: MB3, lo: 606}
+  - {hi: 792, label: MB4, lo: 708}
+  vars: [llp_decay_r]
+
+eff_dt_hits_vs_decayr:
+  type: efficiency
+  region: llp
+  numerator: in_dt_hits10
+  denominator: in_dt
+  label_y: 'Reconstructable: $\geq$10 DT hits / fiducial'
+  spans:
+  - {hi: 465, label: MB1, lo: 418}
+  - {hi: 544, label: MB2, lo: 499}
+  - {hi: 653, label: MB3, lo: 606}
+  - {hi: 792, label: MB4, lo: 708}
+  vars: [llp_decay_r]
+
+eff_dt_reco_vs_decayr:
+  type: efficiency
+  region: llp
+  numerator: in_dt_reco
+  denominator: in_dt_hits10
+  label_y: 'Reconstructed: matched cluster / reconstructable'
+  spans:
+  - {hi: 465, label: MB1, lo: 418}
+  - {hi: 544, label: MB2, lo: 499}
+  - {hi: 653, label: MB3, lo: 606}
+  - {hi: 792, label: MB4, lo: 708}
+  vars: [llp_decay_r]
+
+eff_dt:
+  type: efficiency
+  region: llp
+  numerator: in_dt_reco
+  denominator: in_dt
+  label_y: DT cluster efficiency (decay in DT)
+  vars: [llp_decay_absz, llp_energy, llp_eta, llp_nhits_dt, llp_pt]
+
+eff_dt_vs_decayr:
+  type: efficiency
+  region: llp
+  numerator: in_dt_reco
+  denominator: in_dt
+  label_y: DT cluster efficiency (decay in DT)
+  spans:
+  - {hi: 465, label: MB1, lo: 418}
+  - {hi: 544, label: MB2, lo: 499}
+  - {hi: 653, label: MB3, lo: 606}
+  - {hi: 792, label: MB4, lo: 708}
+  vars: [llp_decay_r]
+
+eff_dt_vs_decayr_all:
+  type: efficiency
+  region: llp
+  numerator: reco_dt
+  denominator: all
+  label_y: DT acc. $\times$ eff. (all LLPs)
+  spans:
+  - {hi: 465, label: MB1, lo: 418}
+  - {hi: 544, label: MB2, lo: 499}
+  - {hi: 653, label: MB3, lo: 606}
+  - {hi: 792, label: MB4, lo: 708}
+  vars: [llp_decay_r]
+
+matchfrac_csc:
+  type: efficiency
+  region: csc
+  numerator: matched
+  denominator: all
+  label_y: fraction of CSC clusters LLP-matched
+  vars:
+  - csc_cluster_avg_station
+  - csc_cluster_dr_jet
+  - csc_cluster_dr_muon
+  - csc_cluster_eta
+  - csc_cluster_eta_spread
+  - csc_cluster_layer_hits_mean
+  - csc_cluster_layer_hits_relrms
+  - csc_cluster_layer_hits_rms
+  - csc_cluster_max_layer_frac
+  - csc_cluster_max_station_frac
+  - csc_cluster_max_zlayer_frac
+  - csc_cluster_nlayer
+  - csc_cluster_nstation
+  - csc_cluster_nzlayer
+  - csc_cluster_phi
+  - csc_cluster_phi_spread
+  - csc_cluster_r_spread
+  - csc_cluster_size
+  - csc_cluster_station_span
+  - csc_cluster_time
+  - csc_cluster_z_spread
+  - csc_cluster_zlayer_hits_mean
+  - csc_cluster_zlayer_hits_relrms
+  - csc_cluster_zlayer_hits_rms
+
+matchfrac_dt:
+  type: efficiency
+  region: dt
+  numerator: matched
+  denominator: all
+  label_y: fraction of DT clusters LLP-matched
+  vars:
+  - dt_cluster_avg_station
+  - dt_cluster_dr_jet
+  - dt_cluster_dr_muon
+  - dt_cluster_eta
+  - dt_cluster_eta_spread
+  - dt_cluster_layer_hits_mean
+  - dt_cluster_layer_hits_relrms
+  - dt_cluster_layer_hits_rms
+  - dt_cluster_max_layer_frac
+  - dt_cluster_max_station_frac
+  - dt_cluster_nlayer
+  - dt_cluster_nstation
+  - dt_cluster_phi
+  - dt_cluster_phi_spread
+  - dt_cluster_r_spread
+  - dt_cluster_size
+  - dt_cluster_station_span
+  - dt_cluster_z_spread
+
+sigbkg_csc_cluster:
+  type: sig_vs_bkg
+  region: csc
+  signal: matched
+  background: all
+  label_y: normalized clusters
+  vars:
+  - csc_cluster_avg_station
+  - csc_cluster_eta
+  - csc_cluster_eta_spread
+  - csc_cluster_layer_hits_relrms
+  - csc_cluster_max_layer_frac
+  - csc_cluster_max_station_frac
+  - csc_cluster_max_zlayer_frac
+  - csc_cluster_nlayer
+  - csc_cluster_nstation
+  - csc_cluster_nzlayer
+  - csc_cluster_phi
+  - csc_cluster_phi_spread
+  - csc_cluster_r_spread
+  - csc_cluster_station_span
+  - csc_cluster_z_spread
+  - csc_cluster_zlayer_hits_relrms
+
+sigbkg_csc_cluster_:
+  type: sig_vs_bkg
+  region: csc
+  signal: matched
+  background: all
+  label_y: normalized clusters
+  log_y: true
+  vars: [csc_cluster_dr_jet, csc_cluster_dr_muon, csc_cluster_layer_hits_mean, csc_cluster_layer_hits_rms, csc_cluster_size, csc_cluster_time, csc_cluster_zlayer_hits_mean, csc_cluster_zlayer_hits_rms]
+
+sigbkg_dt_cluster:
+  type: sig_vs_bkg
+  region: dt
+  signal: matched
+  background: all
+  label_y: normalized clusters
+  vars:
+  - dt_cluster_avg_station
+  - dt_cluster_eta
+  - dt_cluster_eta_spread
+  - dt_cluster_layer_hits_relrms
+  - dt_cluster_max_layer_frac
+  - dt_cluster_max_station_frac
+  - dt_cluster_nlayer
+  - dt_cluster_nstation
+  - dt_cluster_phi
+  - dt_cluster_phi_spread
+  - dt_cluster_r_spread
+  - dt_cluster_station_span
+  - dt_cluster_z_spread
+
+sigbkg_dt_cluster_:
+  type: sig_vs_bkg
+  region: dt
+  signal: matched
+  background: all
+  label_y: normalized clusters
+  log_y: true
+  vars: [dt_cluster_dr_jet, dt_cluster_dr_muon, dt_cluster_layer_hits_mean, dt_cluster_layer_hits_rms, dt_cluster_size]
+
+eff_any_vs_absdecayz_all:
+  label_x: LLP decay $|z|$ [cm]
+  label_y: MDS acc. $\times$ eff. (all LLPs)
+  type: efficiency
+  numerator: llp/reco/llp_decay_absz
+  denominator: llp/all/llp_absdecayz_all_den
+
+eff_csc_fid_vs_absdecayz:
+  label_x: LLP decay $|z|$ [cm]
+  label_y: 'Fiducial: decay in CSC / all LLPs'
+  spans:
+  - {hi: 623, label: ME1/1, lo: 582}
+  - {hi: 719, label: 'ME1/2,3', lo: 678}
+  - {hi: 847, label: ME2, lo: 810}
+  - {hi: 954, label: ME3, lo: 917}
+  - {hi: 1044, label: ME4, lo: 1006}
+  type: efficiency
+  numerator: llp/in_csc/llp_decay_absz
+  denominator: llp/all/llp_absdecayz_all_den
+
+eff_csc_vs_absdecayz_all:
+  label_x: LLP decay $|z|$ [cm]
+  label_y: CSC acc. $\times$ eff. (all LLPs)
+  spans:
+  - {hi: 623, label: ME1/1, lo: 582}
+  - {hi: 719, label: 'ME1/2,3', lo: 678}
+  - {hi: 847, label: ME2, lo: 810}
+  - {hi: 954, label: ME3, lo: 917}
+  - {hi: 1044, label: ME4, lo: 1006}
+  type: efficiency
+  numerator: llp/reco_csc/llp_decay_absz
+  denominator: llp/all/llp_absdecayz_all_den
+
+eff_dt_vs_absdecayz_all:
+  label_x: LLP decay $|z|$ [cm]
+  label_y: DT acc. $\times$ eff. (all LLPs)
+  type: efficiency
+  numerator: llp/reco_dt/llp_decay_absz
+  denominator: llp/all/llp_absdecayz_all_den
+
+# Each template is written once and filled in per axis entry.
+_repeat:
+- over: systems
+  defs:
+    prof_<SYS>_rpc_bx_vs_size:
+      type: profile_x
+      region: <SYS>
+      cut: all
+      label_y: $\langle$RPC BX$\rangle$
+      vars: [<SYS>_cluster_rpc_bx_vs_size]
+    eff_<SYS>_fid_vs_eta:
+      type: efficiency
+      region: llp
+      numerator: in_<SYS>
+      denominator: all
+      label_y: 'Fiducial: decay in <SYSU> / all LLPs'
+      vars: [llp_eta]
+    eff_<SYS>_hits_vs_energy:
+      type: efficiency
+      region: llp
+      numerator: in_<SYS>_hits10
+      denominator: in_<SYS>
+      label_y: $\geq$ 10 <SYSU> rechits (decay in <SYSU>)
+      vars: [llp_energy]
+    eff_<SYS>_hits:
+      type: efficiency
+      region: llp
+      numerator: in_<SYS>_hits10
+      denominator: in_<SYS>
+      label_y: 'Reconstructable: $\geq$10 <SYSU> hits / fiducial'
+      vars: [llp_eta, llp_pt]
+    eff_<SYS>_reco:
+      type: efficiency
+      region: llp
+      numerator: in_<SYS>_reco
+      denominator: in_<SYS>_hits10
+      label_y: 'Reconstructed: matched cluster / reconstructable'
+      vars: [llp_eta, llp_pt]
+    eff_<SYS>_fid_vs_decay_rz:
+      label_x: LLP decay $|z|$ [cm]
+      label_y: LLP decay $r$ [cm]
+      label_z: 'Fiducial: decay in <SYSU> / all LLPs'
+      type: efficiency
+      numerator: llp/in_<SYS>/llp_rz_den_<SYS>
+      denominator: llp/all/llp_rz_all_den
+    eff_<SYS>_fid_vs_pt:
+      label_x: LLP $p_T$ [GeV]
+      label_y: 'Fiducial: decay in <SYSU> / all LLPs'
+      type: efficiency
+      numerator: llp/in_<SYS>/llp_pt
+      denominator: llp/all/llp_pt_all_den
+    eff_<SYS>_hits_vs_decay_rz:
+      label_x: LLP decay $|z|$ [cm]
+      label_y: LLP decay $r$ [cm]
+      label_z: 'Reconstructable: $\geq$10 <SYSU> hits / fiducial'
+      type: efficiency
+      numerator: llp/in_<SYS>_hits10/llp_rz_hits_<SYS>
+      denominator: llp/in_<SYS>/llp_rz_den_<SYS>
+    eff_<SYS>_vs_decay_rz:
+      label_x: LLP decay $|z|$ [cm]
+      label_y: LLP decay $r$ [cm]
+      label_z: <SYSU> cluster efficiency (decay in <SYSU>)
+      type: efficiency
+      numerator: llp/in_<SYS>_reco/llp_rz_num_<SYS>
+      denominator: llp/in_<SYS>/llp_rz_den_<SYS>
+    eff_<SYS>_vs_decay_rz_all:
+      label_x: LLP decay $|z|$ [cm]
+      label_y: LLP decay $r$ [cm]
+      label_z: <SYSU> acc. $\times$ eff. (all LLPs)
+      type: efficiency
+      numerator: llp/reco_<SYS>/llp_rz_all_num_<SYS>
+      denominator: llp/all/llp_rz_all_den

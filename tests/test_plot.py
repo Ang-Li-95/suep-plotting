@@ -6,14 +6,9 @@ import hist
 import numpy as np
 import pytest
 
-from suep_plot.plot import (
-    _fold_flow,
-    _prep_1d,
-    _plot_efficiency,
-    apply_xs_scaling,
-    merge_results,
-    write_cutflow,
-)
+from suep_plot.derived import _plot_efficiency
+from suep_plot.figures import _fold_flow, prep_1d
+from suep_plot.results import apply_xs_scaling, merge_results, write_cutflow
 
 
 def make_hist(sample, vals, weights=None):
@@ -47,9 +42,9 @@ def test_fold_flow():
 def test_prep_1d_folds_flow_by_default():
     """Every entry lands on the canvas unless the config opts out."""
     sh = make_hist("s", [-10, 25, 75, 150, 200])[{"dataset": "s"}]
-    assert list(_prep_1d(sh, {}).view().value) == [2.0, 3.0]
-    assert list(_prep_1d(sh, {"flow": "sum"}).view().value) == [2.0, 3.0]
-    assert list(_prep_1d(sh, {"flow": "none"}).view().value) == [1.0, 1.0]
+    assert list(prep_1d(sh, {}).view().value) == [2.0, 3.0]
+    assert list(prep_1d(sh, {"flow": "sum"}).view().value) == [2.0, 3.0]
+    assert list(prep_1d(sh, {"flow": "none"}).view().value) == [1.0, 1.0]
 
 
 def test_apply_xs_scaling():
@@ -176,3 +171,499 @@ def test_status_array_ranges_are_contiguous():
     assert _format_ranges([0, 1, 2, 5, 7, 8]) == "0-2,5,7-8"
     assert _format_ranges([3]) == "3"
     assert _format_ranges([]) == ""
+
+
+def _age(path, seconds):
+    import os
+    import time
+
+    t = time.time() - seconds
+    os.utime(path, (t, t))
+
+
+def test_status_does_not_count_a_pickle_from_an_earlier_submission(tmp_path):
+    """Same name, but written before this run was submitted: not this run's output."""
+    from suep_plot.status import check, classify
+
+    out = _fake_run(tmp_path, [("sig", 0)], written=["sig.part0.pkl"])
+    _age(out / "sig.part0.pkl", 3600)
+
+    by_state, _ = classify(str(out))
+    assert [t.index for t in by_state["stale"]] == [0]
+    assert [t.index for t in check(str(out))[1]] == [0]      # to redo
+
+
+def test_a_resubmit_of_a_hand_submitted_run_keeps_its_finished_pickles(tmp_path):
+    """jobs.tsv first appears at the resubmit; that is not when the run started."""
+    from suep_plot.status import classify, record_submission
+
+    out = _fake_run(tmp_path, [("sig", 0), ("sig", 1)], written=["sig.part0.pkl"])
+    _age(out / "slurm" / "task_list.txt", 3600)
+    _age(out / "sig.part0.pkl", 1800)
+
+    record_submission(out / "slurm", "123", "1")
+
+    by_state, _ = classify(str(out))
+    assert by_state["stale"] == []
+    assert [t.index for t in by_state["done"]] == [0]
+
+
+def test_status_lists_pickles_that_no_task_writes(tmp_path):
+    from suep_plot.status import classify
+
+    out = _fake_run(tmp_path, [("sig", "")], written=["sig.pkl", "other.pkl"])
+
+    _, extra = classify(str(out))
+    assert [p.name for p in extra] == ["other.pkl"]
+
+
+def test_sacct_states_are_read_per_array_index():
+    from suep_plot.status import parse_sacct
+
+    text = ("100_0|COMPLETED|0:0|00:01:00\n"
+            "100_1|FAILED|1:0|00:00:10\n"
+            "101_1|RUNNING|0:0|00:00:05\n"          # the resubmission of index 1
+            "100_[3-4]|PENDING|0:0|00:00:00\n"      # condensed range: not per index
+            "100_5|CANCELLED by 1234|0:0|00:00:00\n")
+    states = parse_sacct(text, ["100", "101"])
+
+    assert states[0] == ("COMPLETED", "100")
+    assert states[1] == ("RUNNING", "101")       # the latest submission wins
+    assert states[5][0] == "CANCELLED"
+    assert 3 not in states
+
+
+def test_resubmit_refuses_a_job_script_that_calls_cli_worker(tmp_path):
+    from suep_plot.status import resubmit
+
+    out = _fake_run(tmp_path, [("sig", "")], written=[])
+    (out / "slurm" / "job.sh").write_text(
+        '#!/bin/bash\npython -m suep_plot.cli_worker --config-dir "/x"\n')
+
+    with pytest.raises(SystemExit, match="cli_worker"):
+        resubmit(str(out), dry_run=True)
+
+
+def test_resubmit_puts_resource_overrides_on_the_sbatch_line(tmp_path, capsys):
+    from suep_plot.status import resubmit
+
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    out = _fake_run(tmp_path / "run", [("sig", "")], written=[])
+    (out / "slurm" / "job.sh").write_text(
+        f'#!/bin/bash\npython -m suep_plot.cli run --config-dir "{cfg}"\n')
+
+    unhandled = resubmit(str(out), dry_run=True,
+                         overrides={"time": "20:00:00", "mem": "16000"})
+
+    line = capsys.readouterr().out
+    assert "--time=20:00:00" in line and "--qos=medium" in line
+    assert "--mem=16000" in line
+    assert unhandled == 1                     # dry run: nothing was submitted
+
+
+# ── which pickles suep-plot merges ───────────────────────────────
+
+
+def test_plot_merges_only_the_pickles_of_this_run(tmp_path, capsys):
+    from pathlib import Path
+
+    from suep_plot.results import resolve_inputs
+
+    out = _fake_run(tmp_path, [("sig", 0), ("sig", 1)],
+                    written=["sig.part0.pkl", "leftover.pkl"])
+
+    files = resolve_inputs(str(out))
+
+    assert [Path(f).name for f in files] == ["sig.part0.pkl"]
+    printed = capsys.readouterr().out
+    assert "undercounted" in printed and "leftover.pkl" in printed
+
+
+def test_plot_refuses_a_whole_sample_next_to_its_parts(tmp_path):
+    from suep_plot.results import resolve_inputs
+
+    for name in ("sig.pkl", "sig.part0.pkl"):
+        with open(tmp_path / name, "wb") as f:
+            pickle.dump({"histograms": {}}, f)
+
+    with pytest.raises(SystemExit, match="double counting"):
+        resolve_inputs(str(tmp_path))
+
+
+def test_plot_reports_an_input_that_does_not_exist(tmp_path):
+    from suep_plot.results import resolve_inputs
+
+    with pytest.raises(SystemExit, match="input not found"):
+        resolve_inputs(str(tmp_path / "nope"))
+
+
+def test_a_pickle_given_twice_is_merged_once(tmp_path):
+    from suep_plot.results import resolve_inputs
+
+    p = tmp_path / "sig.pkl"
+    with open(p, "wb") as f:
+        pickle.dump({"histograms": {}}, f)
+
+    assert resolve_inputs([str(p), str(tmp_path)]) == [str(p)]
+
+
+def test_a_truncated_pickle_is_reported_by_name(tmp_path):
+    from suep_plot.results import load_results
+
+    p = tmp_path / "sig.pkl"
+    p.write_bytes(pickle.dumps({"histograms": {"a": 1}})[:5])
+
+    with pytest.raises(SystemExit, match="sig.pkl"):
+        load_results(str(p))
+
+
+def test_merge_takes_per_object_from_whichever_pickle_filled_it(tmp_path):
+    a = {"histograms": {}, "samples": {}, "hist_defs": {"h": {"expression": "x"}}}
+    b = {"histograms": {}, "samples": {},
+         "hist_defs": {"h": {"expression": "x", "per_object": True}}}
+    paths = []
+    for name, data in (("a.pkl", a), ("b.pkl", b)):
+        with open(tmp_path / name, "wb") as f:
+            pickle.dump(data, f)
+        paths.append(str(tmp_path / name))
+
+    assert merge_results(paths)["hist_defs"]["h"]["per_object"] is True
+
+
+# ── region-aware derived plots, folders, gallery ──────────────────
+
+
+def test_a_region_derived_plot_expands_per_variable():
+    from suep_plot.derived import expand_region_derived
+
+    defs = expand_region_derived({
+        "matchfrac": {"type": "efficiency", "region": "csc", "numerator": "matched",
+                      "denominator": "all", "vars": ["size", "eta"],
+                      "label_y": "matched fraction"},
+        "prof": {"type": "profile_x", "region": "llp", "cut": "in_csc",
+                 "vars": [["eta", "nhits"]]},
+        "explicit": {"type": "ratio", "numerator": "a", "denominator": "b"},
+    })
+
+    assert defs["csc/matchfrac/size"] == {
+        "type": "efficiency", "numerator": "csc/matched/size",
+        "denominator": "csc/all/size", "label_y": "matched fraction"}
+    assert defs["csc/matchfrac/eta"]["numerator"] == "csc/matched/eta"
+    assert defs["llp/prof/eta_vs_nhits"]["source"] == "llp/in_csc/eta_vs_nhits"
+    assert defs["explicit"] == {"type": "ratio", "numerator": "a", "denominator": "b"}
+
+
+def test_figures_of_region_histograms_go_into_folders(tmp_path):
+    from suep_plot.figures import plot_histogram
+
+    h = make_hist("sig", [10.0, 60.0])
+    plot_histogram(h, {"label": "x", "annotation": "CSC · iso"}, {}, str(tmp_path),
+                   "csc/iso/size", formats=("png",))
+
+    assert (tmp_path / "csc" / "iso" / "size.png").exists()
+
+
+def test_the_gallery_groups_by_folder_and_skips_old_figures(tmp_path):
+    import os
+    import time
+
+    from suep_plot.gallery import write_gallery
+
+    (tmp_path / "csc" / "all").mkdir(parents=True)
+    (tmp_path / "csc" / "all" / "size.png").write_bytes(b"png")
+    old = tmp_path / "gone.png"
+    old.write_bytes(b"png")
+    t = time.time() - 3600
+    os.utime(old, (t, t))
+    stale_pdf = tmp_path / "csc" / "all" / "size.pdf"
+    stale_pdf.write_bytes(b"pdf")
+    os.utime(stale_pdf, (t, t))
+
+    page = (tmp_path / "index.html")
+    write_gallery(str(tmp_path), formats=("png",), since=time.time() - 60)
+    text = page.read_text()
+
+    assert "csc/all/size.png" in text
+    assert "gone.png" not in text                    # not written by this run
+    assert 'href="csc/all/size.pdf"' not in text     # stale PDF not linked
+    assert 'id="filter"' in text
+
+
+def test_the_root_export_nests_region_histograms(tmp_path):
+    import uproot
+
+    from suep_plot.results import export_root
+
+    export_root({"csc/all/size": make_hist("sig", [10.0])}, str(tmp_path / "out.root"))
+
+    with uproot.open(tmp_path / "out.root") as f:
+        assert f["csc/all/size/sig"].values().sum() == 1
+
+
+def test_the_comparison_scripts_load_exactly_the_named_sample(tmp_path):
+    """zerobias_2024C must not also pick up zerobias_2024C_ctrl's pickles."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import compare_style
+
+    for name in ("zerobias_2024C.pkl", "zerobias_2024C_ctrl.pkl"):
+        with open(tmp_path / name, "wb") as f:
+            pickle.dump({"histograms": {}, "samples": {name[:-4]: {}}}, f)
+
+    assert compare_style.samples_in(str(tmp_path)) == ["zerobias_2024C",
+                                                       "zerobias_2024C_ctrl"]
+    data = compare_style.load_sample(str(tmp_path), "zerobias_2024C")
+    assert list(data["samples"]) == ["zerobias_2024C"]
+
+
+def test_the_comparison_scripts_style_wrappers_reach_suep_plot(tmp_path):
+    """cms_label / write_gallery wrap the suep_plot functions of the same name."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import compare_style
+
+    fig, ax, _ = compare_style.figure()
+    compare_style.cms_label(ax)
+    compare_style.save(fig, str(tmp_path), "one")
+    index = compare_style.write_gallery(str(tmp_path), "title", "subtitle",
+                                        [("one", 0.5)], "score")
+    assert Path(index).exists()
+
+
+def test_normalize_draws_data_at_unit_area_too(tmp_path, monkeypatch):
+    """Data used to stay at raw counts next to unit-area MC."""
+    from suep_plot import figures
+
+    h = make_hist("bkg", [10.0] * 30 + [60.0] * 10)
+    h += make_hist("data", [10.0] * 3 + [60.0] * 5)
+    sample_defs = {"data": {"is_data": True}, "bkg": {"group": "background"}}
+    seen = {}
+
+    def ratio_panel(rax, data_hists, bkg_hists):
+        seen["ratio"] = [sum(x.sum().value for x in hs)
+                         for hs in (data_hists, bkg_hists)]
+
+    def finish(fig, ax, *args, **kwargs):
+        seen["top"] = ax.get_ylim()[1]
+
+    monkeypatch.setattr(figures, "_draw_ratio_panel", ratio_panel)
+    monkeypatch.setattr(figures, "_finish", finish)
+    figures.plot_histogram(h, {"label": "x"}, sample_defs, str(tmp_path), "x",
+                           normalize=True, formats=("png",))
+
+    assert seen["ratio"] == pytest.approx([1.0, 1.0])
+    assert seen["top"] < 2.0           # unit-area points, not the raw counts
+
+
+def test_the_event_display_takes_a_system_without_rechits():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import event_display
+
+    hits = {"label": np.array([], dtype=int)}
+    assert event_display.cluster_summary(hits, {"match_min_hits": 10}) == []
+
+
+def test_resubmit_stops_when_slurm_cannot_be_asked(tmp_path, monkeypatch):
+    """A failed sacct is not "nothing is pending": those tasks would run twice."""
+    import subprocess
+
+    from suep_plot import status
+
+    out = _fake_run(tmp_path, [("sig", 0), ("sig", 1)], written=[])
+    status.record_submission(out / "slurm", "777", "0-1")
+    monkeypatch.setattr(status.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def sacct_fails(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, "", "slurmdbd: connection refused")
+
+    monkeypatch.setattr(status.subprocess, "run", sacct_fails)
+    with pytest.raises(SystemExit, match="Nothing was resubmitted"):
+        status.resubmit(str(out), dry_run=True)
+    # The report alone still works, from the pickles.
+    assert status.slurm_states(out / "slurm") == {}
+
+    def sacct_hangs(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, 120)
+
+    monkeypatch.setattr(status.subprocess, "run", sacct_hangs)
+    with pytest.raises(SystemExit, match="did not answer"):
+        status.resubmit(str(out), dry_run=True)
+
+
+def test_the_comparison_checks_binning_across_signal_and_background():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import compare_sig_bkg
+
+    def one(lo, hi):
+        return hist.Hist(hist.axis.Regular(2, lo, hi, name="x"))
+
+    assert compare_sig_bkg.same_edges(one(0, 100), one(0, 100))
+    assert not compare_sig_bkg.same_edges(one(0, 100), one(0, 200))
+    assert not compare_sig_bkg.same_edges(
+        one(0, 100), hist.Hist(hist.axis.Regular(4, 0, 100, name="x")))
+
+
+def _import_compare_sig_bkg():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import compare_sig_bkg
+    return compare_sig_bkg
+
+
+def test_the_comparison_pairs_each_system_with_every_background_cut():
+    """'<SYS>_src' pairs csc_src with the csc cuts and dt_src with the dt ones."""
+    csb = _import_compare_sig_bkg()
+
+    class Args:
+        sig_cut = "<SYS>_src"
+        bkg_cut = ["<SYS>_in_jet", "<SYS>_iso"]
+
+    keys = ["all/csc_src/csc_cluster_size", "trig_dt/dt_src/dt_cluster_size",
+            "all/puppi_met", "all/csc_other/csc_cluster_size"]
+    assert csb._pairs(keys, Args) == [
+        ("all/csc_src/csc_cluster_size",
+         {"<SYS>_in_jet": "all/csc_in_jet/csc_cluster_size",
+          "<SYS>_iso": "all/csc_iso/csc_cluster_size"},
+         "all/csc_cluster_size"),
+        ("trig_dt/dt_src/dt_cluster_size",
+         {"<SYS>_in_jet": "trig_dt/dt_in_jet/dt_cluster_size",
+          "<SYS>_iso": "trig_dt/dt_iso/dt_cluster_size"},
+         "trig_dt/dt_cluster_size"),
+    ]
+    assert csb.cut_label("<SYS>_on_muon") == "on muon"
+
+    class WithData(Args):
+        data = ["zerobias_run"]
+        data_cut = "<SYS>_src"
+
+    (_, bkg, _), _ = csb._pairs(keys, WithData)
+    # the data run's histogram under its own cut, next to the MC cuts
+    assert bkg["<SYS>_src"] == "all/csc_src/csc_cluster_size"
+
+
+def test_the_summed_background_weights_each_sample_by_xs_over_sumw():
+    csb = _import_compare_sig_bkg()
+
+    h = hist.Hist(hist.axis.StrCategory(["a", "b"], name="dataset"),
+                  hist.axis.Regular(2, 0, 2, name="x"), storage=hist.storage.Weight())
+    h.fill(dataset="a", x=[0.5] * 10)          # a: 10 entries in bin 0
+    h.fill(dataset="b", x=[1.5] * 10)          # b: 10 entries in bin 1
+    bkg_all = {s: {"histograms": {"k": h}, "sumw": {s: 10.0}} for s in "ab"}
+    defs = {"a": {"xs": 3.0}, "b": {"xs": 1.0}}
+
+    out = csb.summed_background(bkg_all, ["a", "b"], "k", {}, defs)
+    assert out.values() == pytest.approx([0.75, 0.25])
+
+    with pytest.raises(SystemExit, match="no xs"):
+        csb.summed_background(bkg_all, ["a", "b"], "k", {}, {"a": {"xs": 3.0}, "b": {}})
+
+
+def test_samples_of_one_process_are_summed_after_scaling():
+    """HT bins become one stack entry, each weighted by its own xs / sumw."""
+    from suep_plot.results import merge_processes
+
+    h = make_hist("qcd_lo", [25.0] * 4)
+    h += make_hist("other", [25.0])
+    h += make_hist("qcd_hi", [75.0] * 2)
+    hists = {"h": h}
+    sample_defs = {
+        "qcd_lo": {"xs": 10.0, "process": "qcd", "process_label": "QCD", "color": "b",
+                   "group": "background"},
+        "other": {"xs": 1.0, "group": "background"},
+        "qcd_hi": {"xs": 1.0, "process": "qcd", "color": "r", "group": "background"},
+    }
+    apply_xs_scaling(hists, sample_defs, {"qcd_lo": 4.0, "qcd_hi": 2.0, "other": 1.0},
+                     lumi=0.001)
+    members = merge_processes(hists, sample_defs)
+
+    assert members == {"qcd": ["qcd_lo", "qcd_hi"]}
+    assert list(sample_defs) == ["qcd", "other"]          # where its first bin was
+    assert sample_defs["qcd"]["label"] == "QCD" and sample_defs["qcd"]["color"] == "b"
+    assert "xs" not in sample_defs["qcd"]
+    merged = hists["h"]
+    assert list(merged.axes["dataset"]) == ["qcd", "other"]
+    # 4 events x 10/4 in the low bin, 2 events x 1/2 in the high one
+    assert list(merged[{"dataset": "qcd"}].values()) == pytest.approx([10.0, 1.0])
+    assert list(merged[{"dataset": "qcd"}].variances()) == pytest.approx([25.0, 0.5])
+    assert list(merged[{"dataset": "other"}].values()) == pytest.approx([1.0, 0.0])
+
+
+def test_a_process_cannot_mix_signal_and_background():
+    from suep_plot.results import merge_processes
+
+    sample_defs = {"a": {"process": "p", "group": "background"},
+                   "b": {"process": "p", "group": "signal"}}
+    with pytest.raises(SystemExit, match="mixes"):
+        merge_processes({"h": make_hist("a", [1.0])}, sample_defs)
+
+
+def test_normalize_stack_keeps_the_stack_and_gives_it_unit_area(tmp_path, monkeypatch):
+    from suep_plot import figures
+
+    h = make_hist("a", [10.0] * 30)
+    h += make_hist("b", [60.0] * 10)
+    sample_defs = {"a": {"group": "background"}, "b": {"group": "background"}}
+    drawn = {}
+
+    def histplot(hists, **kwargs):
+        drawn["stack"] = kwargs.get("stack")
+        drawn["areas"] = [x.sum().value for x in hists]
+        drawn["labels"] = kwargs.get("label")
+
+    monkeypatch.setattr(figures.hep, "histplot", histplot)
+    monkeypatch.setattr(figures, "_finish", lambda *a, **k: None)
+    figures.plot_histogram(h, {"label": "x"}, sample_defs, str(tmp_path), "x",
+                           unit_stack=True, formats=("png",))
+
+    assert drawn["stack"] is True
+    # the smaller sample first, i.e. at the bottom of the stack
+    assert drawn["areas"] == pytest.approx([0.25, 0.75])
+    assert drawn["labels"] == ["b", "a"]
+
+
+def test_the_stack_total_gets_a_hatched_stat_band(tmp_path, monkeypatch):
+    from suep_plot import figures
+
+    h = make_hist("a", [10.0] * 30)
+    h += make_hist("b", [60.0] * 10)
+    sample_defs = {"a": {"group": "background"}, "b": {"group": "background"}}
+    bands = []
+
+    def band(ax, total, **kwargs):
+        bands.append((total.sum().value, total.variances().sum(), kwargs))
+
+    monkeypatch.setattr(figures, "draw_uncertainty_band", band)
+    monkeypatch.setattr(figures, "_finish", lambda *a, **k: None)
+    figures.plot_histogram(h, {"label": "x"}, sample_defs, str(tmp_path), "x",
+                           formats=("png",))
+
+    (area, var, kwargs), = bands
+    assert area == pytest.approx(40.0)          # the stack total, not one sample
+    assert var == pytest.approx(40.0)           # unit weights: sum w^2 = N
+    assert kwargs["hatch"] and kwargs["label"] == figures.STAT_LABEL
+
+
+def test_the_uncertainty_band_spans_one_sigma(monkeypatch):
+    import matplotlib.pyplot as plt
+    from suep_plot import figures
+
+    h = make_hist("a", [10.0] * 4)[{"dataset": "a"}]
+    fig, ax = plt.subplots()
+    figures.draw_uncertainty_band(ax, h, color="red")
+    (poly,) = ax.collections
+    ys = poly.get_paths()[0].vertices[:, 1]
+    assert ys.max() == pytest.approx(4 + 2) and ys.min() == pytest.approx(0.0)
+    plt.close(fig)

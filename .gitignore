@@ -10,9 +10,9 @@ plots/
 # Processing outputs and run logs (kept outside the repo; see README)
 output_*/
 *.log
-plots/
 compare_dr02_vs_dr04/
 sigbkg_*/
 
-# Local Claude Code settings and skills (not shared)
-.claude/
+# Claude Code: the project skills are shared, local settings are not
+.claude/*
+!.claude/skills/

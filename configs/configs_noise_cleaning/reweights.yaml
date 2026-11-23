@@ -1,0 +1,6 @@
+# The study counts rechits, not weighted events: its efficiency, purity and
+# rechits per event are raw counts.  These samples carry genWeights of both
+# signs (DY, tt) or of several values (QCD), so the event weight is divided
+# back out to compare like with like.
+unweighted:
+  expression: "1.0 / events.genWeight"

@@ -40,27 +40,37 @@ def _resolved_columns(config_dir: Path) -> dict:
     sys.path.insert(0, str(REPO))
     from custom import columns
 
-    from suep_plot.processor import load_columns_config
+    from suep_plot.configset import load_columns_config
 
     settings = columns.configure(load_columns_config(config_dir / "columns.yaml"))
     return {"parameters": dict(settings.params), "steps": list(settings.steps)}
 
 
 def dump(config_dir: Path) -> dict:
+    from suep_plot.config import load_config_file
     from suep_plot.corrections import load_correction_defs
-    from suep_plot.histograms import load_histogram_defs, load_selection_defs
-    from suep_plot.plot import load_derived_plot_defs
-    from suep_plot.processor import load_columns_config, load_samples
+    from suep_plot.histdefs import (load_histogram_defs, load_selection_defs,
+                                    load_variables)
+    from suep_plot.derived import load_derived_plot_defs
+    from suep_plot.configset import load_columns_config
+    from suep_plot.inputs import load_samples
     from suep_plot.reweights import load_reweight_defs
 
     loaders = {
         "samples": lambda p: load_samples(p / "samples.yaml"),
-        "histograms": lambda p: load_histogram_defs(p / "histograms.yaml"),
-        "selections": lambda p: load_selection_defs(p / "selections.yaml"),
+        "histograms": lambda p: {
+            n: h.to_dict() for n, h in
+            load_histogram_defs(p / "histograms.yaml").items()},
+        "selections": lambda p: {
+            n: s.to_dict() for n, s in
+            load_selection_defs(p / "selections.yaml").items()},
         "corrections": lambda p: load_correction_defs(p / "corrections.yaml"),
         "reweights": lambda p: load_reweight_defs(p / "reweights.yaml"),
         "derived_plots": lambda p: load_derived_plot_defs(str(p / "derived_plots.yaml")),
         "columns": lambda p: load_columns_config(p / "columns.yaml"),
+        "overlay": lambda p: load_config_file(p / "overlay.yaml"),
+        # The catalog the set sees: the global variables.yaml + its overrides.
+        "variables": load_variables,
         # The settings derive() actually runs on, not the YAML that produced
         # them: two configs that spell the defaults out differently are the
         # same run, and this is the level a refactor has to preserve.

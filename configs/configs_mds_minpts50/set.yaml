@@ -1,0 +1,4 @@
+# A variant of configs_mds: everything is inherited except columns.yaml,
+# the one file that differs.  The standard MDS DBSCAN minimum cluster size.
+extends: ../configs_mds
+description: "configs_mds with the standard MDS clustering: min cluster size 50 (CSC/DT)"

@@ -21,6 +21,8 @@ import functools
 import awkward as ak
 import numpy as np
 
+from suep_plot.fill import compile_expr
+
 
 
 # drMuon / drJet in events with no reconstructed muon / jet at all.  Such a
@@ -35,20 +37,13 @@ NO_OBJECT_DR = 999.0
 def _dr_to_nearest(clusters, objects):
     """dR from each cluster centroid to the closest object in the event.
 
-    :data:`NO_OBJECT_DR` in events with no such object (``ak.min`` over an empty
-    list): a cluster with no muon in the event is maximally isolated, so the
-    sentinel is deliberately larger than any real dR and passes every isolation
-    cut.  It overflows the dR axis, and those histograms keep the default
-    ``flow: sum``, so it shows up in their last bin.  Written out by hand
-    because the cluster collection is a plain record array with no vector
+    :data:`NO_OBJECT_DR` in events with no such object.  Written out by hand
+    because the cluster collection is a plain record array without vector
     behaviour, so ``.nearest()`` is unavailable.
     """
     deta = clusters.eta[:, :, None] - objects.eta[:, None, :]
     dphi = (clusters.phi[:, :, None] - objects.phi[:, None, :] + np.pi) % (2 * np.pi) - np.pi
     return ak.fill_none(ak.min(np.sqrt(deta ** 2 + dphi ** 2), axis=2), NO_OBJECT_DR)
-
-
-_SAFE_BUILTINS = {"abs": abs, "len": len, "min": min, "max": max}
 
 
 # The selections.yaml entries the cluster isolation is measured against, and
@@ -60,14 +55,14 @@ ISO_SELECTIONS = {"drMuon": "muon_sel_foriso", "drJet": "jet_sel_foriso"}
 def _selected_objects(events, name, selection):
     """Objects passing a selections.yaml entry, or None if its collection is absent.
 
-    *selection* is the entry as written -- a ``collection`` naming what the
+    *selection* is the entry's ``Selection`` -- a ``collection`` naming what the
     per-object mask is over, and an ``expression`` in the ordinary config
     dialect (``events.Muon.pt > 10``, the same one histograms.yaml uses).  A
     missing collection is not an error: a file with no ``Muon`` branch simply
     has no muon to be near, which :func:`_cluster_isolation` turns into the
     "maximally isolated" sentinel.
     """
-    collection = selection.get("collection")
+    collection = selection.collection
     if not collection:
         raise ValueError(
             f"selections.yaml: '{name}' is used to select objects, so it needs a "
@@ -76,15 +71,11 @@ def _selected_objects(events, name, selection):
         return None
 
     try:
-        keep = eval(  # noqa: S307 - trusted config expressions
-            selection["expression"],
-            {"__builtins__": _SAFE_BUILTINS},
-            {"events": events, "ev": events, "ak": ak, "np": np},
-        )
+        keep = compile_expr(selection.expression)(events)
     except Exception as exc:
         raise ValueError(
             f"selections.yaml: '{name}' failed on collection '{collection}': "
-            f"{selection['expression']!r}\n  {type(exc).__name__}: {exc}") from exc
+            f"{selection.expression!r}\n  {type(exc).__name__}: {exc}") from exc
 
     return events[collection][keep]
 

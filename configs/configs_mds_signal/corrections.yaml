@@ -1,4 +1,5 @@
 # ── The truth study: the full (mDark, T) signal grid ──────────────
-# Everything comes from ../common_gen (which is ../common plus the gen-level
-# histograms, selections and derived plots).
-_extends: ../common_gen
+# The reco cluster fills plus the gen-level ones: the LLP collection, the
+# truth-matched / unmatched cluster splits and the efficiency chain.
+
+# (nothing defined)

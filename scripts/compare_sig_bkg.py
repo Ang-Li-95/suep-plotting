@@ -1,18 +1,27 @@
 """Overlay gen-matched signal clusters against all background clusters.
 
 The two populations live in different output directories: the signal's
-``<var>_matched`` histograms come from a configs/configs_mds_signal run (truth needed),
-the background's inclusive ``<var>`` from a configs/configs_mds run (the background has
-no truth branches, so *all* its clusters are the fake/pile-up reference).
-Because both configs define the inclusive histograms identically, the axes
-match and the two can be drawn on one canvas without refilling anything.
+gen-matched histograms come from a truth-level run, the background's inclusive
+ones from a reco run (the background has no truth branches, so *all* its
+clusters are the fake/pile-up reference).  Because both configs fill the same
+variables with the same binning, the two can be drawn on one canvas without
+refilling anything.
 
-    python scripts/compare_sig_bkg.py <sig_out> <bkg_out> <dest> [--suffix _matched]
+    python scripts/compare_sig_bkg.py <sig_out> <bkg_out> [<bkg_out> ...] <dest> \\
+        --sig-cut matched --bkg-cut all
+
+Region histograms (``<region>/<cut>/<variable>``) are paired by cut:
+``csc/matched/csc_cluster_size`` in the signal run with
+``csc/all/csc_cluster_size`` in the background runs.  Older flat names are
+paired by suffix instead (``--suffix _matched``).  Several background
+directories are read as one (each sample is one population, e.g. the
+configs_mds_src_* runs), so there is no need to collect them first.
 
 Each figure is unit-area normalized, so it compares shapes rather than yields,
 and follows the same CMS style, sample labels/colors, and png+pdf output as
 ``suep-plot``.  Data samples are drawn as points, everything else as a fill
-(background) or a step curve (signal, honouring the sample's ``linestyle``);
+(background) or a step curve (signal, honouring the sample's ``linestyle``),
+with the MC-stat uncertainty as a band (hatched on fills, shaded on curves);
 ``-c`` re-reads label/color/linestyle from a config so styling can be iterated
 without reprocessing.
 
@@ -31,7 +40,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import compare_style as style  # noqa: E402
 
 
-def collect(entries, base_or_key, hist_cfg, dropped=None):
+def same_edges(a, b) -> bool:
+    """Whether two 1D histograms have the same bin edges."""
+    ea, eb = a.axes[0].edges, b.axes[0].edges
+    return ea.shape == eb.shape and bool(np.allclose(ea, eb))
+
+
+def collect(entries, base_or_key, hist_cfg, dropped=None, sample_of=None):
     """Unit-normalized 1D slices for [(sample, result_dict)] on a common axis.
 
     A sample that does not have this histogram, or has it empty, is left out
@@ -41,22 +56,25 @@ def collect(entries, base_or_key, hist_cfg, dropped=None):
     variable is still worth drawing.  Pass *dropped* (a dict) to collect what
     was left out, so the caller can report it once instead of per plot.
 
+    *sample_of* maps an entry's name to its dataset when the two differ (one
+    sample drawn under several cuts).
+
     Returns [(sample, Hist)], or None when nothing survives or the survivors
     disagree on binning.
     """
-    out, edges = [], None
+    out, first = [], None
     for sample, data, key in entries:
+        dataset = (sample_of or {}).get(sample, sample)
         h = data["histograms"].get(key)
-        sh = None if h is None else style.slice_1d(h, sample, hist_cfg)
+        sh = None if h is None else style.slice_1d(h, dataset, hist_cfg)
         sh = None if sh is None else style.normalized(sh)
         if sh is None:
             if dropped is not None:
                 dropped.setdefault(sample, set()).add(base_or_key)
             continue
-        if edges is None:
-            edges = sh.axes[0].edges
-        elif edges.shape != sh.axes[0].edges.shape or not np.allclose(
-                edges, sh.axes[0].edges):
+        if first is None:
+            first = sh
+        elif not same_edges(first, sh):
             print(f"  !! axis mismatch, skipping {base_or_key}")
             return None
         out.append((sample, sh))
@@ -132,33 +150,106 @@ def _clear_legend(fig, ax, legend, y_max: float, tries: int = 6) -> None:
 
 
 def _restyle(sample_defs: dict, hist_defs: dict, config_dirs) -> None:
-    """Refresh plot-only sample and histogram keys from configs.
+    """Refresh plot-time sample and histogram keys from configs.
 
-    The pickles carry both definitions as they were at fill time, so without
-    this an axis-label or legend fix would need the samples reprocessed.  Only
-    keys that cannot change what was filled are taken -- the binning and the
-    expression stay as the pickle recorded them.
+    The same override suep-plot -c applies (suep_plot.results.restyle), so a
+    label, colour, marker, rebin or log-axis change is picked up here exactly
+    as it is there, without reprocessing.
     """
-    from suep_plot.histograms import load_histogram_defs
-    from suep_plot.processor import load_samples
+    from suep_plot.results import restyle
 
     for cdir in config_dirs or []:
-        path = os.path.join(cdir, "samples.yaml")
-        if not os.path.exists(path):
-            raise SystemExit(f"--config-dir: no samples.yaml in {cdir}")
-        for name, cfg in load_samples(path).items():
-            if name in sample_defs:
-                sample_defs[name].update(
-                    {k: v for k, v in cfg.items()
-                     if k in ("label", "color", "linestyle", "group", "is_data")})
+        restyle(hist_defs, sample_defs, cdir)
 
-        hpath = os.path.join(cdir, "histograms.yaml")
-        if os.path.exists(hpath):
-            for name, cfg in load_histogram_defs(hpath).items():
-                if name in hist_defs:
-                    hist_defs[name].update(
-                        {k: v for k, v in cfg.items()
-                         if k in ("label", "label_x", "log_x", "log_y")})
+
+SYS = "<SYS>"
+
+
+def _cut_system(cut: str, template: str):
+    """The system a cut name fills a ``<SYS>`` template with, or None.
+
+    ``csc_src`` against ``<SYS>_src`` gives ``csc``; a template without the
+    placeholder matches only itself (and gives "").
+    """
+    if SYS not in template:
+        return "" if cut == template else None
+    head, tail = template.split(SYS, 1)
+    if not (cut.startswith(head) and cut.endswith(tail)):
+        return None
+    sys_name = cut[len(head): len(cut) - len(tail)]
+    return sys_name if sys_name.isidentifier() else None
+
+
+def _pairs(sig_keys, args):
+    """(signal histogram, {background cut: histogram}, figure name) to compare.
+
+    With region histograms, the signal's ``<region>/<sig-cut>/<var>`` is paired
+    with ``<region>/<bkg-cut>/<var>`` for every ``--bkg-cut``; a ``<SYS>`` in
+    the cuts is the system (csc, dt), so ``--sig-cut '<SYS>_src' --bkg-cut
+    '<SYS>_iso'`` pairs csc_src with csc_iso and dt_src with dt_iso.
+    """
+    if args.sig_cut:
+        out = []
+        for key in sig_keys:
+            parts = key.split("/")
+            if len(parts) != 3:
+                continue
+            region, cut, leaf = parts
+            sys_name = _cut_system(cut, args.sig_cut)
+            if sys_name is None:
+                continue
+            cuts = list(args.bkg_cut)
+            if getattr(args, "data", None):
+                cuts.append(args.data_cut)
+            bkg = {b: f"{region}/{b.replace(SYS, sys_name)}/{leaf}" for b in cuts}
+            out.append((key, bkg, f"{region}/{leaf}"))
+        return out
+    keys = [k for k in sig_keys if k.endswith(args.suffix)] if args.suffix else sig_keys
+    out = []
+    for key in keys:
+        base = key[: len(key) - len(args.suffix)] if args.suffix else key
+        out.append((key, {"": base + args.bkg_suffix}, base))
+    return out
+
+
+def cut_label(cut: str) -> str:
+    """``<SYS>_in_jet`` -> ``in jet``: the cut as a legend phrase."""
+    return cut.replace(SYS, "").strip("_").replace("_", " ") or "all clusters"
+
+
+def summed_background(bkg_all, names, key, hist_cfg, sample_defs, dropped=None):
+    """The xs-weighted sum of every background sample, unit-normalized.
+
+    Each sample enters with weight xs / sumw (its cross section over its summed
+    generator weight), the --lumi scaling of suep-plot up to the luminosity,
+    which drops out of a unit-area curve.  So the HT / jet-multiplicity bins
+    of one process and the processes themselves add up as they would in data.
+    A sample without xs or sumw stops the comparison: leaving it out would
+    silently change the mixture.
+    """
+    total = None
+    for name in names:
+        data = bkg_all[name]
+        h = data["histograms"].get(key)
+        sh = None if h is None else style.slice_1d(h, name, hist_cfg)
+        if sh is None:
+            if dropped is not None:
+                dropped.setdefault(name, set()).add(key)
+            continue
+        xs = sample_defs.get(name, {}).get("xs")
+        sumw = data.get("sumw", {}).get(name)
+        if xs is None or not sumw:
+            raise SystemExit(f"--bkg-sum: background sample '{name}' has no "
+                             f"{'xs' if xs is None else 'sumw'}")
+        scaled = sh * (float(xs) / sumw)
+        if total is None:
+            total = scaled
+        elif not same_edges(total, scaled):
+            print(f"  !! axis mismatch, skipping {key}")
+            return None
+        else:
+            total = total + scaled
+    return None if total is None else style.normalized(total)
 
 
 def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag):
@@ -187,6 +278,8 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag
         else:
             hep.histplot(sh, ax=ax, histtype="fill", color=color, alpha=0.25,
                          edgecolor=color, linewidth=2, label=label)
+            # hatched: a translucent band would vanish into the translucent fill
+            style.draw_uncertainty_band(ax, sh, color=color, hatch="////")
 
     seps = {b: [] for b, _ in bkg_slices}
     for i, (sample, sh) in enumerate(sig_slices):
@@ -201,8 +294,8 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag
                          yerr=np.sqrt(sh.variances()))
         else:
             hep.histplot(sh, ax=ax, histtype="step", linewidth=2, color=color,
-                         linestyle=cfg.get("linestyle", "-"),
-                         label=label, yerr=np.sqrt(sh.variances()))
+                         linestyle=cfg.get("linestyle", "-"), label=label, yerr=False)
+            style.draw_uncertainty_band(ax, sh, color=color)
 
     ax.set_xlabel(style.x_label(hist_cfg, base))
     ax.set_ylabel("Normalized")
@@ -229,12 +322,36 @@ def draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest, tag, bkg_tag
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("sig_out", help="output dir of the configs/configs_mds_signal run")
-    p.add_argument("bkg_out", help="output dir of the configs/configs_mds run")
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("sig_out", help="output dir of the truth-level (signal) run")
+    p.add_argument("bkg_out", nargs="+",
+                   help="output dir(s) of the background run(s), read as one")
     p.add_argument("dest", help="directory for the comparison figures")
+    p.add_argument("--sig-cut", default=None,
+                   help="region histograms: the signal's cut, e.g. matched -- pairs "
+                        "<region>/<sig-cut>/<var> with <region>/<bkg-cut>/<var>")
+    p.add_argument("--bkg-cut", nargs="+", default=["all"],
+                   help="region histograms: the background's cut(s); several draw "
+                        "one background curve per cut. '<SYS>' in --sig-cut and "
+                        "here stands for the system, e.g. --sig-cut '<SYS>_src' "
+                        "--bkg-cut '<SYS>_in_jet' '<SYS>_on_muon' '<SYS>_iso'")
+    p.add_argument("--bkg-sum", action="store_true",
+                   help="draw the background as one curve per cut: every background "
+                        "sample summed with weight xs/sumw (the --lumi mixture of "
+                        "suep-plot), then unit-area normalized")
+    p.add_argument("--bkg-colors", nargs="+", default=None,
+                   help="colours of the summed background curves, one per --bkg-cut "
+                        "(default: the colour cycle)")
+    p.add_argument("--data", nargs="+", default=None, metavar="DATA_OUT",
+                   help="output dir(s) of data runs drawn as points under their own "
+                        "cut (--data-cut), never part of the --bkg-sum: e.g. the "
+                        "ZeroBias clusters next to the summed MC")
+    p.add_argument("--data-cut", default="<SYS>_src",
+                   help="region histograms: the cut of the --data runs")
     p.add_argument("--suffix", default="_matched",
-                   help="signal histogram suffix to pair with the background one")
+                   help="flat histogram names: signal suffix to pair with the "
+                        "background histogram (ignored with --sig-cut)")
     p.add_argument("--bkg-suffix", default="",
                    help="background histogram suffix (default: the inclusive "
                         "histogram). Set it to put the same cluster selection on "
@@ -258,7 +375,16 @@ def main():
     args = p.parse_args()
 
     sig_all = style.load_samples(args.sig_out, args.sig_samples)
-    bkg_all = style.load_samples(args.bkg_out, args.bkg_samples)
+    if not sig_all:
+        wanted = f" matching {args.sig_samples}" if args.sig_samples else ""
+        raise SystemExit(f"no signal pickles{wanted} found in {args.sig_out}")
+    bkg_all = {}
+    for bkg_dir in args.bkg_out:
+        for name, data in style.load_samples(bkg_dir, args.bkg_samples).items():
+            if name in bkg_all:
+                raise SystemExit(f"sample '{name}' is in more than one background "
+                                 "directory; it would be counted twice")
+            bkg_all[name] = data
     if not bkg_all:
         raise SystemExit(f"no background pickles found in {args.bkg_out}")
 
@@ -267,8 +393,17 @@ def main():
     if not bkg_names:
         raise SystemExit("background directory contains only signal samples")
 
+    data_all = {}
+    for data_dir in args.data or []:
+        for name, data in style.load_samples(data_dir).items():
+            if name in data_all or name in bkg_all or name in sig_all:
+                raise SystemExit(f"--data sample '{name}' is also an input elsewhere")
+            data_all[name] = data
+    if args.data and not data_all:
+        raise SystemExit(f"no data pickles found in {args.data}")
+
     sample_defs, hist_defs = {}, {}
-    for data in list(sig_all.values()) + list(bkg_all.values()):
+    for data in list(sig_all.values()) + list(bkg_all.values()) + list(data_all.values()):
         sample_defs.update(data.get("samples", {}))
         hist_defs.update(data.get("hist_defs", {}))
     _restyle(sample_defs, hist_defs, args.config_dir)
@@ -280,27 +415,80 @@ def main():
     sig_keys = sorted(next(iter(sig_all.values()))["histograms"])
     # An empty suffix pairs each signal histogram with the identically named
     # background one (for runs whose config defines no gen-matched histograms).
-    keys = [k for k in sig_keys if k.endswith(args.suffix)] if args.suffix else sig_keys
-    if not keys:
+    pairs = _pairs(sig_keys, args)
+    if not pairs:
+        what = (f"a '{args.sig_cut}' cut" if args.sig_cut
+                else f"histograms ending with '{args.suffix}'")
         raise SystemExit(
-            f"no signal histogram ends with '{args.suffix}' in {args.sig_out} "
+            f"no signal histogram with {what} in {args.sig_out} "
             f"({len(sig_keys)} histograms found).\n"
-            "That run's config defines no gen-matched histograms -- either process it "
-            "with a config that does (e.g. configs/configs_mds_signal), or pass --suffix '' to "
-            "compare the inclusive signal histograms with the background ones.")
+            "Region histograms are paired with --sig-cut <cut> [--bkg-cut <cut>]; "
+            "flat names with --suffix ('' compares identically named histograms).")
 
-    tag = sig_tag(args.suffix) if args.tag is None else args.tag
-    bkg_tag = bkg_label(args.bkg_suffix) if args.bkg_tag is None else args.bkg_tag
-    seps = {}   # {variable: {background: separation}}
-    for key in keys:
-        base = key[: len(key) - len(args.suffix)] if args.suffix else key
-        # the inclusive config carries the axis label; fall back to the matched one
-        hist_cfg = hist_defs.get(base, hist_defs.get(key, {}))
+    bkg_cuts = args.bkg_cut if args.sig_cut else [""]
+    several = len(bkg_cuts) > 1
+    if args.sig_cut:
+        default_tag = cut_label(args.sig_cut)
+        # with several cuts (or a summed background) each curve's own label
+        # names its cut, so a common tag would only repeat it
+        default_bkg = ("" if several or args.bkg_sum or bkg_cuts == ["all"]
+                       else cut_label(bkg_cuts[0]))
+    else:
+        default_tag, default_bkg = sig_tag(args.suffix), bkg_label(args.bkg_suffix)
+    tag = default_tag if args.tag is None else args.tag
+    bkg_tag = default_bkg if args.bkg_tag is None else args.bkg_tag
+
+    # The background curves: one per sample (and cut, with several cuts), or
+    # with --bkg-sum one per cut.  Each gets a sample_defs entry, so draw()
+    # finds its label and colour the same way as for a plain sample.
+    colors = args.bkg_colors or style.palette()
+    curves = []   # [(curve name, background cut, sample or None for the sum)]
+    for i, cut in enumerate(bkg_cuts):
+        if args.bkg_sum:
+            name = f"sum:{cut_label(cut).replace(' ', '_')}"
+            sample_defs[name] = {"label": f"SM background, {cut_label(cut)}",
+                                 "color": colors[i % len(colors)]}
+            curves.append((name, cut, None))
+            continue
+        for sample in bkg_names:
+            name = f"{sample}:{cut_label(cut).replace(' ', '_')}" if several else sample
+            if several:
+                cfg = dict(sample_defs.get(sample, {}))
+                cfg["label"] = f"{style.sample_label(sample_defs, sample)}, {cut_label(cut)}"
+                sample_defs[name] = cfg
+            curves.append((name, cut, sample))
+    curve_names = [c[0] for c in curves] + list(data_all)
+
+    seps = {}   # {variable: {background curve: separation}}
+    for key, bkg_keys, base in pairs:
+        # the background config carries the axis label
+        hist_cfg = hist_defs.get(next(iter(bkg_keys.values())), hist_defs.get(key, {}))
         sig_entries = [(n, d, key) for n, d in sig_all.items()]
-        bkg_entries = [(n, bkg_all[n], base + args.bkg_suffix) for n in bkg_names]
         sig_slices = collect(sig_entries, base, hist_cfg, dropped)
-        bkg_slices = collect(bkg_entries, base, hist_cfg, dropped)
+        if args.bkg_sum:
+            bkg_slices = []
+            for name, cut, _ in curves:
+                sh = summed_background(bkg_all, bkg_names, bkg_keys[cut], hist_cfg,
+                                       sample_defs, dropped)
+                if sh is not None:
+                    bkg_slices.append((name, sh))
+            if bkg_slices and not all(same_edges(bkg_slices[0][1], s) for _, s in bkg_slices):
+                print(f"  !! axis mismatch between background cuts, skipping {base}")
+                continue
+        else:
+            bkg_entries = [(name, bkg_all[sample], bkg_keys[cut])
+                           for name, cut, sample in curves]
+            bkg_slices = collect(bkg_entries, base, hist_cfg, dropped,
+                                 sample_of={name: sample for name, _, sample in curves})
+        if data_all and bkg_slices:
+            data_entries = [(n, d, bkg_keys[args.data_cut]) for n, d in data_all.items()]
+            bkg_slices += collect(data_entries, base, hist_cfg, dropped) or []
         if not sig_slices or not bkg_slices:
+            continue
+        # collect() compares within each side only; the separation is taken
+        # bin by bin across the two, so they need the same axis as well.
+        if not all(same_edges(sig_slices[0][1], b) for _, b in bkg_slices):
+            print(f"  !! signal and background binning differ, skipping {base}")
             continue
         by_bkg = draw(sig_slices, bkg_slices, sample_defs, base, hist_cfg, dest,
                       tag, bkg_tag)
@@ -316,32 +504,33 @@ def main():
         raise SystemExit("no variable could be drawn")
 
     ref = args.rank_against or next(
-        (n for n in bkg_names if sample_defs.get(n, {}).get("is_data")), bkg_names[0])
-    if ref not in bkg_names:
-        raise SystemExit(f"--rank-against {ref!r} is not one of {bkg_names}")
+        (n for n in curve_names if sample_defs.get(n, {}).get("is_data")), curve_names[0])
+    if ref not in curve_names:
+        raise SystemExit(f"--rank-against {ref!r} is not one of {curve_names}")
     ranked = sorted(((base, by_bkg[ref]) for base, by_bkg in seps.items()
                      if ref in by_bkg), key=lambda kv: -kv[1])
 
     # plain sample names here: labels may carry mathtext, which only the
     # figures render -- the txt summary and the gallery header would show it raw
-    sig_list, bkg_list = ", ".join(sig_all), ", ".join(bkg_names)
-    width = max(len(n) for n in bkg_names) + 2
+    sig_list, bkg_list = ", ".join(sig_all), ", ".join(curve_names)
+    width = max(len(n) for n in curve_names) + 2
     with open(os.path.join(dest, "separation.txt"), "w") as fh:
         fh.write(f"# mean separation of [{sig_list}] from each background, "
                  f"1 = no overlap; ordered by {ref}\n")
-        fh.write("#" + "".join(f"{n:>{width}}" for n in bkg_names) + "  variable\n")
+        fh.write("#" + "".join(f"{n:>{width}}" for n in curve_names) + "  variable\n")
         for base, _ in ranked:
             row = "".join(f"{seps[base].get(n, float('nan')):>{width}.4f}"
-                          for n in bkg_names)
+                          for n in curve_names)
             fh.write(f" {row}  {base}\n")
     gallery = style.write_gallery(
         dest, f"Signal {tag or 'clusters'} ({sig_list}) vs "
               f"{bkg_tag or 'clusters'} ({bkg_list})",
-        f"Unit-area normalized, sorted by separation from {ref}.", ranked, "separation")
+        ("Background samples summed with weight xs/sumw. " if args.bkg_sum else "")
+        + f"Unit-area normalized, sorted by separation from {ref}.", ranked, "separation")
     print(f"{len(ranked)} plots -> {gallery}")
-    print(f"{'':7}" + "".join(f"{n:>{width}}" for n in bkg_names))
+    print(f"{'':7}" + "".join(f"{n:>{width}}" for n in curve_names))
     for base, _ in ranked[:10]:
-        row = "".join(f"{seps[base].get(n, float('nan')):>{width}.3f}" for n in bkg_names)
+        row = "".join(f"{seps[base].get(n, float('nan')):>{width}.3f}" for n in curve_names)
         print(f"{row}   {base}")
 
 

@@ -1,0 +1,35 @@
+# ── Rechit positions of the MC input, binned as the study's figures ──
+# plot_matching_performance.py BINNED: eta and phi for every system, R for
+# DT and RPC, |z| for CSC and RPC.  The non-hard rechits kept per event use
+# its NONHARD_EDGES["matched"].
+
+# The axes the _repeat blocks below loop over.
+_axes:
+  systems:
+  - {SYS: csc, COLL: cscRechits, SYSU: CSC, NHBINS: [41, -0.5, 40.5]}
+  - {SYS: dt, COLL: dtRecHits, SYSU: DT, NHBINS: [41, -0.5, 40.5]}
+  - {SYS: rpc, COLL: rpcRecHits, SYSU: RPC, NHBINS: [21, -0.5, 20.5]}
+
+_repeat:
+- over: systems
+  defs:
+    <SYS>_mc_rechit_eta:
+      expression: events.<COLL>MC.Eta
+      bins: [24, -2.4, 2.4]
+      label: <SYSU> rechit $\eta$
+    <SYS>_mc_rechit_phi:
+      expression: events.<COLL>MC.Phi
+      bins: [18, -3.141592653589793, 3.141592653589793]
+      label: <SYSU> rechit $\phi$
+    <SYS>_mc_rechit_r:
+      expression: np.hypot(events.<COLL>MC.X, events.<COLL>MC.Y)
+      bins: [19, 380, 760]
+      label: <SYSU> rechit $R$ [cm]
+    <SYS>_mc_rechit_absz:
+      expression: abs(events.<COLL>MC.Z)
+      bins: [22, 550, 1100]
+      label: <SYSU> rechit $|z|$ [cm]
+    <SYS>_n_nonhard_kept:
+      expression: ak.sum(events.<SYS>_nonhard_kept, axis=1)
+      bins: <NHBINS>
+      label: <SYSU> rechits kept but not hard process, per event
